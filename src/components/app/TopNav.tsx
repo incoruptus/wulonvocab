@@ -15,7 +15,14 @@ const NAV = [
   { href: "/settings", label: "设置" },
 ];
 
-export function TopNav({ right }: { right?: React.ReactNode }) {
+export function TopNav({
+  right,
+  hideNavOnMobile,
+}: {
+  right?: React.ReactNode;
+  /** 工作区等操作较多的页面：窄屏隐藏导航链接，避免与操作按钮挤压 */
+  hideNavOnMobile?: boolean;
+}) {
   const pathname = usePathname();
   const setSettings = useAppStore((s) => s.setSettings);
   const resolvedTheme = useResolvedTheme();
@@ -25,7 +32,12 @@ export function TopNav({ right }: { right?: React.ReactNode }) {
       <Link href="/" className="flex shrink-0 items-center gap-2.5">
         <span className="t-h-16 hidden tracking-[-0.02em] min-[420px]:inline">WulonVocab</span>
       </Link>
-      <nav className="no-scrollbar flex min-w-0 items-center gap-0.5 overflow-x-auto">
+      <nav
+        className={cx(
+          "no-scrollbar flex min-w-0 items-center gap-0.5 overflow-x-auto",
+          hideNavOnMobile && "hidden sm:flex",
+        )}
+      >
         {NAV.map((item) => {
           const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
           return (

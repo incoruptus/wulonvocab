@@ -70,6 +70,7 @@ export function BookWorkspace() {
   return (
     <div className="flex h-dvh flex-col">
       <TopNav
+        hideNavOnMobile
         right={
           <>
             <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
