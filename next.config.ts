@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
   ...(isExport
     ? { output: "export" as const, trailingSlash: true, partialPrefetching: false }
     : { cacheComponents: true, partialPrefetching: true }),
+  /** 隐藏开发工具悬浮指示器（左下角 N 徽标） */
+  devIndicators: false,
   ...(basePath ? { basePath } : {}),
   turbopack: {
     root: path.resolve(process.cwd()),
