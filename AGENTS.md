@@ -42,10 +42,20 @@
 1. **不要直接编辑 `.kilo/` 或任何全局配置**；项目内配置即代码。
 2. 持久化状态只在 `store.ts` 的 actions 中修改；组件不得绕过 `useAppStore`。
 3. 新增字段类型时必须同时支持：归一化（sections.ts）、预览渲染（ValueView）、编辑（ValueEditor）、分页可拆性（`SPLITTABLE_TYPES` 视情况）、Skill 参考文档（`skill/wulonvocab-json/references/schema.md`）。
-4. React 规则（会构建失败）：不在渲染期调用 `Date.now()/crypto.randomUUID()`（预渲染报错）；不在 effect 里同步 setState；不在渲染期读写 ref。
+4. React 规则（会构建失败）：不在渲染期调用 `Date.now()/crypto.randomUUID()`（预渲染报错；`defaultSchema()`/
+   `createEmptyBook()`/`makeEntry()` 内部走 `uid()`，只能在事件处理器里调用）；不在 effect 里同步 setState；
+   不在渲染期读写 ref。
 5. 中文源码文件必须保持 UTF-8（无 BOM）。修改文件用编辑器工具或 Node 脚本；**不要用 PowerShell `Set-Content` 直接改写含中文的文件**（PS5.1 默认 ANSI 会损坏编码）。
 6. 打印路径基于隐藏 iframe 克隆 + 动态 `@page`；`@page` 内注入字面 mm 值，不使用 CSS 变量。
-7. 分页单元与渲染切片必须对齐（`sliceValue` 不重新归一化，输入须为规范形态）。
+7. **导出配置生效约定**：强调色 / 行高 / 字体栈 / 纸张色调必须在 `.wv-doc` 根与页面壳上以 CSS 变量下发
+   （`--wv-accent` / `--wv-lh` / `fontFamily` / `--wv-line` / `--wv-soft`，`.wv-card` 会读这些变量），
+   且 `MeasureLayer` 与 `PrintDocument` 必须同源；**禁止只在词条卡片上设置这些变量**（封面/索引会拿不到）。
+   **字体栈单一真源在 `globals.css` 的 `--font-sans`/`--font-serif`**：中文无衬线首选 HarmonyOS Sans
+   （免费商用；未安装自动回退苹方/雅黑/思源黑），衬线模式中文走思源宋（Source Han Serif / Noto Serif，OFL）；
+   导出侧一律经 `fontStackFor()` 引用变量，不得内联拼字体栈。
+8. **图片型 PDF 内存约定**：一律 `toCanvas → JPEG Blob → Uint8Array` 直传 jsPDF（勿用 base64 dataURL），
+   每页后释放画布并让出事件循环，大词库导出不崩标签页。
+9. 分页单元与渲染切片必须对齐（`sliceValue` 不重新归一化，输入须为规范形态）。
 
 ## 控件形态约定（审计结论，新代码必须遵守）
 
@@ -89,3 +99,16 @@
 
 - `public/downloads/skill/` 是生成物（由 `scripts/sync-skill.mjs` 生成），不要手工编辑。
 - `skill/wulonvocab-json/` 是 Skill 的**唯一真源**；示例与文档改动后跑 `sync:skill`。
+
+## 版权与资产红线
+
+- **随包字体两类机制**：
+  1. **Geist**（npm `geist`，SIL OFL 1.1）与 **思源宋 Noto Serif SC**（npm `@fontsource/noto-serif-sc`，
+     SIL OFL 1.1）经模块导入打包（`next/font` / CSS import），可自由嵌入与分发；
+  2. **HarmonyOS Sans SC**（华为免费商用许可）：`scripts/sync-fonts.mjs` 在 dev/build 前把
+     `harmonyos-sans-sc-webfont-splitted`（cn-font-split 分片）同步到 `public/fonts/harmony/`，
+     `layout.tsx` 以 `<link>` 引用——该目录 **gitignore 不提交**，部署产物由构建时生成；
+     分片带 unicode-range，浏览器只下载页面实际用到的字形。
+- **禁止把字体文件手工提交进仓库**（`public/`、`src/` 不放静态字体文件）；新增字体必须许可为
+  免费商用 / OFL / MIT / Apache 等可嵌入类型，并走上表两类机制之一。
+- 示例数据与文档内容必须自撰，不得粘贴词典原文；用户导入的词典数据仅存在于其本机 IndexedDB，不入仓库。

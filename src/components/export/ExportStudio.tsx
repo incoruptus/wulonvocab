@@ -263,9 +263,9 @@ export function ExportStudio({ book }: { book: Wordbook }) {
         </nav>
       </div>
 
-      {/* 进度遮罩 */}
+      {/* 进度遮罩（移动端抬高避开底部工具抽屉） */}
       {progress ? (
-        <div className="fixed inset-x-0 bottom-6 z-50 mx-auto w-fit rounded-xl bg-background-100 px-5 py-3 shadow-geist-modal">
+        <div className="fixed inset-x-0 bottom-24 z-50 mx-auto w-fit rounded-xl bg-background-100 px-5 py-3 shadow-geist-modal sm:bottom-6">
           <div className="flex items-center gap-3">
             <FileJson className="size-4 text-gray-800" />
             <div>
@@ -449,7 +449,7 @@ function PanelsLayout({ settings, patch }: PanelGroupProps) {
             <SwitchRow label="显示单元格边框" checked={settings.grid.showBorder} onCheckedChange={(v) => patch({ grid: { showBorder: v } })} />
             <SwitchRow
               label="闪卡精简模式"
-              hint="只显示头部与首个字段"
+              hint="只显示头部与前两个字段"
               checked={settings.grid.flashcard}
               onCheckedChange={(v) => patch({ grid: { flashcard: v } })}
             />
@@ -484,8 +484,8 @@ function PanelsCards({ settings, patch, book }: PanelGroupProps) {
             value={settings.fontFamily}
             onValueChange={(v) => patch({ fontFamily: v })}
             options={[
-              { value: "sans", label: "无衬线（Geist）" },
-              { value: "serif", label: "衬线（宋体）" },
+              { value: "sans", label: "无衬线", title: "英文 Geist Variable · 中文 HarmonyOS Sans" },
+              { value: "serif", label: "衬线", title: "英文 Georgia / Times · 中文思源宋体" },
             ]}
             grow
           />

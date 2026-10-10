@@ -5,7 +5,7 @@ import type { Entry, ExportSettings, SectionDef, SectionType, SenseItem, Wordboo
 import { computeGeometry, getPaperBox, mmToPx } from "@/lib/paper";
 import { buildSenseUnits, isValueEmpty, sortSections, valueLength, type SenseCell } from "@/lib/sections";
 import { paginate, type MeasuredBlock, type PaginationResult } from "@/lib/export/paginate";
-import { EntryHeaderBlock, SectionBlock, type CardCtx } from "@/components/export/blocks";
+import { EntryHeaderBlock, fontStackFor, SectionBlock, type CardCtx } from "@/components/export/blocks";
 
 const SPLITTABLE_TYPES: SectionType[] = ["senses", "examples", "keyvalue", "transforms", "image", "list", "tags", "table"];
 
@@ -313,7 +313,13 @@ export function MeasureLayer({ doc }: { doc: ExportDocument }) {
         zIndex: -1,
       }}
     >
-      <div style={{ fontSize: geometry.pageFontCss, lineHeight: ctx.settings.lineHeight }}>
+      <div
+        style={{
+          fontSize: geometry.pageFontCss,
+          ["--wv-lh" as string]: ctx.settings.lineHeight,
+          fontFamily: fontStackFor(ctx.settings.fontFamily),
+        }}
+      >
         {specs.map((spec) => {
           if (spec.kind === "header") {
             return (

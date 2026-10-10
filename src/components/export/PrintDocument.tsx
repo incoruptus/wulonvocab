@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import type { Entry, Wordbook } from "@/lib/types";
 import { TONES } from "@/lib/paper";
-import { FlashcardCell, SectionBlock, EntryHeaderBlock } from "@/components/export/blocks";
+import { accentCssVar, FlashcardCell, fontStackFor, SectionBlock, EntryHeaderBlock } from "@/components/export/blocks";
 import type { ExportDocument } from "@/components/export/useExportDocument";
 import type { PlannedPage } from "@/lib/export/paginate";
 import { cx } from "@/lib/utils";
@@ -39,7 +39,19 @@ export function PrintDocument({ book, doc }: PrintDocumentProps) {
   const pageNo = (globalIndex: number) => globalIndex + 1 - coverPages;
 
   return (
-    <div className="wv-doc" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "24px" }}>
+    <div
+      className="wv-doc"
+      style={{
+        // 强调色 / 行高 / 字体栈在文档根上生效，封面、索引、页脚与所有卡片统一继承
+        ...accentCssVar(ctx),
+        ["--wv-lh" as string]: s.lineHeight,
+        fontFamily: fontStackFor(s.fontFamily),
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: "24px",
+      }}
+    >
       {s.cover.enabled ? (
         <PageShell geometry={geometry} tone={tone} mirrored={false} pageNo={0} totalPages={totalPages} showFooter={false}>
           <CoverPage book={book} doc={doc} />
@@ -157,7 +169,7 @@ function PageShell({
   children,
 }: {
   geometry: ExportDocument["geometry"];
-  tone: { bg: string; fg: string };
+  tone: { bg: string; fg: string; line: string; soft: string };
   mirrored: boolean;
   pageNo: number;
   totalPages: number;
@@ -197,9 +209,10 @@ function PageShell({
         paddingBottom: m.bottom,
         paddingLeft: left,
         fontSize: geometry.pageFontCss,
-        fontFamily: undefined,
         position: "relative",
         ["--wv-fg" as string]: tone.fg,
+        ["--wv-line" as string]: tone.line,
+        ["--wv-soft" as string]: tone.soft,
       }}
     >
       <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>{children}</div>
@@ -234,20 +247,18 @@ function CoverPage({ book, doc }: { book: Wordbook; doc: ExportDocument }) {
     </div>
   );
   if (cover.style === "band") {
+    // 色带用正常流排版（此前用百分比绝对定位，其 % 以宽度计算导致副标题叠进色带）
     return (
       <div className={cx(base, "relative")}>
-        <div
-          className="absolute left-[-6%] right-[-6%] top-[18%] h-[26%] flex items-center px-[6%]"
-          style={{ background: "var(--wv-accent)" }}
-        >
-          <div className="wv-page-cover-title text-white" style={{ fontSize: "2.1em" }}>
+        <div className="-mx-[7%] mt-[16%] px-[7%] py-[1.1em]" style={{ background: "var(--wv-accent)" }}>
+          <div className="wv-page-cover-title text-white" style={{ fontSize: "1.9em" }}>
             {title}
           </div>
+          {cover.subtitle ? <div className="mt-[0.4em] text-[0.95em] text-white/85">{cover.subtitle}</div> : null}
         </div>
-        <div className="mt-[52%] space-y-[0.8em]">
-          {emoji ? <div className="text-[2.4em]">{emoji}</div> : null}
-          <div className="text-[1.05em] opacity-80">{cover.subtitle}</div>
-          {book.description ? <div className="text-[0.85em] opacity-60">{book.description}</div> : null}
+        <div className="mt-[1.6em] space-y-[0.8em]">
+          {emoji ? <div className="text-[2.2em]">{emoji}</div> : null}
+          {book.description ? <div className="max-w-[26em] text-[0.9em] leading-relaxed opacity-70">{book.description}</div> : null}
         </div>
         {meta}
       </div>

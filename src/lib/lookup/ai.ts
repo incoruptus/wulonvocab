@@ -4,8 +4,9 @@ import type { DictionaryAdapter, LookupContext } from "./types";
 import { LookupError, withTimeout } from "./types";
 
 /* ============================================================
-   AI 检索适配器：任何 OpenAI 兼容接口（DeepSeek / OpenAI / Moonshot / 本地模型）
-   按当前 Schema 动态生成提示词，输出可直接归一化的 JSON。
+   AI 适配器與生成共用：任何 OpenAI 兼容接口（DeepSeek / OpenAI / Moonshot / 本地模型）
+   1) lookup：按当前 Schema 动态生成提示词，输出可直接归一化的 JSON；
+   2) chatCompletion：通用补全调用（词表生成等共用）。
    ============================================================ */
 
 const SHAPE_HINTS: Record<SectionType, string> = {
@@ -60,26 +61,47 @@ export function buildAiPrompt(word: string, schema: { sections: SectionDef[] }, 
   return { system, user };
 }
 
+/* ---------------- 通用聊天补全 ---------------- */
+
+export interface ChatConfig {
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+}
+
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
 interface ChatResponse {
   choices?: { message?: { content?: string } }[];
   error?: { message?: string };
 }
 
-export const aiAdapter: DictionaryAdapter = {
-  kind: "ai",
-  async lookup({ word, schema, config, signal }: LookupContext): Promise<LookupDraft> {
-    const baseUrl = (config.baseUrl ?? "").trim().replace(/\/+$/, "");
-    const apiKey = (config.apiKey ?? "").trim();
-    const model = (config.model ?? "").trim();
-    if (!baseUrl) throw new LookupError("未配置 API Base URL");
-    if (!model) throw new LookupError("未配置模型名称");
-    const endpoint = baseUrl.endsWith("/chat/completions") ? baseUrl : `${baseUrl}/chat/completions`;
-    const { system, user } = buildAiPrompt(word, schema, config.language || "中文", config.extraPrompt);
+/**
+ * OpenAI 兼容 chat/completions 调用。
+ * - jsonMode：请求 response_format=json_object；服务端不支持时自动降级重试；
+ * - 返回助手消息文本；网络/服务端错误统一抛 LookupError（含友好信息）。
+ */
+export async function chatCompletion(
+  cfg: ChatConfig,
+  messages: ChatMessage[],
+  opts: { temperature?: number; jsonMode?: boolean; signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<string> {
+  const baseUrl = (cfg.baseUrl ?? "").trim().replace(/\/+$/, "");
+  const apiKey = (cfg.apiKey ?? "").trim();
+  const model = (cfg.model ?? "").trim();
+  if (!baseUrl) throw new LookupError("未配置 API Base URL");
+  if (!model) throw new LookupError("未配置模型名称");
+  const endpoint = baseUrl.endsWith("/chat/completions") ? baseUrl : `${baseUrl}/chat/completions`;
 
-    const attempt = async (jsonMode: boolean): Promise<unknown> => {
-      const { signal: s, done } = withTimeout(60000, signal);
+  const attempt = async (jsonMode: boolean): Promise<string> => {
+    const { signal: s, done } = withTimeout(opts.timeoutMs ?? 60000, opts.signal);
+    try {
+      let res: Response;
       try {
-        const res = await fetch(endpoint, {
+        res = await fetch(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -87,55 +109,89 @@ export const aiAdapter: DictionaryAdapter = {
           },
           body: JSON.stringify({
             model,
-            temperature: 0.2,
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: user },
-            ],
+            temperature: opts.temperature ?? 0.2,
+            messages,
             ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
           }),
           signal: s,
         });
-        const text = await res.text();
-        if (!res.ok) {
-          let msg = `HTTP ${res.status}`;
-          try {
-            const err = JSON.parse(text) as ChatResponse;
-            if (err.error?.message) msg = err.error.message;
-          } catch {
-            /* ignore */
-          }
-          throw new LookupError(msg);
+      } catch (e) {
+        // 网络层错误（DNS/代理/CORS）——给出可行动的提示
+        if ((e as Error).name === "AbortError") throw e;
+        throw new LookupError(`无法连接 AI 接口（${(e as Error).message}）；请检查 Base URL 与网络/跨域是否可用`);
+      }
+      const text = await res.text();
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try {
+          const err = JSON.parse(text) as ChatResponse;
+          if (err.error?.message) msg = err.error.message;
+        } catch {
+          /* ignore */
         }
-        return JSON.parse(text) as unknown;
-      } finally {
-        done();
+        throw new LookupError(msg);
       }
-    };
-
-    let raw: unknown;
-    try {
-      raw = await attempt(true);
-    } catch (e) {
-      if (e instanceof LookupError && /response_format|json_object|400/i.test(e.message)) {
-        raw = await attempt(false);
-      } else {
-        throw e;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text) as unknown;
+      } catch {
+        throw new LookupError("AI 接口返回的不是 JSON");
       }
+      const content = (parsed as ChatResponse).choices?.[0]?.message?.content;
+      if (!content) throw new LookupError("模型未返回内容");
+      return content;
+    } finally {
+      done();
     }
+  };
 
-    const chat = raw as ChatResponse;
-    const content = chat.choices?.[0]?.message?.content;
-    if (!content) throw new LookupError("模型未返回内容");
-    const jsonText = content.replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/, "").trim();
+  if (opts.jsonMode === false) return attempt(false);
+  try {
+    return await attempt(true);
+  } catch (e) {
+    if (e instanceof LookupError && /response_format|json_object|400/i.test(e.message)) {
+      return attempt(false);
+    }
+    throw e;
+  }
+}
+
+/** 从模型输出中提取 JSON 文本（剥离代码块围栏 / 前后说明文字） */
+export function extractJsonText(content: string): string {
+  const fenced = content.replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/, "").trim();
+  if (fenced.startsWith("{") || fenced.startsWith("[")) return fenced;
+  const objStart = fenced.indexOf("{");
+  const arrStart = fenced.indexOf("[");
+  const start = [objStart, arrStart].filter((i) => i >= 0).sort((a, b) => a - b)[0];
+  if (start == null) return fenced;
+  const lastObj = fenced.lastIndexOf("}");
+  const lastArr = fenced.lastIndexOf("]");
+  const end = Math.max(lastObj, lastArr);
+  if (end > start) return fenced.slice(start, end + 1);
+  return fenced;
+}
+
+/* ---------------- 单词检索适配器 ---------------- */
+
+export const aiAdapter: DictionaryAdapter = {
+  kind: "ai",
+  async lookup({ word, schema, config, signal }: LookupContext): Promise<LookupDraft> {
+    const { system, user } = buildAiPrompt(word, schema, config.language || "中文", config.extraPrompt);
+    const content = await chatCompletion(
+      { baseUrl: config.baseUrl ?? "", apiKey: config.apiKey, model: config.model ?? "" },
+      [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      { temperature: 0.2, jsonMode: true, signal },
+    );
+
+    const jsonText = extractJsonText(content);
     let parsed: unknown;
     try {
       parsed = JSON.parse(jsonText);
     } catch {
-      const start = jsonText.indexOf("{");
-      const end = jsonText.lastIndexOf("}");
-      if (start >= 0 && end > start) parsed = JSON.parse(jsonText.slice(start, end + 1));
-      else throw new LookupError("模型输出不是合法 JSON");
+      throw new LookupError("模型输出不是合法 JSON");
     }
     if (!isPlainObject(parsed)) throw new LookupError("模型输出 JSON 结构异常");
 

@@ -31,6 +31,11 @@ export function accentCssVar(ctx: CardCtx): React.CSSProperties {
   };
 }
 
+/** 导出字体栈：引用 globals.css 的单一真源（无衬线 = Geist + OPPO Sans；衬线 = Georgia + 思源宋） */
+export function fontStackFor(family: ExportSettings["fontFamily"]): string {
+  return family === "serif" ? "var(--font-serif)" : "var(--font-sans)";
+}
+
 function accentHex(id: ExportSettings["accent"]): string {
   // 局部引入避免循环依赖
   const map: Record<string, string> = {
@@ -63,18 +68,22 @@ export function EntryHeaderBlock({
   const s = ctx.settings;
   const compact = s.cardStyle === "compact";
   const minimal = s.cardStyle === "minimal";
+  const notebook = s.cardStyle === "notebook";
   const word = applyHeadwordCase(entry.headword, s.headwordCase);
-  const ruleStyle: React.CSSProperties = {
-    background: minimal || s.cardStyle === "notebook" ? "var(--wv-accent)" : "var(--wv-accent)",
-    opacity: minimal ? 0.35 : s.cardStyle === "notebook" ? 0.3 : 0.9,
-    width: s.cardStyle === "classic" ? "100%" : compact ? "2em" : "2.6em",
-    height: s.cardStyle === "classic" ? 2 : 1.5,
-  };
-  if (s.cardStyle === "notebook") {
-    ruleStyle.background = "repeating-linear-gradient(90deg, var(--wv-line,#c9c9c9) 0 6px, transparent 6px 10px)";
-    ruleStyle.opacity = 1;
-    delete ruleStyle.width;
-  }
+  // 四种风格的题头装饰线：经典=整幅强调细线；极简=整幅纸感发丝线；紧凑=小色标；
+  // 手账=整幅柔和纸线（配圆角标签，手账感来自标签而非花哨线条）
+  const ruleStyle: React.CSSProperties = (() => {
+    switch (s.cardStyle) {
+      case "classic":
+        return { background: "var(--wv-accent)", height: 1, width: "100%", opacity: 0.45 };
+      case "minimal":
+        return { background: "var(--wv-line, #e6e6e6)", height: 1, width: "100%", opacity: 1 };
+      case "compact":
+        return { background: "var(--wv-accent)", height: 1.5, width: "1.1em", opacity: 0.9 };
+      default:
+        return { background: "var(--wv-line, #ddd5c3)", height: 1, width: "100%", opacity: 1 };
+    }
+  })();
   return (
     <div className="wv-card" style={accentCssVar(ctx)}>
       <div className="flex flex-wrap items-baseline gap-x-[0.55em] gap-y-[0.15em]">
@@ -84,7 +93,7 @@ export function EntryHeaderBlock({
         <span
           className={cx(
             "font-semibold tracking-[-0.01em]",
-            compact ? "text-[1.32em] leading-[1.2]" : "text-[1.5em] leading-[1.15]",
+            compact ? "text-[1.32em] leading-[1.2]" : minimal ? "text-[1.42em] leading-[1.18]" : "text-[1.5em] leading-[1.15]",
           )}
         >
           {word}
@@ -112,7 +121,7 @@ export function EntryHeaderBlock({
           </span>
         ) : null}
       </div>
-      <div className={cx(s.cardStyle === "notebook" ? "mt-[0.42em]" : "mt-[0.32em]")} style={ruleStyle} />
+      <div className={cx(notebook ? "mt-[0.42em]" : "mt-[0.32em]")} style={ruleStyle} />
     </div>
   );
 }
@@ -155,17 +164,39 @@ export function SectionBlock({
     ? cells.length > 0 && (cells[0].from > 0 || cells[0].part === "extras")
     : Boolean(slice && slice[0] > 0);
   const compact = s.cardStyle === "compact";
-  const labelColor = s.cardStyle === "minimal" ? "var(--wv-soft,#4b4b4b)" : "var(--wv-accent,#0068d6)";
+  const minimal = s.cardStyle === "minimal";
+  const notebook = s.cardStyle === "notebook";
+  const labelColor = minimal ? "var(--wv-soft,#4b4b4b)" : "var(--wv-accent,#0068d6)";
 
   return (
     <div className="wv-card" style={accentCssVar(ctx)}>
-      {s.showSectionLabels && !compact ? (
+      {s.showSectionLabels && !compact && !minimal ? (
+        notebook ? (
+          <div className="mb-[0.36em]">
+            <span
+              className="inline-flex items-center gap-[0.3em] rounded-[0.4em] px-[0.55em] pb-[0.1em] pt-[0.06em] text-[0.68em] font-semibold tracking-[0.04em]"
+              style={{ background: "color-mix(in srgb, var(--wv-accent,#0068d6) 12%, transparent)", color: labelColor }}
+            >
+              {section.label}
+              {isContinued ? <span style={{ opacity: 0.6 }}>续</span> : null}
+            </span>
+          </div>
+        ) : (
+          <div
+            className="mb-[0.28em] flex items-center gap-[0.35em] text-[0.7em] font-semibold tracking-[0.06em]"
+            style={{ color: labelColor }}
+          >
+            <span>{section.label}</span>
+            {isContinued ? <span style={{ opacity: 0.55 }}>（续）</span> : null}
+          </div>
+        )
+      ) : s.showSectionLabels && minimal ? (
         <div
-          className="mb-[0.28em] flex items-center gap-[0.35em] text-[0.7em] font-semibold tracking-[0.06em]"
-          style={{ color: labelColor }}
+          className="mb-[0.3em] text-[0.66em] font-medium uppercase tracking-[0.14em]"
+          style={{ color: labelColor, opacity: 0.8 }}
         >
-          <span>{section.label}</span>
-          {isContinued ? <span style={{ opacity: 0.55 }}>（续）</span> : null}
+          {section.label}
+          {isContinued ? <span style={{ opacity: 0.6 }}> · 续</span> : null}
         </div>
       ) : compact ? (
         <div className="mb-[0.16em] text-[0.64em] font-semibold tracking-[0.08em]" style={{ color: labelColor, opacity: 0.85 }}>

@@ -2,15 +2,18 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileJson, FileSpreadsheet, ListOrdered, Sparkles, Upload } from "lucide-react";
+import { FileJson, FileSpreadsheet, Upload } from "lucide-react";
 import { TopNav } from "@/components/app/TopNav";
+import { AiGeneratePanel } from "@/components/import/AiGeneratePanel";
 import { ImportDialog } from "@/components/import/ImportDialog";
+import { TextImportPanel } from "@/components/import/TextImportPanel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/misc";
 
 export default function ImportPage() {
   const router = useRouter();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
+  const goBook = (id: string) => router.push(`/book?id=${id}`);
   return (
     <div className="flex min-h-dvh flex-col">
       <TopNav />
@@ -22,56 +25,42 @@ export default function ImportPage() {
           </p>
         </div>
 
+        {/* 粘贴单词列表（最常用路径） */}
+        <TextImportPanel onImported={goBook} />
+
+        {/* 文件导入 */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Card>
+          <Card className="flex flex-col">
             <span className="grid size-9 place-items-center rounded-lg bg-blue-100 text-blue-900">
               <FileJson className="size-4" />
             </span>
             <div className="t-h-16 mt-3">WulonVocab JSON</div>
-            <p className="t-label-13 mt-1.5 text-gray-800">
-              标准格式：{"{ wordbook, schema, entries }"}。schema 可省略，导入时自动推断字段结构。
+            <p className="t-label-13 mt-1.5 flex-1 text-gray-800">
+              标准格式：{"{ wordbook, schema, entries }"}；schema 可省略，导入时自动推断字段结构。词条数组、NDJSON、「单词 → 内容」映射对象也认。
             </p>
+            <Button variant="secondary" size="sm" className="mt-3 self-start" onClick={() => setOpen(true)}>
+              <Upload className="size-3.5" /> 选择文件
+            </Button>
           </Card>
-          <Card>
+          <Card className="flex flex-col">
             <span className="grid size-9 place-items-center rounded-lg bg-green-800/10 text-green-900">
               <FileSpreadsheet className="size-4" />
             </span>
             <div className="t-h-16 mt-3">ECDICT / OALD / 通用 CSV</div>
-            <p className="t-label-13 mt-1.5 text-gray-800">
+            <p className="t-label-13 mt-1.5 flex-1 text-gray-800">
               自动识别 word / phonetic / translation / exchange / tag 等列，词形变化、考纲标签自动映射。
             </p>
-          </Card>
-          <Card>
-            <span className="grid size-9 place-items-center rounded-lg bg-amber-700/15 text-amber-900">
-              <ListOrdered className="size-4" />
-            </span>
-            <div className="t-h-16 mt-3">纯单词列表</div>
-            <p className="t-label-13 mt-1.5 text-gray-800">
-              数组、NDJSON、「单词 → 内容」映射都行；先入库，回头用「词典检索」批量补释义。
-            </p>
-          </Card>
-          <Card>
-            <span className="grid size-9 place-items-center rounded-lg bg-purple-700/10 text-purple-700">
-              <Sparkles className="size-4" />
-            </span>
-            <div className="t-h-16 mt-3">AI 生成词表</div>
-            <p className="t-label-13 mt-1.5 text-gray-800">
-              让 AI 按 WulonVocab Skill 规范输出 JSON，导入后直接进入导出流程。
-            </p>
-            <Button variant="tertiary" size="sm" className="mt-2" onClick={() => router.push("/skill")}>
-              查看 AI Skill
+            <Button variant="secondary" size="sm" className="mt-3 self-start" onClick={() => setOpen(true)}>
+              <Upload className="size-3.5" /> 选择文件
             </Button>
           </Card>
         </div>
 
-        <div className="flex justify-center pt-2">
-          <Button size="lg" onClick={() => setOpen(true)}>
-            <Upload className="size-4" /> 选择文件开始导入
-          </Button>
-        </div>
+        {/* 内置 AI 生成 */}
+        <AiGeneratePanel onImported={goBook} />
 
         <p className="t-label-12 text-center text-gray-700">
-          全程本地解析——文件不出这台电脑。
+          全程本地解析——文件不出这台电脑；词典匹配与 AI 生成仅在启用对应数据源时联网。
         </p>
       </main>
 

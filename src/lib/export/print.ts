@@ -1,4 +1,4 @@
-import { getFontEmbedCSS, toBlob, toJpeg } from "html-to-image";
+import { getFontEmbedCSS, toBlob, toCanvas } from "html-to-image";
 import { slugify } from "../utils";
 
 export interface PaperMm {
@@ -142,16 +142,24 @@ export async function exportRasterPdf(pages: HTMLElement[], paper: PaperMm, opti
   const pdf = new jsPDF({ orientation, unit: "mm", format: [paper.width, paper.height], compress: true });
 
   for (let i = 0; i < pages.length; i += 1) {
-    const dataUrl = await toJpeg(pages[i], {
+    // 走 canvas → JPEG 字节流直传，避免 base64 dataURL 的内存翻倍（大文档下会压垮标签页）
+    const canvas = await toCanvas(pages[i], {
       pixelRatio,
-      quality,
       backgroundColor,
       cacheBust: true,
       fontEmbedCSS,
     });
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("页面画布导出失败"))), "image/jpeg", quality);
+    });
+    const bytes = new Uint8Array(await blob.arrayBuffer());
     if (i > 0) pdf.addPage([paper.width, paper.height], orientation);
-    pdf.addImage(dataUrl, "JPEG", 0, 0, paper.width, paper.height, undefined, "FAST");
+    pdf.addImage(bytes, "JPEG", 0, 0, paper.width, paper.height, undefined, "FAST");
+    canvas.width = 0;
+    canvas.height = 0;
     onProgress?.(i + 1, pages.length);
+    // 让出事件循环：给浏览器回收上一页画布内存的机会（大词库导出更稳）
+    await new Promise((r) => setTimeout(r, 0));
   }
   return pdf.output("blob");
 }

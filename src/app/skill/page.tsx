@@ -173,7 +173,7 @@ export default function SkillPage() {
             <div className="t-label-13 flex items-center gap-1.5 font-medium">
               <Terminal className="size-3.5" /> 校验脚本用法
             </div>
-            <pre className="t-mono-13 mt-2 text-gray-900">
+            <pre className="t-mono-13 mt-2 overflow-x-auto text-gray-900 scroll-thin">
 {`node scripts/validate.mjs my-words.json
 ✔ 30 条词条 · 字段：phonetic(30) senses(30) family(21) …
 ⚠ 2 条词条缺少 senses`}

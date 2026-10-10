@@ -137,10 +137,10 @@ export const MARGIN_PRESETS: MarginPreset[] = [
   },
 ];
 
-export const TONES: Record<PaperTone, { id: PaperTone; name: string; bg: string; fg: string; hint: string }> = {
-  white: { id: "white", name: "纯白", bg: "#ffffff", fg: "#111111", hint: "标准打印纸" },
-  cream: { id: "cream", name: "米黄护眼", bg: "#fbf5e9", fg: "#2b2416", hint: "减缓视觉疲劳（需开背景图形打印）" },
-  gray: { id: "gray", name: "浅灰", bg: "#f6f6f5", fg: "#141414", hint: "低对比柔和版面" },
+export const TONES: Record<PaperTone, { id: PaperTone; name: string; bg: string; fg: string; line: string; soft: string; hint: string }> = {
+  white: { id: "white", name: "纯白", bg: "#ffffff", fg: "#111111", line: "#e6e6e6", soft: "#4b4b4b", hint: "标准打印纸" },
+  cream: { id: "cream", name: "米黄护眼", bg: "#fbf5e9", fg: "#2b2416", line: "#e9dfc8", soft: "#6b5e45", hint: "减缓视觉疲劳（需开背景图形打印）" },
+  gray: { id: "gray", name: "浅灰", bg: "#f6f6f5", fg: "#141414", line: "#e3e3e2", soft: "#4d4d4d", hint: "低对比柔和版面" },
 };
 
 export const ACCENTS: Record<AccentId, { id: AccentId; name: string; hex: string }> = {

@@ -175,8 +175,12 @@
   --color-purple-700: var(--ds-purple-700);
   --color-teal-700: var(--ds-teal-700);
 
-  --font-sans: var(--font-geist-sans), "PingFang SC", "Hiragino Sans GB",
-    "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC", sans-serif;
+  /* 字体栈单一真源：拉丁 Geist（随包）；中文无衬线 HarmonyOS Sans SC（随包分片，未就绪时回退
+     系统黑体链）；衬线模式统一走思源宋（Noto Serif SC 随包，OFL）→ 系统宋体兜底。 */
+  --font-sans: var(--font-geist-sans), "HarmonyOS Sans SC", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC", sans-serif;
+  --font-serif: "Noto Serif SC", "Source Han Serif SC", Georgia, "Times New Roman",
+    "思源宋体", "Songti SC", "STSong", "SimSun", serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo,
     "Cascadia Mono", "Noto Sans Mono CJK SC", monospace;
 
@@ -355,7 +359,7 @@
   box-sizing: border-box;
 }
 .wv-mono {
-  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Noto Sans Mono CJK SC", monospace;
 }
 .wv-chip {
   display: inline-flex;

@@ -2,7 +2,7 @@
 
 import type { Entry, Wordbook } from "@/lib/types";
 import { isValueEmpty, sortSections } from "@/lib/sections";
-import { EntryHeaderBlock, SectionBlock, type CardCtx } from "@/components/export/blocks";
+import { EntryHeaderBlock, fontStackFor, SectionBlock, type CardCtx } from "@/components/export/blocks";
 
 /**
  * 词条“成书样式”预览卡片：
@@ -21,6 +21,7 @@ export function EntryPreviewCard({ book, entry, className }: { book: Wordbook; e
       style={{
         fontSize: `${10.5 * settings.fontScale}pt`,
         lineHeight: settings.lineHeight,
+        fontFamily: fontStackFor(settings.fontFamily),
         color: "#1b1b1b",
       }}
     >

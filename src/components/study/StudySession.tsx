@@ -494,7 +494,7 @@ export function StudySession({ book }: { book: Wordbook }) {
   const choiceCorrect = question && chosen !== null ? chosen === question.correctIndex : null;
 
   return (
-    <div className="flex h-dvh flex-col bg-background-200">
+    <div className="flex h-dvh flex-col bg-background-200 touch-manipulation">
       {/* 顶栏 */}
       <header className="flex shrink-0 items-center gap-2 border-b border-gray-300 bg-background-100 px-3 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
         <IconButton label="退出学习" onClick={requestExit}>
@@ -526,7 +526,7 @@ export function StudySession({ book }: { book: Wordbook }) {
       </header>
 
       {/* 卡片区 */}
-      <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
+      <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto scroll-thin">
         <div className="flex min-h-full items-start justify-center px-3 py-5 sm:items-center sm:py-8">
           {current ? (
             effectiveMode === "choice" && question ? (
