@@ -4,15 +4,20 @@
  *
  * 高度模型（px）：
  * - 同列相邻块之间固定 gap；
- * - 可拆分块（senses / examples / list ...）记录 `split = { header, items[] }`，
+ * - 可拆分块（senses / examples / list ...）记录 `split = { header, units[] }`，
  *   内容超高时按「条目」拆分到下一列 / 下一页，续块重复小节标题并带「续」标记；
+ * - 义项块支持细粒度单元（cells）：核心释义与例句扩展可分段续排；
  * - `glueWithNext`（词条头部）保证头部与首个内容块不分离（孤行控制）。
  */
+
+import type { SenseCell } from "../sections";
 
 export interface MeasuredUnit {
   from: number;
   to: number;
   h: number;
+  /** 义项细粒度单元：本单元对应的 cell（核心/扩展） */
+  cells?: SenseCell[];
 }
 
 export interface MeasuredBlock {
@@ -34,6 +39,8 @@ export interface PlannedBlock {
   kind: "header" | "section";
   sectionId?: string;
   slice?: [number, number];
+  /** 义项细粒度切片（优先于 slice 渲染） */
+  cells?: SenseCell[];
   continued: boolean;
 }
 
@@ -69,7 +76,6 @@ export function paginate(blocks: MeasuredBlock[], options: PaginateOptions): Pag
   const defaultGap = options.gap ?? 0;
   const mode = options.mode ?? "align";
   const atomicMax = options.atomicMax ?? columnHeight * 0.35;
-  const minKeep = columnHeight * 0.3;
 
   const pages: PlannedPage[] = [{ index: 0, slots: Array.from({ length: columns }, () => []) }];
   const entryFirstPage: Record<string, number> = {};
@@ -96,13 +102,19 @@ export function paginate(blocks: MeasuredBlock[], options: PaginateOptions): Pag
     blockCount = 0;
   };
 
-  const place = (block: MeasuredBlock, slice: [number, number] | undefined, height: number) => {
+  const place = (
+    block: MeasuredBlock,
+    slice: [number, number] | undefined,
+    height: number,
+    cells?: SenseCell[],
+  ) => {
     const planned: PlannedBlock = {
       id: block.id,
       entryId: block.entryId,
       kind: block.kind,
       sectionId: block.sectionId,
       slice,
+      cells,
       continued: false,
     };
     if (entryFirstPage[block.entryId] === undefined) entryFirstPage[block.entryId] = pageIndex;
@@ -117,23 +129,14 @@ export function paginate(blocks: MeasuredBlock[], options: PaginateOptions): Pag
   };
 
   /**
-   * 词条起始「保底高度」：题头 + 起步内容。
-   * 先取题头 + 紧随其后的第一块（可拆块取其第一单元）；
-   * 若这仍过于单薄（< 30% 栏高），再向后累计，直到有实义体量或遇到可拆分块。
-   * 这样既不会让题头孤零零留在页尾，也不会把「本来放得下」的词条误推到新页。
+   * 词条总高：题头 + 该词条全部内容块（可拆分块用真实整块高度）。
+   * 题头模式据此判断「整词能否放进当前剩余空间」——放不下就把题头移到页/栏开头。
    */
-  const keepStartHeight = (i: number): number => {
-    const block = blocks[i];
-    let h = block.height;
-    const next = i + 1 < blocks.length && blocks[i + 1].entryId === block.entryId ? blocks[i + 1] : null;
-    if (next) h += gapFor(next) + firstUnitHeight(next);
-    if (h >= minKeep || !next) return h;
-    for (let j = i + 2; j < blocks.length; j += 1) {
-      const b = blocks[j];
-      if (b.entryId !== block.entryId) break;
-      const splittable = Boolean(b.split && b.split.units.length);
-      h += gapFor(b) + (splittable ? firstUnitHeight(b) : b.height);
-      if (splittable || h >= minKeep) break;
+  const entryTotalHeight = (i: number): number => {
+    const entryId = blocks[i].entryId;
+    let h = blocks[i].height;
+    for (let j = i + 1; j < blocks.length && blocks[j].entryId === entryId; j += 1) {
+      h += gapFor(blocks[j]) + blocks[j].height;
     }
     return h;
   };
@@ -141,11 +144,12 @@ export function paginate(blocks: MeasuredBlock[], options: PaginateOptions): Pag
   for (let i = 0; i < blocks.length; i += 1) {
     const block = blocks[i];
 
-    // 题头保护：对齐模式使用「起步保底高度」，连续模式仅保证题头后至少跟一块
+    // 题头模式：整词放不进当前剩余空间 → 题头移到下一列/页开头
+    // 连续模式：仅保证题头后至少跟一块（避免题头孤零零停在页脚）
     if (block.glueWithNext && blockCount > 0) {
       let needed: number;
       if (mode === "align") {
-        needed = keepStartHeight(i);
+        needed = entryTotalHeight(i);
       } else {
         const next = i + 1 < blocks.length ? blocks[i + 1] : null;
         needed = block.height + (next ? gapFor(next) + firstUnitHeight(next) : 0);
@@ -169,17 +173,23 @@ export function paginate(blocks: MeasuredBlock[], options: PaginateOptions): Pag
       continue;
     }
 
-    // 小字段整块保护：矮块不切分，避免「3 个标签被拆成 1+2 跨页」
-    if (block.split && block.split.units.length && block.height <= atomicMax) {
-      if (block.height > remaining(block)) {
+    // 可拆分块：优先「整块放下」——横向换行内容（标签/词形变化等）整块高度
+    // 远小于「单元累加高度」，必须以真实整块高度判断能否放下，否则会误判为放不下
+    const { header, units } = block.split;
+    if (block.height <= remaining(block)) {
+      place(block, undefined, block.height);
+      continue;
+    }
+    // 小字段整块保护：矮块即便放不下也不切分，整块移到下一列后重试放置
+    if (block.height <= atomicMax) {
+      if (block.height > remaining(block) && blockCount > 0) {
         advance();
       }
       place(block, undefined, block.height);
       continue;
     }
 
-    // 可拆分块：按单元（词性分组 / 条目）整体流转
-    const { header, units } = block.split;
+    // 按单元切分续排
     let unitIndex = 0;
     while (unitIndex < units.length) {
       const avail = remaining(block);
@@ -196,7 +206,7 @@ export function paginate(blocks: MeasuredBlock[], options: PaginateOptions): Pag
         if (blockCount === 0) {
           // 空列仍放不下（单元超过整列）→ 强行放置，渲染端裁剪
           const u = units[unitIndex];
-          place(block, [u.from, u.to], singleFits);
+          place(block, [u.from, u.to], singleFits, u.cells);
           overflowBlocks += 1;
           unitIndex += 1;
           continue;
@@ -208,7 +218,9 @@ export function paginate(blocks: MeasuredBlock[], options: PaginateOptions): Pag
       const isFull = unitIndex === 0 && end === units.length;
       const from = units[unitIndex].from;
       const to = units[end - 1].to;
-      place(block, isFull ? undefined : [from, to], usedH);
+      const pieceCells =
+        !isFull && units[unitIndex].cells ? units.slice(unitIndex, end).flatMap((u) => u.cells ?? []) : undefined;
+      place(block, isFull ? undefined : [from, to], usedH, pieceCells);
       unitIndex = end;
     }
   }

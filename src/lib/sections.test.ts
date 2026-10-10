@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildSenseUnits,
   dedupe,
   normalizeExamples,
   normalizeKeyValue,
@@ -10,6 +11,7 @@ import {
   normalizeTransforms,
   parsePosPrefix,
   sanitizeText,
+  sliceSenseCells,
   sliceValue,
   splitBilingual,
   splitEnumeration,
@@ -176,5 +178,35 @@ describe("sliceValue / valueLength", () => {
 describe("splitEnumeration", () => {
   it("少于两个标记时不拆分", () => {
     expect(splitEnumeration("1. 只有一个")).toEqual(["1. 只有一个"]);
+  });
+});
+
+describe("buildSenseUnits / sliceSenseCells（义项细粒度分页）", () => {
+  it("有扩展内容拆两段；被选项隐藏时不拆", () => {
+    const bare = normalizeSenses([{ pos: "v.", translation: "只有释义" }]);
+    expect(buildSenseUnits(bare, {})).toHaveLength(1);
+    const rich = normalizeSenses([{ pos: "v.", translation: "释义", examples: ["The baby was abandoned. 婴儿被遗弃了。"] }]);
+    expect(buildSenseUnits(rich, {})).toHaveLength(2);
+    expect(buildSenseUnits(rich, { showExamples: false })).toHaveLength(1);
+  });
+
+  it("core 段清空扩展内容，extras 段清空核心并标记 cont（不改原数据）", () => {
+    const [s] = normalizeSenses([
+      { pos: "v.", translation: "抛弃", examples: ["He abandoned it. 他抛弃了它。"], collocations: ["abandon hope"] },
+    ]);
+    const before = JSON.stringify(s);
+    const cells = [
+      { from: 0, to: 1, part: "core" as const },
+      { from: 0, to: 1, part: "extras" as const },
+    ];
+    const [core, extras] = sliceSenseCells([s], cells);
+    expect(core.translation).toBe("抛弃");
+    expect(core.examples).toHaveLength(0);
+    expect(core.collocations).toHaveLength(0);
+    expect(extras.cont).toBe(true);
+    expect(extras.translation).toBe("");
+    expect(extras.examples).toHaveLength(1);
+    expect(extras.collocations).toEqual(["abandon hope"]);
+    expect(JSON.stringify(s)).toBe(before); // 原数据未被修改
   });
 });

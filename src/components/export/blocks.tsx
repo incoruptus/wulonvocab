@@ -1,7 +1,7 @@
 "use client";
 
 import type { Entry, ExportSettings, SectionDef, Wordbook } from "@/lib/types";
-import { isValueEmpty, sliceValue } from "@/lib/sections";
+import { isValueEmpty, sliceSenseCells, sliceValue, type SenseCell } from "@/lib/sections";
 import { ValueView } from "@/components/value/ValueView";
 import { cx } from "@/lib/utils";
 
@@ -126,6 +126,7 @@ export function SectionBlock({
   section,
   ctx,
   slice,
+  cells,
   forceEmpty,
   headerOnly,
 }: {
@@ -133,6 +134,8 @@ export function SectionBlock({
   section: SectionDef;
   ctx: CardCtx;
   slice?: [number, number];
+  /** 义项细粒度切片（优先于 slice） */
+  cells?: SenseCell[];
   forceEmpty?: boolean;
   /** 测量模式：仅渲染标签，用于计算可拆分块的 header 高度 */
   headerOnly?: boolean;
@@ -142,7 +145,15 @@ export function SectionBlock({
   const empty = forceEmpty || isValueEmpty(section.type, raw);
   if (empty && s.hideEmpty && !headerOnly) return null;
 
-  const value = slice ? sliceValue(section.type, raw, slice[0], slice[1]) : raw;
+  const value =
+    cells && section.type === "senses"
+      ? sliceSenseCells(raw, cells)
+      : slice
+        ? sliceValue(section.type, raw, slice[0], slice[1])
+        : raw;
+  const isContinued = cells
+    ? cells.length > 0 && (cells[0].from > 0 || cells[0].part === "extras")
+    : Boolean(slice && slice[0] > 0);
   const compact = s.cardStyle === "compact";
   const labelColor = s.cardStyle === "minimal" ? "var(--wv-soft,#4b4b4b)" : "var(--wv-accent,#0068d6)";
 
@@ -154,7 +165,7 @@ export function SectionBlock({
           style={{ color: labelColor }}
         >
           <span>{section.label}</span>
-          {slice && slice[0] > 0 ? <span style={{ opacity: 0.55 }}>（续）</span> : null}
+          {isContinued ? <span style={{ opacity: 0.55 }}>（续）</span> : null}
         </div>
       ) : compact ? (
         <div className="mb-[0.16em] text-[0.64em] font-semibold tracking-[0.08em]" style={{ color: labelColor, opacity: 0.85 }}>

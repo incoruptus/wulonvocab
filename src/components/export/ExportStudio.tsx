@@ -55,8 +55,11 @@ export function ExportStudio({ book }: { book: Wordbook }) {
   // 小屏：首次进入自动适配页面宽度（最大化可视面积）
   useEffect(() => {
     if (typeof window === "undefined" || window.innerWidth >= 768) return;
-    const fit = Math.min(0.6, Math.max(0.3, (window.innerWidth - 48) / doc.geometry.pageW));
-    setZoom(Math.round(fit * 100) / 100);
+    const raf = requestAnimationFrame(() => {
+      const fit = Math.min(0.6, Math.max(0.3, (window.innerWidth - 48) / doc.geometry.pageW));
+      setZoom(Math.round(fit * 100) / 100);
+    });
+    return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -110,7 +110,7 @@ export function PrintDocument({ book, doc }: PrintDocumentProps) {
                               continued={pb.continued && s.continuationMark}
                             />
                           ) : (
-                            <SectionBlock entry={spec.entry} section={spec.section!} ctx={ctx} slice={pb.slice} />
+                            <SectionBlock entry={spec.entry} section={spec.section!} ctx={ctx} slice={pb.slice} cells={pb.cells} />
                           )}
                         </div>
                       );

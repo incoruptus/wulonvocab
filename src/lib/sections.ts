@@ -1237,3 +1237,56 @@ export function suggestKeyFromLabel(label: string, existing: Iterable<string>): 
 }
 
 export { uniqueKey };
+
+/* ============================================================
+   义项细粒度分页：核心释义 / 例句扩展 两段切片
+   ============================================================ */
+
+export interface SenseCell {
+  from: number;
+  to: number;
+  part: "full" | "core" | "extras";
+}
+
+/** 该义项是否存在「扩展内容」（例句/搭配/近反义词/备注），且未被选项隐藏 */
+export function senseHasExtras(sense: SenseItem, options: SectionOptions): boolean {
+  return (
+    (options.showExamples !== false && sense.examples.length > 0) ||
+    (options.showCollocations !== false && sense.collocations.length > 0) ||
+    (options.showSynonyms !== false && sense.synonyms.length > 0) ||
+    (options.showAntonyms === true && sense.antonyms.length > 0) ||
+    (options.showNotes !== false && Boolean(sense.notes))
+  );
+}
+
+/** 把义项数组切成单元（每个单元一个 cell）：核心段 + 可选扩展段 */
+export function buildSenseUnits(senses: SenseItem[], options: SectionOptions): { from: number; to: number; cells: SenseCell[] }[] {
+  const units: { from: number; to: number; cells: SenseCell[] }[] = [];
+  senses.forEach((s, i) => {
+    units.push({ from: i, to: i + 1, cells: [{ from: i, to: i + 1, part: "core" }] });
+    if (senseHasExtras(s, options)) {
+      units.push({ from: i, to: i + 1, cells: [{ from: i, to: i + 1, part: "extras" }] });
+    }
+  });
+  return units;
+}
+
+/** 按 cell 列表生成义项切片克隆（不修改原数据） */
+export function sliceSenseCells(value: unknown, cells: SenseCell[]): SenseItem[] {
+  const senses = Array.isArray(value) ? (value as SenseItem[]) : [];
+  const out: SenseItem[] = [];
+  for (const c of cells) {
+    for (let i = c.from; i < Math.min(c.to, senses.length); i += 1) {
+      const s = senses[i];
+      if (!s) continue;
+      if (c.part === "full") {
+        out.push(s);
+      } else if (c.part === "core") {
+        out.push({ ...s, examples: [], collocations: [], synonyms: [], antonyms: [], notes: "" });
+      } else {
+        out.push({ ...s, cont: true, translation: "", definition: "", usage: "", patterns: [] });
+      }
+    }
+  }
+  return out;
+}

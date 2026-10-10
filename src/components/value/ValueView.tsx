@@ -192,9 +192,9 @@ export function SensesView({ section, value }: { section: SectionDef; value: unk
   const o = section.options;
   if (!senses.length) return null;
 
-  const groups: { pos: string; items: { sense: SenseItem; n: number }[] }[] = [];
+  const groups: { pos: string; items: { sense: SenseItem; n: number | null }[] }[] = [];
   if (o.groupByPos !== false) {
-    const map = new Map<string, { sense: SenseItem; n: number }[]>();
+    const map = new Map<string, { sense: SenseItem; n: number | null }[]>();
     const order: string[] = [];
     for (const sense of senses) {
       const pos = sense.pos || "";
@@ -202,19 +202,27 @@ export function SensesView({ section, value }: { section: SectionDef; value: unk
         map.set(pos, []);
         order.push(pos);
       }
-      map.get(pos)!.push({ sense, n: 0 });
+      map.get(pos)!.push({ sense, n: null });
     }
     for (const pos of order) {
       const items = map.get(pos)!;
-      items.forEach((it, i) => {
-        it.n = i + 1;
-      });
+      let counter = 0;
+      for (const it of items) {
+        if (it.sense.cont) continue; // 续块（例句扩展）不占编号
+        counter += 1;
+        it.n = counter;
+      }
       groups.push({ pos, items });
     }
   } else {
+    let counter = 0;
     groups.push({
       pos: "",
-      items: senses.map((sense, i) => ({ sense, n: i + 1 })),
+      items: senses.map((sense) => {
+        if (sense.cont) return { sense, n: null as number | null };
+        counter += 1;
+        return { sense, n: counter as number | null };
+      }),
     });
   }
 
@@ -224,8 +232,8 @@ export function SensesView({ section, value }: { section: SectionDef; value: unk
         <div key={gi} className="space-y-[0.45em]">
           {group.pos ? <PosBadge pos={group.pos} style={o.posStyle} /> : null}
           <div className="space-y-[0.55em]">
-            {group.items.map(({ sense, n }) => (
-              <SenseItemView key={sense.id ?? n} sense={sense} n={n} section={section} />
+            {group.items.map(({ sense, n }, idx) => (
+              <SenseItemView key={`${sense.id ?? "s"}-${idx}`} sense={sense} n={n} section={section} />
             ))}
           </div>
         </div>
@@ -254,12 +262,18 @@ function PosBadge({ pos, style }: { pos: string; style?: "badge" | "plain" | "in
   );
 }
 
-function SenseItemView({ sense, n, section }: { sense: SenseItem; n: number; section: SectionDef }) {
+function SenseItemView({ sense, n, section }: { sense: SenseItem; n: number | null; section: SectionDef }) {
   const o = section.options;
   const inlinePos = o.posStyle === "inline" && sense.pos;
   return (
     <div className="flex gap-[0.5em]">
-      <span className="wv-sense-num pt-[0.12em]">{n}.</span>
+      {n != null ? (
+        <span className="wv-sense-num pt-[0.12em]">{n}.</span>
+      ) : (
+        <span className="wv-sense-num w-[0.9em] shrink-0 pt-[0.12em] opacity-0" aria-hidden>
+          ·
+        </span>
+      )}
       <div className="min-w-0 flex-1 space-y-[0.3em]">
         {o.showTranslation !== false && sense.translation ? (
           <div className="text-[0.98em] font-medium">

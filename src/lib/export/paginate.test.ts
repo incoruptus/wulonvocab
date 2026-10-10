@@ -77,9 +77,9 @@ describe("paginate", () => {
     expect(result.pages[0].slots[0]).toHaveLength(1);
   });
 
-  it("词条起始保护：题头+首段内容放不下时整段移到新页（不再出现孤头页）", () => {
-    // 第 1 页已有 650 高内容；e2 起始段 60+8+40+8+300=416 > 剩余 350
-    // → e2 的题头应移动到第 2 页，而不是留在第 1 页底部、内容被推到下一页
+  it("题头模式：整词放不下时题头落到新页开头（旧版孤头页回归测试）", () => {
+    // 第 1 页已有 650 高内容；e2 整词 60+8+40+8+300=416 > 剩余 350
+    // → e2 的题头移动到第 2 页开头，而不是留在第 1 页底部、内容被推到下一页
     const blocks: MeasuredBlock[] = [
       block("a", "e1", 650),
       { id: "h2", entryId: "e2", kind: "header", height: 60, glueWithNext: true },
@@ -100,7 +100,7 @@ describe("paginate", () => {
     expect(pageOf("s2")).toBe(1); // 题头与首个内容块同页
   });
 
-  it("词条起始保护：剩余空间足够时不移动", () => {
+  it("词条起始保护：整词放得下时不移动", () => {
     const blocks: MeasuredBlock[] = [
       block("a", "e1", 200),
       { id: "h2", entryId: "e2", kind: "header", height: 60, glueWithNext: true },
@@ -112,20 +112,22 @@ describe("paginate", () => {
     expect(result.pages[0].slots[0].map((b) => b.id)).toEqual(["a", "h2", "p2", "s2"]);
   });
 
-  it("题头保底不再误推：起步段放得下时不移动（此前会因多算后续字段而误推）", () => {
-    // remaining = 450；题头+音标+首单元 = 432 放得下 → 不应移动
+  it("题头模式：整词总高放得下时不移动；放不下（哪怕只是首段能放）则整体移到新页开头", () => {
     const split = { header: 16, units: [{ from: 0, to: 1, h: 300 }] };
     const familySplit = { header: 16, units: [{ from: 0, to: 1, h: 40 }] };
-    const blocks: MeasuredBlock[] = [
-      block("a", "e1", 550),
+    const build = (aHeight: number): MeasuredBlock[] => [
+      block("a", "e1", aHeight),
       { id: "h2", entryId: "e2", kind: "header", height: 60, glueWithNext: true },
       block("p2", "e2", 40, { gapBefore: 8 }),
       block("s2", "e2", 432, { gapBefore: 8, split }),
       block("f2", "e2", 72, { gapBefore: 8, split: familySplit }),
     ];
-    const result = paginate(blocks, { columns: 1, columnHeight: 1000 });
-    expect(result.pages[0].slots[0].map((b) => b.id)).toEqual(["a", "h2", "p2", "s2"]);
-    expect(result.entryFirstPage["e2"]).toBe(0);
+    // e2 总高 = 60+8+40+8+432+8+72 = 628
+    const fitsAll = paginate(build(350), { columns: 1, columnHeight: 1000 }); // 剩余 650 ≥ 628 → 不移动
+    expect(fitsAll.entryFirstPage["e2"]).toBe(0);
+    const notFit = paginate(build(550), { columns: 1, columnHeight: 1000 }); // 剩余 450 < 628 → 移到第 2 页开头
+    expect(notFit.entryFirstPage["e2"]).toBe(1);
+    expect(notFit.pages[1].slots[0][0].id).toBe("h2");
   });
 
   it("连续模式：页面优先填满，题头允许落在页中", () => {
@@ -146,6 +148,26 @@ describe("paginate", () => {
     expect(continuous.entryFirstPage["e2"]).toBe(0);
   });
 
+  it("整块优先：横向换行内容（标签）以真实整块高度判定，不被单元累加误导", () => {
+    // 整块真实高 40（3 个标签同一行），单元累加模型为 121 —— 必须以 40 判定
+    const tags = {
+      header: 16,
+      units: [
+        { from: 0, to: 1, h: 35 },
+        { from: 1, to: 2, h: 35 },
+        { from: 2, to: 3, h: 35 },
+      ],
+    };
+    const blocks: MeasuredBlock[] = [
+      block("a", "e1", 600),
+      { id: "t", entryId: "e1", kind: "section", height: 40, split: tags, gapBefore: 8 },
+    ];
+    const result = paginate(blocks, { columns: 1, columnHeight: 1000 });
+    expect(result.pages).toHaveLength(1);
+    expect(result.pages[0].slots[0].map((b) => b.id)).toEqual(["a", "t"]);
+    expect(result.pages[0].slots[0][1].slice).toBeUndefined();
+  });
+
   it("小字段整块保护：矮块绝不切分（修复 3 个标签被拆成 1+2）", () => {
     const tags = {
       header: 16,
@@ -164,6 +186,25 @@ describe("paginate", () => {
     expect(placed?.slice).toBeUndefined(); // 整块放置，未切分
     expect(result.pages[0].slots[0].map((b) => b.id)).toEqual(["a"]);
     expect(result.pages[1].slots[0].map((b) => b.id)).toEqual(["t"]);
+  });
+
+  it("义项 cell 切片随单元传递到页面计划", () => {
+    const cellsA = [{ from: 0, to: 1, part: "core" as const }];
+    const cellsB = [{ from: 0, to: 1, part: "extras" as const }];
+    const split = {
+      header: 16,
+      units: [
+        { from: 0, to: 1, h: 120, cells: cellsA },
+        { from: 0, to: 1, h: 180, cells: cellsB },
+      ],
+    };
+    const blocks: MeasuredBlock[] = [
+      { id: "h", entryId: "e1", kind: "header", height: 40, glueWithNext: true },
+      { id: "s", entryId: "e1", kind: "section", height: 316, split, gapBefore: 8 },
+    ];
+    const result = paginate(blocks, { columns: 1, columnHeight: 200 });
+    expect(result.pages[0].slots[0][1].cells).toEqual(cellsA);
+    expect(result.pages[1].slots[0][0].cells).toEqual(cellsB);
   });
 
   it("去掉尾部空页", () => {

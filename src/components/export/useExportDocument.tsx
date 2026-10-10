@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Entry, ExportSettings, SectionDef, SectionType, Wordbook } from "@/lib/types";
+import type { Entry, ExportSettings, SectionDef, SectionType, SenseItem, Wordbook } from "@/lib/types";
 import { computeGeometry, getPaperBox, mmToPx } from "@/lib/paper";
-import { isValueEmpty, sortSections, valueLength } from "@/lib/sections";
+import { buildSenseUnits, isValueEmpty, sortSections, valueLength, type SenseCell } from "@/lib/sections";
 import { paginate, type MeasuredBlock, type PaginationResult } from "@/lib/export/paginate";
 import { EntryHeaderBlock, SectionBlock, type CardCtx } from "@/components/export/blocks";
 
@@ -19,6 +19,8 @@ export interface BlockSpec {
   gapBefore: number;
   splittable: boolean;
   unitRanges: [number, number][];
+  /** 义项细粒度单元（每个单元一个 cell） */
+  unitCells?: SenseCell[][];
 }
 
 export interface ExportGeometry {
@@ -143,8 +145,20 @@ export function useExportDocument(book: Wordbook, settings: ExportSettings): Exp
         const value = entry.values[section.key];
         const empty = isValueEmpty(section.type, value);
         if (empty && settings.hideEmpty) continue;
-        const splittable =
-          !empty && SPLITTABLE_TYPES.includes(section.type) && valueLength(section.type, value) > 1;
+        let unitRanges: [number, number][] = [];
+        let unitCells: SenseCell[][] | undefined;
+        if (!empty && SPLITTABLE_TYPES.includes(section.type)) {
+          if (section.type === "senses" && Array.isArray(value)) {
+            // 义项细粒度：核心释义 / 例句扩展 两段（单义项也能拆）
+            const units = buildSenseUnits(value as SenseItem[], section.options);
+            if (units.length > 1) {
+              unitRanges = units.map((u) => [u.from, u.to] as [number, number]);
+              unitCells = units.map((u) => u.cells);
+            }
+          } else if (valueLength(section.type, value) > 1) {
+            unitRanges = unitRangesFor(section.type, value, section.options.groupByPos !== false);
+          }
+        }
         out.push({
           id: `s:${entry.id}:${section.id}`,
           entryId: entry.id,
@@ -153,10 +167,9 @@ export function useExportDocument(book: Wordbook, settings: ExportSettings): Exp
           kind: "section",
           section,
           gapBefore: intraGapPx,
-          splittable,
-          unitRanges: splittable
-            ? unitRangesFor(section.type, value, section.options.groupByPos !== false)
-            : [],
+          splittable: unitRanges.length > 0,
+          unitRanges,
+          unitCells,
         });
       }
     });
@@ -235,21 +248,22 @@ export function useExportDocument(book: Wordbook, settings: ExportSettings): Exp
           glueWithNext: spec.kind === "header",
         });
       } else {
+        const wholeH = heights.get(spec.id);
         const headerH = heights.get(`${spec.id}#h`);
-        if (headerH === undefined) return null;
-        const units: { from: number; to: number; h: number }[] = [];
+        if (wholeH === undefined || headerH === undefined) return null;
+        const units: { from: number; to: number; h: number; cells?: SenseCell[] }[] = [];
         for (let i = 0; i < spec.unitRanges.length; i += 1) {
           const uh = heights.get(`${spec.id}#u${i}`);
           if (uh === undefined) return null;
-          units.push({ from: spec.unitRanges[i][0], to: spec.unitRanges[i][1], h: uh - headerH });
+          units.push({ from: spec.unitRanges[i][0], to: spec.unitRanges[i][1], h: uh - headerH, cells: spec.unitCells?.[i] });
         }
-        const total = headerH + units.reduce((acc, u) => acc + u.h, 0);
         measured.push({
           id: spec.id,
           entryId: spec.entryId,
           kind: spec.kind,
           sectionId: spec.section?.id,
-          height: total,
+          // 整块渲染的真实高度（横向换行内容 ≠ 单元高度之和；分页以它为「能否整块放下」依据）
+          height: wholeH,
           split: { header: headerH, units },
           gapBefore: spec.gapBefore,
         });
@@ -318,12 +332,16 @@ export function MeasureLayer({ doc }: { doc: ExportDocument }) {
           }
           return (
             <div key={spec.id}>
+              {/* 整块（真实高度：横向换行内容必须按整块测量） */}
+              <div ref={register(spec.id)} style={{ marginTop: spec.gapBefore }}>
+                <SectionBlock entry={spec.entry} section={section} ctx={ctx} />
+              </div>
               <div ref={register(`${spec.id}#h`)} style={{ marginTop: spec.gapBefore }}>
                 <SectionBlock entry={spec.entry} section={section} ctx={ctx} headerOnly />
               </div>
               {spec.unitRanges.map((range, i) => (
                 <div key={i} ref={register(`${spec.id}#u${i}`)}>
-                  <SectionBlock entry={spec.entry} section={section} ctx={ctx} slice={range} />
+                  <SectionBlock entry={spec.entry} section={section} ctx={ctx} slice={range} cells={spec.unitCells?.[i]} />
                 </div>
               ))}
             </div>
