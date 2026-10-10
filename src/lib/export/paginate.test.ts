@@ -77,6 +77,95 @@ describe("paginate", () => {
     expect(result.pages[0].slots[0]).toHaveLength(1);
   });
 
+  it("词条起始保护：题头+首段内容放不下时整段移到新页（不再出现孤头页）", () => {
+    // 第 1 页已有 650 高内容；e2 起始段 60+8+40+8+300=416 > 剩余 350
+    // → e2 的题头应移动到第 2 页，而不是留在第 1 页底部、内容被推到下一页
+    const blocks: MeasuredBlock[] = [
+      block("a", "e1", 650),
+      { id: "h2", entryId: "e2", kind: "header", height: 60, glueWithNext: true },
+      block("p2", "e2", 40, { gapBefore: 8 }),
+      block("s2", "e2", 300, { gapBefore: 8 }),
+    ];
+    const result = paginate(blocks, { columns: 1, columnHeight: 1000 });
+    const pageOf = (id: string) => {
+      for (const page of result.pages) {
+        for (const slotBlocks of page.slots) {
+          if (slotBlocks.some((b) => b.id === id)) return page.index;
+        }
+      }
+      return -1;
+    };
+    expect(pageOf("a")).toBe(0);
+    expect(pageOf("h2")).toBe(1); // 题头不再孤立在第 1 页
+    expect(pageOf("s2")).toBe(1); // 题头与首个内容块同页
+  });
+
+  it("词条起始保护：剩余空间足够时不移动", () => {
+    const blocks: MeasuredBlock[] = [
+      block("a", "e1", 200),
+      { id: "h2", entryId: "e2", kind: "header", height: 60, glueWithNext: true },
+      block("p2", "e2", 40, { gapBefore: 8 }),
+      block("s2", "e2", 300, { gapBefore: 8 }),
+    ];
+    const result = paginate(blocks, { columns: 1, columnHeight: 1000 });
+    expect(result.pages).toHaveLength(1);
+    expect(result.pages[0].slots[0].map((b) => b.id)).toEqual(["a", "h2", "p2", "s2"]);
+  });
+
+  it("题头保底不再误推：起步段放得下时不移动（此前会因多算后续字段而误推）", () => {
+    // remaining = 450；题头+音标+首单元 = 432 放得下 → 不应移动
+    const split = { header: 16, units: [{ from: 0, to: 1, h: 300 }] };
+    const familySplit = { header: 16, units: [{ from: 0, to: 1, h: 40 }] };
+    const blocks: MeasuredBlock[] = [
+      block("a", "e1", 550),
+      { id: "h2", entryId: "e2", kind: "header", height: 60, glueWithNext: true },
+      block("p2", "e2", 40, { gapBefore: 8 }),
+      block("s2", "e2", 432, { gapBefore: 8, split }),
+      block("f2", "e2", 72, { gapBefore: 8, split: familySplit }),
+    ];
+    const result = paginate(blocks, { columns: 1, columnHeight: 1000 });
+    expect(result.pages[0].slots[0].map((b) => b.id)).toEqual(["a", "h2", "p2", "s2"]);
+    expect(result.entryFirstPage["e2"]).toBe(0);
+  });
+
+  it("连续模式：页面优先填满，题头允许落在页中", () => {
+    const split = { header: 16, units: [{ from: 0, to: 1, h: 300 }] };
+    const blocks: MeasuredBlock[] = [
+      block("a", "e1", 850),
+      { id: "h2", entryId: "e2", kind: "header", height: 60, glueWithNext: true },
+      block("p2", "e2", 40, { gapBefore: 8 }),
+      block("s2", "e2", 316, { gapBefore: 8, split }),
+    ];
+    const aligned = paginate(blocks, { columns: 1, columnHeight: 1000, mode: "align" });
+    const continuous = paginate(blocks, { columns: 1, columnHeight: 1000, mode: "continuous" });
+    // 对齐模式：整段移到第 2 页
+    expect(aligned.pages[0].slots[0].map((b) => b.id)).toEqual(["a"]);
+    expect(aligned.entryFirstPage["e2"]).toBe(1);
+    // 连续模式：题头+音标留在第 1 页（占满），内容块顺势到第 2 页
+    expect(continuous.pages[0].slots[0].map((b) => b.id)).toEqual(["a", "h2", "p2"]);
+    expect(continuous.entryFirstPage["e2"]).toBe(0);
+  });
+
+  it("小字段整块保护：矮块绝不切分（修复 3 个标签被拆成 1+2）", () => {
+    const tags = {
+      header: 16,
+      units: [
+        { from: 0, to: 1, h: 35 },
+        { from: 1, to: 2, h: 35 },
+        { from: 2, to: 3, h: 35 },
+      ],
+    };
+    const blocks: MeasuredBlock[] = [
+      block("a", "e1", 900),
+      block("t", "e1", 121, { gapBefore: 8, split: tags }),
+    ];
+    const result = paginate(blocks, { columns: 1, columnHeight: 1000 });
+    const placed = result.pages.flatMap((p) => p.slots).flat().find((b) => b.id === "t");
+    expect(placed?.slice).toBeUndefined(); // 整块放置，未切分
+    expect(result.pages[0].slots[0].map((b) => b.id)).toEqual(["a"]);
+    expect(result.pages[1].slots[0].map((b) => b.id)).toEqual(["t"]);
+  });
+
   it("去掉尾部空页", () => {
     const blocks = [block("a", "e1", 100)];
     const result = paginate(blocks, { columns: 3, columnHeight: 1000 });

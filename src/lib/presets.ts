@@ -24,6 +24,7 @@ export function defaultExportSettings(name = ""): ExportSettings {
     columns: 1,
     columnGap: 8,
     layout: "flow",
+    paginationMode: "align",
     grid: { columns: 2, rows: 4, showBorder: true, flashcard: false },
     cardStyle: "classic",
     fontFamily: "sans",

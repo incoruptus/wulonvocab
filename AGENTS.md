@@ -49,6 +49,8 @@
 - **禁止**用 `className="size-6/size-7"` 之类覆盖 IconButton 尺寸——统一走 `size` 变体；
 - `SegmentedControl`：表单内一律 `grow`（等分撑满整行），页头 Tab 场景保持内容宽度；
 - 主题 / 系统相关渲染必须读 `useResolvedTheme()`（来自 Providers），**禁止在渲染期访问 `document`**（hydration 不匹配）；
+- 移动端复杂设置采用**底部 Tab 工具抽屉**（导出工作室为 4 组：版面 / 卡片 / 外观 / 细节；非模态、预览常驻、
+  `role="tablist"/"tab"`、safe-area 内边距），不要用「把侧栏堆在预览上方」的排法；
 - 文案风格：具体、有动词、给数字（「3 个词、10 个字段」优于「示例数据」），避免空泛的「强大 / 便捷」。
 
 ## 部署约束（GitHub Pages 静态导出）

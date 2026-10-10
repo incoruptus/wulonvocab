@@ -255,8 +255,12 @@ export function useExportDocument(book: Wordbook, settings: ExportSettings): Exp
         });
       }
     }
-    return paginate(measured, { columns: settings.columns, columnHeight: geometry.contentH });
-  }, [specs, heights, settings.columns, settings.layout, geometry.contentH]);
+    return paginate(measured, {
+      columns: settings.columns,
+      columnHeight: geometry.contentH,
+      mode: settings.paginationMode ?? "align",
+    });
+  }, [specs, heights, settings.columns, settings.layout, settings.paginationMode, geometry.contentH]);
 
   const ready = settings.layout === "grid" ? true : plan !== null;
 

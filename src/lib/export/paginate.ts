@@ -53,12 +53,23 @@ export interface PaginateOptions {
   columnHeight: number;
   /** 同列块间距 px */
   gap?: number;
+  /**
+   * 分页模式：
+   * - align：题头与页首对齐（词条起始段放不下时整段移到新页/新栏开头）
+   * - continuous：连续填充（尽量占满每页，仅在整块装不下时按单元续排）
+   */
+  mode?: "align" | "continuous";
+  /** 小字段整块保护：高度 ≤ 该值的可拆分块不切分，整块移动（默认 35% 栏高） */
+  atomicMax?: number;
 }
 
 export function paginate(blocks: MeasuredBlock[], options: PaginateOptions): PaginationResult {
   const columns = Math.max(1, options.columns);
   const columnHeight = Math.max(1, options.columnHeight);
   const defaultGap = options.gap ?? 0;
+  const mode = options.mode ?? "align";
+  const atomicMax = options.atomicMax ?? columnHeight * 0.35;
+  const minKeep = columnHeight * 0.3;
 
   const pages: PlannedPage[] = [{ index: 0, slots: Array.from({ length: columns }, () => []) }];
   const entryFirstPage: Record<string, number> = {};
@@ -105,14 +116,41 @@ export function paginate(blocks: MeasuredBlock[], options: PaginateOptions): Pag
     return b.height;
   };
 
+  /**
+   * 词条起始「保底高度」：题头 + 起步内容。
+   * 先取题头 + 紧随其后的第一块（可拆块取其第一单元）；
+   * 若这仍过于单薄（< 30% 栏高），再向后累计，直到有实义体量或遇到可拆分块。
+   * 这样既不会让题头孤零零留在页尾，也不会把「本来放得下」的词条误推到新页。
+   */
+  const keepStartHeight = (i: number): number => {
+    const block = blocks[i];
+    let h = block.height;
+    const next = i + 1 < blocks.length && blocks[i + 1].entryId === block.entryId ? blocks[i + 1] : null;
+    if (next) h += gapFor(next) + firstUnitHeight(next);
+    if (h >= minKeep || !next) return h;
+    for (let j = i + 2; j < blocks.length; j += 1) {
+      const b = blocks[j];
+      if (b.entryId !== block.entryId) break;
+      const splittable = Boolean(b.split && b.split.units.length);
+      h += gapFor(b) + (splittable ? firstUnitHeight(b) : b.height);
+      if (splittable || h >= minKeep) break;
+    }
+    return h;
+  };
+
   for (let i = 0; i < blocks.length; i += 1) {
     const block = blocks[i];
 
-    // 孤行控制：词条头部必须与其后第一块同列
-    if (block.glueWithNext && i + 1 < blocks.length) {
-      const next = blocks[i + 1];
-      const needed = block.height + gapFor(next) + firstUnitHeight(next);
-      if (needed <= columnHeight && needed > remaining(block)) {
+    // 题头保护：对齐模式使用「起步保底高度」，连续模式仅保证题头后至少跟一块
+    if (block.glueWithNext && blockCount > 0) {
+      let needed: number;
+      if (mode === "align") {
+        needed = keepStartHeight(i);
+      } else {
+        const next = i + 1 < blocks.length ? blocks[i + 1] : null;
+        needed = block.height + (next ? gapFor(next) + firstUnitHeight(next) : 0);
+      }
+      if (needed > remaining(block)) {
         advance();
       }
     }
@@ -124,6 +162,15 @@ export function paginate(blocks: MeasuredBlock[], options: PaginateOptions): Pag
         overflowBlocks += 1;
         continue;
       }
+      if (block.height > remaining(block)) {
+        advance();
+      }
+      place(block, undefined, block.height);
+      continue;
+    }
+
+    // 小字段整块保护：矮块不切分，避免「3 个标签被拆成 1+2 跨页」
+    if (block.split && block.split.units.length && block.height <= atomicMax) {
       if (block.height > remaining(block)) {
         advance();
       }

@@ -313,6 +313,8 @@ export interface ExportSettings {
   columns: 1 | 2 | 3;
   columnGap: number;
   layout: "flow" | "grid";
+  /** 分页模式：align=题头与页首对齐；continuous=连续填充（尽量占满每页） */
+  paginationMode: "align" | "continuous";
   grid: GridSettings;
   cardStyle: CardStyle;
   fontFamily: "sans" | "serif";
