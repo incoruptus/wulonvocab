@@ -70,7 +70,7 @@ export default function SkillPage() {
   return (
     <div className="flex min-h-dvh flex-col">
       <TopNav />
-      <main className="mx-auto w-full max-w-4xl flex-1 space-y-6 px-4 py-6 sm:space-y-8 sm:px-6 sm:py-8">
+      <main className="mx-auto w-full max-w-4xl flex-1 space-y-6 px-4 pb-24 pt-6 sm:space-y-8 sm:px-6 sm:py-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <Badge variant="blue" size="sm">

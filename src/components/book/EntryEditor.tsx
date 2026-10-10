@@ -1,17 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, ChevronLeft, EyeOff, Plus, Search, Sparkles, Star, Trash2 } from "lucide-react";
+import { Copy, ChevronLeft, Eye, EyeOff, MoreHorizontal, PenLine, Plus, Search, Sparkles, Star, Trash2 } from "lucide-react";
 import type { Entry, SectionDef, SectionType, Wordbook } from "@/lib/types";
 import { extraKeys, isValueEmpty, SECTION_TYPE_LIST, SECTIONS, sortSections } from "@/lib/sections";
 import { useAppStore } from "@/lib/store";
 import { Button, IconButton } from "@/components/ui/button";
 import { Badge, Chip, EmptyState, SegmentedControl } from "@/components/ui/misc";
-import { Dialog, DialogBody, DialogFooter, DialogHeader, Tip } from "@/components/ui/overlay";
+import { Dialog, DialogBody, DialogFooter, DialogHeader, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Tip } from "@/components/ui/overlay";
 import { SectionIcon } from "@/components/icon";
 import { ValueEditor } from "@/components/value/ValueEditor";
 import { TagsEditor } from "@/components/value/ValueEditor";
 import { PosDatalist } from "@/components/value/SensesEditor";
+import { EntryPreviewCard } from "@/components/book/EntryPreview";
 import { cx, formatDateTime } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -36,6 +37,8 @@ export function EntryEditor({
   const promoteField = useAppStore((s) => s.promoteField);
   const [promoting, setPromoting] = useState<string | null>(null);
   const [promoteType, setPromoteType] = useState<SectionType>("text");
+  /** 移动端：编辑 / 预览 双 Tab */
+  const [mobileTab, setMobileTab] = useState<"edit" | "preview">("edit");
 
   const sections = sortSections(book.schema.sections);
   const extras = extraKeys(entry.values, sections);
@@ -44,6 +47,12 @@ export function EntryEditor({
     const next = { ...entry.values };
     delete next[key];
     updateEntry(book.id, entry.id, { values: next });
+  };
+
+  const deleteEntry = () => {
+    removeEntries(book.id, [entry.id]);
+    onDeleted();
+    toast.success("已删除词条");
   };
 
   return (
@@ -79,23 +88,36 @@ export function EntryEditor({
               <Star className="size-4" fill={entry.starred ? "currentColor" : "none"} />
             </IconButton>
             <Button variant="secondary" size="sm" onClick={onRequestLookup}>
-              <Search className="size-3.5" /> 检索填充
+              <Search className="size-3.5" /> 检索<span className="hidden sm:inline">填充</span>
             </Button>
-            <IconButton label="复制词条" size="sm" onClick={() => duplicateEntry(book.id, entry.id)}>
-              <Copy className="size-3.5" />
-            </IconButton>
-            <IconButton
-              label="删除词条"
-              size="sm"
-              className="text-gray-800 hover:text-red-900"
-              onClick={() => {
-                removeEntries(book.id, [entry.id]);
-                onDeleted();
-                toast.success("已删除词条");
-              }}
-            >
-              <Trash2 className="size-3.5" />
-            </IconButton>
+            <div className="hidden items-center gap-1.5 sm:flex">
+              <IconButton label="复制词条" size="sm" onClick={() => duplicateEntry(book.id, entry.id)}>
+                <Copy className="size-3.5" />
+              </IconButton>
+              <IconButton label="删除词条" size="sm" className="text-gray-800 hover:text-red-900" onClick={deleteEntry}>
+                <Trash2 className="size-3.5" />
+              </IconButton>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <IconButton label="更多操作" size="sm" className="sm:hidden">
+                  <MoreHorizontal className="size-4" />
+                </IconButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={() => {
+                    duplicateEntry(book.id, entry.id);
+                    toast.success("已复制词条");
+                  }}
+                >
+                  <Copy className="size-3.5" /> 复制词条
+                </DropdownMenuItem>
+                <DropdownMenuItem danger onSelect={deleteEntry}>
+                  <Trash2 className="size-3.5" /> 删除词条
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -114,7 +136,7 @@ export function EntryEditor({
             <TagsEditor items={entry.tags} onChange={(tags) => updateEntry(book.id, entry.id, { tags })} placeholder="cet4、考研…" />
           </div>
         </div>
-        <div className="t-label-12 flex items-center gap-3 text-gray-700">
+        <div className="t-label-12 hidden flex-wrap items-center gap-x-3 gap-y-1 text-gray-700 sm:flex">
           <span>创建于 {formatDateTime(entry.createdAt)}</span>
           <span>更新于 {formatDateTime(entry.updatedAt)}</span>
           {entry.source ? (
@@ -124,11 +146,12 @@ export function EntryEditor({
             </span>
           ) : null}
         </div>
+        <div className="t-label-12 text-gray-700 sm:hidden">更新于 {formatDateTime(entry.updatedAt)}</div>
       </div>
 
-      {/* 动态字段 */}
+      {/* 动态字段（移动端：编辑 / 预览 双 Tab） */}
       <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
-        <div className="space-y-5 px-5 py-4">
+        <div className={cx("space-y-6 px-4 py-5 pb-28 lg:px-5 lg:pb-6", mobileTab === "edit" ? "" : "hidden lg:block")}>
           {sections.length === 0 ? (
             <EmptyState
               icon={<Sparkles className="size-4" />}
@@ -180,6 +203,12 @@ export function EntryEditor({
             </div>
           ) : null}
         </div>
+
+        {/* 预览 Tab（移动端）：与导出一致 */}
+        <div className={cx("px-4 py-5 pb-28 lg:hidden", mobileTab === "preview" ? "" : "hidden")}>
+          <EntryPreviewCard book={book} entry={entry} className="mx-auto max-w-[340px]" />
+          <p className="t-label-12 mt-3 text-center text-gray-700">与导出排版一致 · 纸张与样式可在导出工作室调整</p>
+        </div>
       </div>
 
       {/* 提升字段对话框 */}
@@ -229,6 +258,34 @@ export function EntryEditor({
           </Button>
         </DialogFooter>
       </Dialog>
+
+      {/* 移动端：编辑 / 预览 切换 */}
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-2 border-t border-gray-300 bg-background-100 pb-[env(safe-area-inset-bottom)] lg:hidden">
+        {(
+          [
+            { id: "edit", label: "编辑", icon: PenLine },
+            { id: "preview", label: "预览", icon: Eye },
+          ] as const
+        ).map((t) => {
+          const active = mobileTab === t.id;
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setMobileTab(t.id)}
+              aria-pressed={active}
+              className={cx(
+                "flex h-12 items-center justify-center gap-1.5 text-[13px] transition-colors",
+                active ? "bg-gray-100 font-medium text-gray-1000" : "text-gray-800 hover:bg-gray-100/60",
+              )}
+            >
+              <Icon className={cx("size-4", active ? "text-blue-900" : "")} />
+              {t.label}
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }

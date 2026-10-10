@@ -1,14 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
+  Brain,
   ChevronLeft, Download, FileDown, Layers, MoreHorizontal, PanelRight, Pencil, Search, Trash2, Upload, Wand2,
 } from "lucide-react";
-import type { Entry } from "@/lib/types";
-import { isValueEmpty, sortSections } from "@/lib/sections";
+import type { Entry, Wordbook } from "@/lib/types";
 import { serializeBookDoc } from "@/lib/serializers";
 import { useAppStore } from "@/lib/store";
 import { Button, IconButton } from "@/components/ui/button";
@@ -17,10 +17,11 @@ import { Badge, EmptyState, SegmentedControl } from "@/components/ui/misc";
 import { Dialog, DialogBody, DialogFooter, DialogHeader, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/overlay";
 import { EntryList } from "@/components/book/EntryList";
 import { EntryEditor } from "@/components/book/EntryEditor";
+import { EntryPreviewCard } from "@/components/book/EntryPreview";
 import { SchemaDesigner } from "@/components/book/SchemaDesigner";
 import { LookupPanel } from "@/components/lookup/LookupPanel";
 import { ImportDialog } from "@/components/import/ImportDialog";
-import { EntryHeaderBlock, SectionBlock, type CardCtx } from "@/components/export/blocks";
+import { studyOverview } from "@/lib/study/queue";
 import { cx, downloadText, slugify } from "@/lib/utils";
 import { TopNav } from "@/components/app/TopNav";
 
@@ -46,6 +47,140 @@ export function BookWorkspace() {
     return book.entries.find((e) => e.id === selectedId) ?? book.entries[0] ?? null;
   }, [book, selectedId]);
 
+  const dueCount = useMemo(() => (book ? studyOverview(book).due : 0), [book]);
+
+  /* ---------------- 多选与批量操作 ---------------- */
+
+  const [selecting, setSelecting] = useState(false);
+  const [selection, setSelection] = useState<Set<string>>(new Set());
+  const [pendingDelete, setPendingDelete] = useState<string[] | null>(null);
+  const [pendingResetStatus, setPendingResetStatus] = useState(false);
+  const [tagOpen, setTagOpen] = useState(false);
+  const [tagMode, setTagMode] = useState<"add" | "remove">("add");
+  const [tagInput, setTagInput] = useState("");
+  const anchorRef = useRef<string | null>(null);
+
+  const exitSelect = () => {
+    setSelecting(false);
+    setSelection(new Set());
+    anchorRef.current = null;
+  };
+
+  const enterSelect = (id: string) => {
+    setSelecting(true);
+    anchorRef.current = id || null;
+    setSelection((prev) => {
+      const next = new Set(prev);
+      if (id) next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelect = (id: string, opts: { shift: boolean }, filteredIds: string[]) => {
+    if (!book) return;
+    setSelecting(true);
+    const next = new Set(selection);
+    if (opts.shift && anchorRef.current) {
+      const a = filteredIds.indexOf(anchorRef.current);
+      const b = filteredIds.indexOf(id);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        const shouldSelect = !selection.has(id);
+        for (let i = lo; i <= hi; i += 1) {
+          if (shouldSelect) next.add(filteredIds[i]);
+          else next.delete(filteredIds[i]);
+        }
+        setSelection(next);
+        return;
+      }
+    }
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    anchorRef.current = id;
+    setSelection(next);
+  };
+
+  const quickDelete = (entry: Entry) => {
+    if (!book) return;
+    const index = book.entries.findIndex((e) => e.id === entry.id);
+    if (index < 0) return;
+    useAppStore.getState().removeEntries(book.id, [entry.id]);
+    if (entry.id === selectedId) setSelectedId(null);
+    toast.success("已删除 1 个词条", {
+      action: { label: "撤销", onClick: () => useAppStore.getState().restoreEntries(book.id, [{ entry, index }]) },
+    });
+  };
+
+  const doBatchDelete = (ids: string[]) => {
+    if (!book || !ids.length) return;
+    const snapshot = ids
+      .map((id) => {
+        const index = book.entries.findIndex((e) => e.id === id);
+        return index >= 0 ? { entry: book.entries[index], index } : null;
+      })
+      .filter((x): x is { entry: Entry; index: number } => x !== null);
+    useAppStore.getState().removeEntries(book.id, ids);
+    setSelectedId((cur) => (cur && ids.includes(cur) ? null : cur));
+    exitSelect();
+    toast.success(`已删除 ${ids.length} 个词条`, {
+      action: { label: "撤销", onClick: () => useAppStore.getState().restoreEntries(book.id, snapshot) },
+    });
+  };
+
+  const requestBatchDelete = () => {
+    if (!book) return;
+    const ids = [...selection].filter((id) => book.entries.some((e) => e.id === id));
+    if (!ids.length) return;
+    const risky = ids.length >= 20 || ids.some((id) => Boolean(book.entries.find((e) => e.id === id)?.srs));
+    if (risky) setPendingDelete(ids);
+    else doBatchDelete(ids);
+  };
+
+  const batchStatus = (status: "new" | "learning" | "mastered") => {
+    if (!book) return;
+    const ids = [...selection].filter((id) => book.entries.some((e) => e.id === id));
+    if (!ids.length) return;
+    if (status === "new" && ids.some((id) => Boolean(book.entries.find((e) => e.id === id)?.srs))) {
+      setPendingResetStatus(true);
+      return;
+    }
+    useAppStore.getState().setEntriesStatus(book.id, ids, status);
+    toast.success(`已把 ${ids.length} 个词条设为「${status === "new" ? "未学" : status === "learning" ? "在学" : "已掌握"}」`);
+  };
+
+  const batchStar = (starred: boolean) => {
+    if (!book) return;
+    const ids = [...selection].filter((id) => book.entries.some((e) => e.id === id));
+    if (!ids.length) return;
+    useAppStore.getState().setEntriesStarred(book.id, ids, starred);
+    toast.success(starred ? `已星标 ${ids.length} 个词条` : `已取消星标 ${ids.length} 个词条`);
+  };
+
+  const exportSelected = () => {
+    if (!book) return;
+    const ids = new Set(selection);
+    const subset: Wordbook = { ...book, entries: book.entries.filter((e) => ids.has(e.id)) };
+    downloadText(`${slugify(book.name)}-所选-${subset.entries.length}.json`, serializeBookDoc(subset));
+    toast.success(`已导出 ${subset.entries.length} 个词条`);
+  };
+
+  const applyTags = () => {
+    if (!book) return;
+    const tags = tagInput
+      .split(/[,，;；、\s]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (!tags.length) {
+      toast.error("请输入标签");
+      return;
+    }
+    const ids = [...selection].filter((id) => book.entries.some((e) => e.id === id));
+    useAppStore.getState().updateEntriesTags(book.id, ids, tagMode === "add" ? tags : [], tagMode === "remove" ? tags : []);
+    toast.success(`${tagMode === "add" ? "已添加" : "已移除"}标签：${tags.join("、")}`, { description: `影响 ${ids.length} 个词条` });
+    setTagOpen(false);
+    setTagInput("");
+  };
+
   if (!hydrated) {
     return (
       <div className="flex h-dvh items-center justify-center text-gray-800">正在载入…</div>
@@ -58,7 +193,7 @@ export function BookWorkspace() {
           title="未找到该词库"
           desc="它可能已被删除，或链接不正确。"
           action={
-            <Link href="/">
+            <Link href="/books">
               <Button variant="secondary">返回词库列表</Button>
             </Link>
           }
@@ -68,19 +203,43 @@ export function BookWorkspace() {
   }
 
   return (
-    <div className="flex h-dvh flex-col">
+    <div className="flex h-dvh flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] sm:pb-0">
       <TopNav
-        hideNavOnMobile
         right={
           <>
-            <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
-              <Upload className="size-3.5" /> 导入
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => setLookupOpen(true)}>
-              <Search className="size-3.5" /> 检索
-            </Button>
+            <Link href={`/study?id=${book.id}`}>
+              <Button size="sm" className="gap-1.5">
+                <Brain className="size-3.5" /> <span className="hidden sm:inline">学习</span>
+                {dueCount > 0 ? (
+                  <span className="t-mono-12 rounded-full bg-amber-700/25 px-1.5 text-[10px] text-amber-900">{dueCount}</span>
+                ) : null}
+              </Button>
+            </Link>
+            <div className="hidden items-center gap-1.5 sm:flex">
+              <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
+                <Upload className="size-3.5" /> 导入
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setLookupOpen(true)}>
+                <Search className="size-3.5" /> 检索
+              </Button>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <IconButton label="更多操作" className="sm:hidden">
+                  <MoreHorizontal className="size-4" />
+                </IconButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setImportOpen(true)}>
+                  <Upload className="size-3.5" /> 导入
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setLookupOpen(true)}>
+                  <Search className="size-3.5" /> 词典检索
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Link href={`/book/export?id=${book.id}`}>
-              <Button size="sm">
+              <Button size="sm" variant="secondary">
                 <FileDown className="size-3.5" />
                 导出<span className="hidden sm:inline">工作室</span>
               </Button>
@@ -91,7 +250,7 @@ export function BookWorkspace() {
 
       {/* 词库头 */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-gray-300 px-3 py-2.5 sm:px-4">
-        <Link href="/" className="t-label-13 inline-flex items-center gap-1 text-gray-800 hover:text-gray-1000">
+        <Link href="/books" className="t-label-13 inline-flex items-center gap-1 text-gray-800 hover:text-gray-1000">
           <ChevronLeft className="size-3.5" /> 词库
         </Link>
         <span className="text-gray-500">/</span>
@@ -102,7 +261,10 @@ export function BookWorkspace() {
         <div className="order-last w-full sm:order-none sm:ml-3 sm:w-auto">
           <SegmentedControl
             value={tab}
-            onValueChange={setTab}
+            onValueChange={(v) => {
+              setTab(v);
+              if (v !== "entries") exitSelect();
+            }}
             options={[
               { value: "entries", label: "词条编辑" },
               { value: "fields", label: "字段设计" },
@@ -173,6 +335,19 @@ export function BookWorkspace() {
                 setSelectedId(id);
                 if (id) setMobilePane("editor");
               }}
+              selecting={selecting}
+              selection={selection}
+              onToggleSelect={toggleSelect}
+              onEnterSelect={enterSelect}
+              onExitSelect={exitSelect}
+              onSelectAllFiltered={(ids) => setSelection(new Set(ids))}
+              onRequestBatchStatus={batchStatus}
+              onRequestBatchTags={() => setTagOpen(true)}
+              onRequestBatchStar={batchStar}
+              onRequestBatchDelete={requestBatchDelete}
+              onRequestExportSelected={exportSelected}
+              onQuickDelete={quickDelete}
+              onStar={(entry) => useAppStore.getState().toggleStar(book.id, entry.id)}
             />
           </div>
           <div className={cx("min-w-0 flex-1", mobilePane === "list" ? "hidden lg:block" : "block")}>
@@ -295,11 +470,118 @@ export function BookWorkspace() {
             onClick={() => {
               useAppStore.getState().deleteBook(book.id);
               toast.success("词库已删除");
-              router.push("/");
+              router.push("/books");
             }}
           >
             确认删除
           </Button>
+        </DialogFooter>
+      </Dialog>
+
+      {/* 批量删除确认（≥20 或含学习进度） */}
+      <Dialog open={pendingDelete !== null} onOpenChange={(v) => !v && setPendingDelete(null)}>
+        <DialogHeader
+          title={`删除 ${pendingDelete?.length ?? 0} 个词条？`}
+          desc={
+            pendingDelete?.some((id) => Boolean(book.entries.find((e) => e.id === id)?.srs))
+              ? "其中有词条已带学习记录，删除后将一并移除；删除后 6 秒内可撤销。"
+              : "删除后 6 秒内可撤销。"
+          }
+        />
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => setPendingDelete(null)}>
+            取消
+          </Button>
+          <Button
+            variant="error"
+            onClick={() => {
+              const ids = pendingDelete ?? [];
+              setPendingDelete(null);
+              doBatchDelete(ids);
+            }}
+          >
+            确认删除
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
+      {/* 「未学」会清除学习进度的确认 */}
+      <Dialog open={pendingResetStatus} onOpenChange={setPendingResetStatus}>
+        <DialogHeader
+          title="清除所选词条的学习进度？"
+          desc="其中部分词条已有学习记录。设为「未学」会同时清除 FSRS 调度进度（复习历史保留在每日统计中），此操作可用「撤销」恢复。"
+        />
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => setPendingResetStatus(false)}>
+            取消
+          </Button>
+          <Button
+            variant="error"
+            onClick={() => {
+              if (!book) return;
+              const ids = [...selection];
+              const snapshot = ids.map((id) => {
+                const index = book.entries.findIndex((e) => e.id === id);
+                return index >= 0 ? { entry: { ...book.entries[index] }, index } : null;
+              }).filter((x): x is { entry: Entry; index: number } => x !== null);
+              useAppStore.getState().setEntriesStatus(book.id, ids, "new");
+              setPendingResetStatus(false);
+              toast.success(`已把 ${ids.length} 个词条设为「未学」`, {
+                action: {
+                  label: "撤销",
+                  onClick: () => {
+                    for (const { entry } of snapshot) useAppStore.getState().updateEntry(book.id, entry.id, { srs: entry.srs, status: entry.status });
+                  },
+                },
+              });
+            }}
+          >
+            确认清除
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
+      {/* 批量标签 */}
+      <Dialog open={tagOpen} onOpenChange={setTagOpen}>
+        <DialogHeader title="批量标签" desc="输入一个或多个标签（用逗号 / 空格分隔），应用到所选词条。" />
+        <DialogBody className="space-y-3">
+          <SegmentedControl
+            value={tagMode}
+            onValueChange={setTagMode}
+            options={[
+              { value: "add", label: "添加标签" },
+              { value: "remove", label: "移除标签" },
+            ]}
+            grow
+          />
+          <div className="space-y-1.5">
+            <Input
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && applyTags()}
+              placeholder="如：cet4 考研 学术"
+              autoFocus
+            />
+            <div className="flex flex-wrap gap-1.5">
+              {[...new Set(book.entries.flatMap((e) => e.tags))].slice(0, 12).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTagInput((prev) => (prev ? `${prev} ${t}` : t))}
+                  className="rounded-full bg-gray-100 px-2.5 py-0.5 text-[12px] text-gray-900 hover:bg-gray-200"
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="t-label-12 text-gray-700">影响 {selection.size} 个所选词条；不会影响未列出的标签。</p>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => setTagOpen(false)}>
+            取消
+          </Button>
+          <Button onClick={applyTags}>应用</Button>
         </DialogFooter>
       </Dialog>
     </div>
@@ -310,10 +592,6 @@ export function BookWorkspace() {
 
 function PreviewPanel({ book, entry, onClose }: { book: NonNullable<ReturnType<typeof useAppStore.getState>["books"][number]>; entry: Entry; onClose: () => void }) {
   const settings = book.exportSettings;
-  const ctx: CardCtx = { settings, schema: book.schema };
-  const sections = sortSections(book.schema.sections)
-    .filter((sec) => settings.sectionVisibility[sec.id] ?? sec.visible)
-    .filter((sec) => !settings.hideEmpty || !isValueEmpty(sec.type, entry.values[sec.key]));
 
   return (
     <aside className="hidden w-[360px] shrink-0 flex-col border-l border-gray-300 bg-background-200 xl:flex">
@@ -335,22 +613,7 @@ function PreviewPanel({ book, entry, onClose }: { book: NonNullable<ReturnType<t
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4 scroll-thin">
-        <div
-          className="wv-card mx-auto max-w-[300px] rounded-xl bg-white p-4 shadow-geist-md"
-          style={{
-            fontSize: `${10.5 * settings.fontScale}pt`,
-            lineHeight: settings.lineHeight,
-            color: "#1b1b1b",
-            fontFamily: settings.fontFamily === "serif" ? undefined : undefined,
-          }}
-        >
-          <EntryHeaderBlock entry={entry} ctx={ctx} index={0} />
-          <div className="mt-[0.7em] space-y-[0.55em]">
-            {sections.map((sec) => (
-              <SectionBlock key={sec.id} entry={entry} section={sec} ctx={ctx} />
-            ))}
-          </div>
-        </div>
+        <EntryPreviewCard book={book} entry={entry} className="mx-auto max-w-[300px]" />
         <p className="t-label-12 mt-3 text-center text-gray-700">
           纸张、字号、强调色等可在导出工作室中调整
         </p>

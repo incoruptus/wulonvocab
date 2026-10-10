@@ -53,7 +53,7 @@ export default function SettingsPage() {
   return (
     <div className="flex min-h-dvh flex-col">
       <TopNav />
-      <main className="mx-auto w-full max-w-4xl flex-1 space-y-6 px-4 py-6 sm:space-y-8 sm:px-6 sm:py-8">
+      <main className="mx-auto w-full max-w-4xl flex-1 space-y-6 px-4 pb-24 pt-6 sm:space-y-8 sm:px-6 sm:py-8">
         <div>
           <h1 className="t-h-24">设置</h1>
           <p className="t-label-13 mt-1 text-gray-800">词库、字段表、检索配置都只存在这台设备的浏览器里（IndexedDB）：断网可用、刷新不丢、随时导出 JSON 带走。</p>
@@ -286,7 +286,9 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
 
   const kindLabel: Record<LookupKind, string> = {
     freedict: "免费 · 无需配置",
+    zerodict: "零配置 · 中英",
     localdict: "本地词库",
+    youdao: "完整中文 · 需代理",
     ai: "OpenAI 兼容接口",
     http: "自定义接口",
   };
@@ -335,8 +337,30 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
         <div className="mt-3 space-y-2.5">
           {source.kind === "freedict" ? (
             <p className="t-label-12 text-gray-800">
-              免费公开 API（dictionaryapi.dev）：英文释义、音标、近反义词。无需配置；如网络不可达可改用本地词库或 AI 数据源。
+              免费公开 API（dictionaryapi.dev）：英文释义、音标、近反义词。无需配置；如网络不可达可改用其他数据源。
             </p>
+          ) : null}
+
+          {source.kind === "zerodict" ? (
+            <p className="t-label-12 text-gray-800">
+              零配置综合词源：freedictionaryapi.com（音标 / 英文释义 / 例句 / 近反义词 / 词形）＋ MyMemory 中文翻译（匿名约 5 千词/天）。两者均允许浏览器直连，无需 Key。
+            </p>
+          ) : null}
+
+          {source.kind === "youdao" ? (
+            <div className="space-y-2.5">
+              <Labeled label="代理前缀（含 {url} 将被替换为编码后的目标地址，否则直接拼接）">
+                <Input
+                  value={source.config.proxyPrefix ?? ""}
+                  onChange={(e) => updateSource(source.id, { config: { proxyPrefix: e.target.value } })}
+                  placeholder="https://your-proxy.example/?url="
+                  className="t-mono-13"
+                />
+              </Labeled>
+              <p className="t-label-12 text-gray-800">
+                有道接口不返回 CORS 头，浏览器直连会被拒绝；可自建轻量代理（如 Cloudflare Worker）或使用任意 CORS 代理。词典音频（dictvoice）无需代理。
+              </p>
+            </div>
           ) : null}
 
           {source.kind === "localdict" ? (

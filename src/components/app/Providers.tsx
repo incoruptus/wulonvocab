@@ -22,10 +22,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsub = useAppStore.persist.onFinishHydration(() => {
       useAppStore.getState().setHydrated(true);
+      // 数据迁移：补齐新版本引入的默认数据源
+      useAppStore.getState().ensureLookupSources();
     });
     void useAppStore.persist.rehydrate();
     // 若同一会话内已水合过（如路由切换），直接标记
-    if (useAppStore.persist.hasHydrated()) setHydrated(true);
+    if (useAppStore.persist.hasHydrated()) {
+      setHydrated(true);
+      useAppStore.getState().ensureLookupSources();
+    }
     return unsub;
   }, [setHydrated]);
 

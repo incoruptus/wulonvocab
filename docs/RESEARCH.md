@@ -59,7 +59,7 @@
    + 搭配框 + Word Family + 词源 + Idioms。
    → `senses` 字段以 Sign/Sense 模型覆盖：pos / translation / definition / examples / usage /
    patterns / synonyms / antonyms / collocations / notes；词族、词性变换、词源拆为独立字段。
-5. **主流背单词产品字段**（欧路/墨墨/不背单词/百词斩）：音标发音、双语释义、词根词缀、派生树（词族）、
+5. **主流背单词产品字段**（欧路/墨墨/不背单词等）：音标发音、双语释义、词根词缀、派生树（词族）、
    搭配（lexical chunks）、情景/真题例句（contextual learning）、联想助记（personal mnemonics）、
    图片（双编码）；复习调度属系统层，不入字段。
 6. **容错归一化**：标量/数组互转、词性分组对象展开、平行数组配对、内联枚举（①②/1.）拆分、
@@ -68,7 +68,7 @@
 
 **来源**：Anki Manual (docs.ankiweb.net)；ECDICT README (skywind3000/ECDICT)；dictionaryapi.dev；
 oxfordlearnersdictionaries.com 词条结构；OALD9/Yomitan 相关 GitHub 项目；欧路词典 / 墨墨背单词 /
-不背单词 / 百词斩官网与 App Store 页面；dual-coding、lexical approach 等学习科学条目。
+不背单词等官网与 App Store 页面；dual-coding、lexical approach 等学习科学条目。
 
 ## D. 我方落地的工程取舍
 

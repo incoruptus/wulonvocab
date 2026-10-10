@@ -14,7 +14,7 @@ export default function ImportPage() {
   return (
     <div className="flex min-h-dvh flex-col">
       <TopNav />
-      <main className="mx-auto w-full max-w-4xl flex-1 space-y-6 px-4 py-6 sm:px-6 sm:py-10">
+      <main className="mx-auto w-full max-w-4xl flex-1 space-y-6 px-4 pb-24 pt-6 sm:px-6 sm:py-10">
         <div>
           <h1 className="t-h-24">导入词表</h1>
           <p className="t-copy-14 mt-2 text-gray-900">

@@ -275,6 +275,22 @@
     background-image: radial-gradient(var(--ds-gray-a200) 1px, transparent 1px);
     background-size: 16px 16px;
   }
+  /* 键盘提示仅在「精细指针 + 可悬停」设备显示（触屏隐藏） */
+  @media (hover: none), (pointer: coarse) {
+    .wv-kbd-hint,
+    .wv-desktop-only {
+      display: none !important;
+    }
+  }
+  /* 触屏专属提示：仅粗糙指针（触摸）设备显示 */
+  .wv-touch-only {
+    display: none !important;
+  }
+  @media (hover: none), (pointer: coarse) {
+    .wv-touch-only {
+      display: inline-flex !important;
+    }
+  }
 }
 
 /* ============================================================

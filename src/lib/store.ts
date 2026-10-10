@@ -17,6 +17,9 @@ import type { MakeSectionInput } from "./sections";
 import { makeSection, sortSections, uniqueKey } from "./sections";
 import { createEmptyBook, createSampleBook as buildSampleBook, getPreset } from "./presets";
 import { mergeDuplicateEntries } from "./importer";
+import { applyGrade, isMastered, isNewSrs, type GradeValue } from "./study/engine";
+import { studyConfigOf } from "./study/queue";
+import { emptyDailyLog, pruneDaily, ymd, type StudyConfig, type StudySrs } from "./study/types";
 import { uid } from "./utils";
 
 /* ============================================================
@@ -68,6 +71,13 @@ const idbStorage: StateStorage = {
 
 export const DEFAULT_LOOKUP_SOURCES: LookupSourceConfig[] = [
   {
+    id: "zerodict",
+    kind: "zerodict",
+    label: "网络综合词典（零配置·中英）",
+    enabled: true,
+    config: {},
+  },
+  {
     id: "freedict",
     kind: "freedict",
     label: "Free Dictionary API",
@@ -80,6 +90,13 @@ export const DEFAULT_LOOKUP_SOURCES: LookupSourceConfig[] = [
     label: "本地词库",
     enabled: true,
     config: {},
+  },
+  {
+    id: "youdao",
+    kind: "youdao",
+    label: "有道词典（完整中文·需代理）",
+    enabled: false,
+    config: { proxyPrefix: "" },
   },
   {
     id: "ai",
@@ -164,6 +181,32 @@ export interface AppStore {
   setEntryStatus: (bookId: string, entryId: string, status: EntryStatus) => void;
   appendEntries: (bookId: string, entries: Entry[]) => void;
   replaceEntries: (bookId: string, entries: Entry[]) => void;
+  /** 批量：设置学习状态（「未学」会清除 srs 进度） */
+  setEntriesStatus: (bookId: string, ids: string[], status: EntryStatus) => void;
+  /** 批量：增删标签 */
+  updateEntriesTags: (bookId: string, ids: string[], add: string[], remove: string[]) => void;
+  /** 批量：星标 */
+  setEntriesStarred: (bookId: string, ids: string[], starred: boolean) => void;
+  /** 按原位置恢复被删除的词条（撤销删除） */
+  restoreEntries: (bookId: string, items: { entry: Entry; index: number }[]) => void;
+
+  // 学习（SRS）
+  setStudyConfig: (bookId: string, patch: Partial<StudyConfig>) => void;
+  applyReview: (
+    bookId: string,
+    entryId: string,
+    rating: GradeValue,
+    elapsedMs: number,
+    nowMs?: number,
+  ) => { before: StudySrs | undefined; next: StudySrs } | null;
+  undoReview: (
+    bookId: string,
+    entryId: string,
+    before: StudySrs | undefined,
+    rating: GradeValue,
+    elapsedMs: number,
+  ) => void;
+  resetEntrySrs: (bookId: string, entryId: string) => void;
 
   // 导出设置
   updateExportSettings: (bookId: string, patch: DeepPartial<ExportSettings>) => void;
@@ -173,6 +216,8 @@ export interface AppStore {
   addLookupSource: (source: Omit<LookupSourceConfig, "id">) => void;
   updateLookupSource: (id: string, patch: Partial<Omit<LookupSourceConfig, "config">> & { config?: Record<string, string> }) => void;
   removeLookupSource: (id: string) => void;
+  /** 数据迁移：补齐新版本新增的默认数据源（不覆盖用户已有配置） */
+  ensureLookupSources: () => void;
 
   // 本地词典
   addDictionary: (meta: LocalDictMeta) => void;
@@ -190,8 +235,14 @@ function patchBook(books: Wordbook[], id: string, fn: (book: Wordbook) => Wordbo
   return books.map((b) => (b.id === id ? { ...fn(b), updatedAt: Date.now() } : b));
 }
 
-function mergeExportSettings(prev: ExportSettings, patch: DeepPartial<ExportSettings>): ExportSettings {
-  return {
+/** 依据调度状态推导词条学习状态（新 / 在学 / 已掌握） */
+function deriveStatusFromSrs(srs: StudySrs): EntryStatus {
+  if (isNewSrs(srs)) return "new";
+  if (isMastered(srs)) return "mastered";
+  return "learning";
+}
+
+function mergeExportSettings(prev: ExportSettings, patch: DeepPartial<ExportSettings>): ExportSettings {  return {
     ...prev,
     ...(patch as Partial<ExportSettings>),
     margin: { ...prev.margin, ...(patch.margin ?? {}) },
@@ -482,6 +533,142 @@ export const useAppStore = create<AppStore>()(
           books: patchBook(s.books, bookId, (b) => ({ ...b, entries: mergeDuplicateEntries(entries) })),
         })),
 
+      setEntriesStatus: (bookId, ids, status) =>
+        set((s) => ({
+          books: patchBook(s.books, bookId, (b) => ({
+            ...b,
+            entries: b.entries.map((e) => {
+              if (!ids.includes(e.id)) return e;
+              if (status === "new") {
+                const next = { ...e, status, updatedAt: Date.now() };
+                delete next.srs;
+                return next;
+              }
+              return { ...e, status, updatedAt: Date.now() };
+            }),
+          })),
+        })),
+
+      updateEntriesTags: (bookId, ids, add, remove) =>
+        set((s) => ({
+          books: patchBook(s.books, bookId, (b) => ({
+            ...b,
+            entries: b.entries.map((e) => {
+              if (!ids.includes(e.id)) return e;
+              const removeSet = new Set(remove);
+              const tags = [...new Set([...e.tags.filter((t) => !removeSet.has(t)), ...add])];
+              return { ...e, tags, updatedAt: Date.now() };
+            }),
+          })),
+        })),
+
+      setEntriesStarred: (bookId, ids, starred) =>
+        set((s) => ({
+          books: patchBook(s.books, bookId, (b) => ({
+            ...b,
+            entries: b.entries.map((e) => (ids.includes(e.id) ? { ...e, starred, updatedAt: Date.now() } : e)),
+          })),
+        })),
+
+      restoreEntries: (bookId, items) =>
+        set((s) => ({
+          books: patchBook(s.books, bookId, (b) => {
+            const entries = [...b.entries];
+            const sorted = [...items].sort((a, c) => a.index - c.index);
+            for (const { entry, index } of sorted) {
+              if (entries.some((e) => e.id === entry.id)) continue;
+              entries.splice(Math.min(index, entries.length), 0, entry);
+            }
+            return { ...b, entries };
+          }),
+        })),
+
+      setStudyConfig: (bookId, patch) =>
+        set((s) => ({
+          books: patchBook(s.books, bookId, (b) => ({
+            ...b,
+            study: {
+              config: { ...studyConfigOf(b), ...patch },
+              daily: b.study?.daily ?? {},
+            },
+          })),
+        })),
+
+      applyReview: (bookId, entryId, rating, elapsedMs, nowMs) => {
+        const book = get().books.find((b) => b.id === bookId);
+        const entry = book?.entries.find((e) => e.id === entryId);
+        if (!book || !entry) return null;
+        const cfg = studyConfigOf(book);
+        const now = nowMs ?? Date.now();
+        const before = entry.srs;
+        const next = applyGrade(before, rating, cfg.retention, now);
+        const wasNew = isNewSrs(before);
+        set((s) => ({
+          books: patchBook(s.books, bookId, (b) => {
+            const daily = { ...(b.study?.daily ?? {}) };
+            const key = ymd(now);
+            const log = { ...(daily[key] ?? emptyDailyLog()) };
+            log.reviewed += 1;
+            log.ms += Math.max(0, elapsedMs);
+            if (wasNew) log.added += 1;
+            if (rating === 1) log.again += 1;
+            else if (rating === 2) log.hard += 1;
+            else if (rating === 3) log.good += 1;
+            else log.easy += 1;
+            daily[key] = log;
+            return {
+              ...b,
+              entries: b.entries.map((e) =>
+                e.id === entryId ? { ...e, srs: next, status: deriveStatusFromSrs(next) } : e,
+              ),
+              study: { config: b.study?.config ?? cfg, daily: pruneDaily(daily, now) },
+            };
+          }),
+        }));
+        return { before, next };
+      },
+
+      undoReview: (bookId, entryId, before, rating, elapsedMs) =>
+        set((s) => ({
+          books: patchBook(s.books, bookId, (b) => {
+            const daily = { ...(b.study?.daily ?? {}) };
+            const key = ymd(Date.now());
+            if (daily[key]) {
+              const log = { ...daily[key] };
+              log.reviewed = Math.max(0, log.reviewed - 1);
+              log.ms = Math.max(0, log.ms - Math.max(0, elapsedMs));
+              const field = rating === 1 ? "again" : rating === 2 ? "hard" : rating === 3 ? "good" : "easy";
+              log[field] = Math.max(0, log[field] - 1);
+              if (isNewSrs(before)) log.added = Math.max(0, log.added - 1);
+              daily[key] = log;
+            }
+            return {
+              ...b,
+              entries: b.entries.map((e) => {
+                if (e.id !== entryId) return e;
+                if (before) return { ...e, srs: before, status: deriveStatusFromSrs(before) };
+                const next = { ...e };
+                delete next.srs;
+                return { ...next, status: "new" as const };
+              }),
+              study: { config: b.study?.config ?? studyConfigOf(b), daily },
+            };
+          }),
+        })),
+
+      resetEntrySrs: (bookId, entryId) =>
+        set((s) => ({
+          books: patchBook(s.books, bookId, (b) => ({
+            ...b,
+            entries: b.entries.map((e) => {
+              if (e.id !== entryId) return e;
+              const next = { ...e };
+              delete next.srs;
+              return { ...next, status: "new" as const };
+            }),
+          })),
+        })),
+
       updateExportSettings: (bookId, patch) =>
         set((s) => ({
           books: patchBook(s.books, bookId, (b) => ({
@@ -511,6 +698,14 @@ export const useAppStore = create<AppStore>()(
         })),
 
       removeLookupSource: (id) => set((s) => ({ lookupSources: s.lookupSources.filter((src) => src.id !== id) })),
+
+      ensureLookupSources: () =>
+        set((s) => {
+          const existing = new Set(s.lookupSources.map((src) => src.id));
+          const missing = DEFAULT_LOOKUP_SOURCES.filter((src) => !existing.has(src.id));
+          if (!missing.length) return s;
+          return { lookupSources: [...s.lookupSources, ...missing.map((src) => ({ ...src, config: { ...src.config } }))] };
+        }),
 
       addDictionary: (meta) => set((s) => ({ dictionaries: [meta, ...s.dictionaries.filter((d) => d.id !== meta.id)] })),
 

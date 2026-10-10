@@ -1,359 +1,165 @@
-"use client";
-
-import { useMemo, useState } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import {
-  ArrowRight, BookOpen, Download, FileDown, FileJson, Layers, MoreHorizontal, Pencil, Plus, Sparkles, Trash2, Upload,
-} from "lucide-react";
-import type { Wordbook } from "@/lib/types";
-import { SCHEMA_PRESETS } from "@/lib/presets";
-import { serializeBookDoc } from "@/lib/serializers";
-import { useAppStore } from "@/lib/store";
+import { ArrowRight, BookOpen, Brain, Coffee, ExternalLink, FileDown, Layers, Sparkles, Upload } from "lucide-react";
 import { TopNav } from "@/components/app/TopNav";
-import { ImportDialog } from "@/components/import/ImportDialog";
-import { Button, IconButton } from "@/components/ui/button";
-import { Input } from "@/components/ui/field";
-import { Badge, Card, EmptyState } from "@/components/ui/misc";
-import { Dialog, DialogBody, DialogFooter, DialogHeader, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/overlay";
-import { cx, downloadText, slugify, timeAgo } from "@/lib/utils";
+import { Badge, Card } from "@/components/ui/misc";
 
-export default function DashboardPage() {
-  const router = useRouter();
-  const hydrated = useAppStore((s) => s.hydrated);
-  const books = useAppStore((s) => s.books);
-  const createBook = useAppStore((s) => s.createBook);
-  const addSampleBook = useAppStore((s) => s.addSampleBook);
-  const deleteBook = useAppStore((s) => s.deleteBook);
-  const [newOpen, setNewOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [presetId, setPresetId] = useState("oxford");
-  const [deleting, setDeleting] = useState<Wordbook | null>(null);
+export const metadata: Metadata = {
+  title: "WulonVocab · 单词本工坊",
+  description: "动态字段、间隔重复学习、打印级导出的本地优先单词本软件。",
+};
 
-  const stats = useMemo(() => {
-    const entries = books.reduce((acc, b) => acc + b.entries.length, 0);
-    const fields = books.reduce((acc, b) => acc + b.schema.sections.length, 0);
-    return { entries, fields };
-  }, [books]);
+const FEATURES = [
+  {
+    icon: Layers,
+    title: "动态字段管理",
+    desc: "音标、词性释义、词族、词性变换、联想助记、例句、情景标签……14 类字段随意增删、拖动排序；改字段名，已有数据自动跟着搬。",
+    href: "/books",
+    link: "进入词库",
+  },
+  {
+    icon: Brain,
+    title: "间隔重复学习",
+    desc: "基于 FSRS 的智能排程：四档评级直观显示下次间隔，支持翻卡自评与看词选义选择题两种模式，数据只在你的设备上。",
+    href: "/learn",
+    link: "打开学习中心",
+  },
+  {
+    icon: FileDown,
+    title: "打印级导出",
+    desc: "A4 / B5 / A5 / 16 开 / 32 开；双栏词典版式、封面与索引、镜像装订边距；矢量 PDF 文字可搜索，PNG 最高 384 DPI。",
+    href: "/books",
+    link: "选择一本词书",
+  },
+] as const;
 
+export default function LandingPage() {
   return (
     <div className="flex min-h-dvh flex-col">
       <TopNav />
-      <main className="mx-auto w-full max-w-6xl flex-1 space-y-8 px-4 py-6 sm:space-y-10 sm:px-6 sm:py-8">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-24 pt-10 sm:px-6 sm:py-16">
         {/* Hero */}
-        <section className="relative overflow-hidden rounded-2xl border border-gray-300 bg-gradient-to-br from-background-100 to-background-200 p-8">
-          <div className="pointer-events-none absolute -right-20 -top-24 size-72 rounded-full opacity-[0.12]" style={{ background: "radial-gradient(circle, #0068d6, transparent 70%)" }} />
-          <div className="pointer-events-none absolute -bottom-28 right-24 size-64 rounded-full opacity-[0.10]" style={{ background: "radial-gradient(circle, #7c3aed, transparent 70%)" }} />
-          <Badge variant="blue" size="sm">
-            <Sparkles className="size-3" /> 14 类字段 · JSON 导入 · 打印级导出
-          </Badge>
-          <h1 className="t-h-32 mt-4 max-w-2xl text-gray-1000">把单词，做成一本真正精美的书。</h1>
-          <p className="t-copy-14 mt-3 max-w-xl text-gray-900">
-            音标、词性释义、词族、词性变换、联想助记、例句、情景标签……字段随你增删；
-            导入 JSON 立即排好版，导出 A4 / B5 / A5 打印装订，就是一本书。
-          </p>
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <Button size="lg" onClick={() => setNewOpen(true)}>
-              <Plus className="size-4" /> 新建词库
-            </Button>
-            <Button size="lg" variant="secondary" onClick={() => setImportOpen(true)}>
-              <Upload className="size-4" /> 导入 JSON / CSV
-            </Button>
-            <Button
-              size="lg"
-              variant="tertiary"
-              onClick={() => {
-                const b = addSampleBook();
-                toast.success("示例已建好：3 个词、10 个字段，直接看效果");
-                router.push(`/book?id=${b.id}`);
-              }}
+        <section className="relative overflow-hidden rounded-3xl border border-gray-300 bg-gradient-to-br from-background-100 to-background-200 px-6 py-12 sm:px-12 sm:py-16">
+          <div
+            className="pointer-events-none absolute -right-24 -top-28 size-80 rounded-full opacity-[0.12]"
+            style={{ background: "radial-gradient(circle, #0068d6, transparent 70%)" }}
+          />
+          <div
+            className="pointer-events-none absolute -bottom-32 right-40 size-72 rounded-full opacity-[0.10]"
+            style={{ background: "radial-gradient(circle, #7c3aed, transparent 70%)" }}
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <span
+              aria-hidden
+              className="grid size-11 shrink-0 place-items-center rounded-2xl bg-black text-white shadow-geist-border"
             >
-              <Sparkles className="size-4" /> 创建示例（3 词）
-            </Button>
+              <Coffee className="size-6" strokeWidth={2.2} />
+            </span>
+            <span className="t-h-24 tracking-[-0.02em]">WulonVocab</span>
+            <Badge variant="blue" size="sm">
+              本地优先 · 打印级排版
+            </Badge>
           </div>
-        </section>
-
-        {/* 统计 */}
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <StatCard label="词库" value={books.length} icon={<BookOpen className="size-4" />} />
-          <StatCard label="收录词条" value={stats.entries} icon={<Layers className="size-4" />} />
-          <StatCard label="自定义字段" value={stats.fields} icon={<Pencil className="size-4" />} />
-        </section>
-
-        {/* 词库列表 */}
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="t-h-20">我的词库</h2>
-            <Link href="/skill" className="t-label-13 inline-flex items-center gap-1 text-blue-900 hover:underline">
-              让 AI 帮你整理词表 <ArrowRight className="size-3.5" />
+          <h1 className="t-h-32 mt-6 max-w-2xl text-gray-1000">把单词，做成一本真正精美的书。</h1>
+          <p className="t-copy-14 mt-4 max-w-xl text-gray-900">
+            字段自己定，JSON 直接导；间隔重复把单词刻进长期记忆，导出 A4 / B5 / A5
+            打印装订，就是一本书。数据只存在这台设备上。
+          </p>
+          <div className="mt-8 flex flex-wrap items-center gap-3">
+            <Link
+              href="/learn"
+              className="t-button inline-flex h-11 items-center gap-2 rounded-lg bg-gray-1000 px-5 text-background-100 transition-colors hover:bg-gray-900"
+            >
+              <Brain className="size-4" /> 开始学习
+            </Link>
+            <Link
+              href="/books"
+              className="t-button inline-flex h-11 items-center gap-2 rounded-lg bg-background-100 px-5 text-gray-1000 shadow-geist-border transition-colors hover:bg-gray-100"
+            >
+              <BookOpen className="size-4" /> 我的词库
+            </Link>
+            <Link
+              href="/import"
+              className="t-button inline-flex h-11 items-center gap-2 rounded-lg px-4 text-gray-900 transition-colors hover:bg-gray-100 hover:text-gray-1000"
+            >
+              <Upload className="size-4" /> 导入词表 <ArrowRight className="size-3.5" />
             </Link>
           </div>
-          {!hydrated ? (
-            <div className="t-label-13 text-gray-800">正在载入数据…</div>
-          ) : books.length === 0 ? (
-            <Card className="py-0">
-              <EmptyState
-                icon={<BookOpen className="size-4" />}
-                title="书架还是空的"
-                desc="新建一本开始写，或导入现成词表；想先看效果，就点「创建示例（3 词）」——完整词卡长什么样，一眼就知道。"
-                action={
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => setNewOpen(true)}>
-                      新建词库
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        const b = addSampleBook();
-                        router.push(`/book?id=${b.id}`);
-                      }}
-                    >
-                      创建示例（3 词）
-                    </Button>
-                  </div>
-                }
-              />
+        </section>
+
+        {/* 三大能力 */}
+        <section className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {FEATURES.map((f) => (
+            <Card key={f.title} className="flex flex-col p-5">
+              <span className="grid size-10 place-items-center rounded-xl bg-gray-100 text-gray-900">
+                <f.icon className="size-5" />
+              </span>
+              <div className="t-h-16 mt-3">{f.title}</div>
+              <p className="t-label-13 mt-2 flex-1 leading-relaxed text-gray-800">{f.desc}</p>
+              <Link href={f.href} className="t-label-13 mt-3 inline-flex items-center gap-1 text-blue-900 hover:underline">
+                {f.link} <ArrowRight className="size-3.5" />
+              </Link>
             </Card>
-          ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {books.map((book) => (
-                <BookCard
-                  key={book.id}
-                  book={book}
-                  onOpen={() => router.push(`/book?id=${book.id}`)}
-                  onExport={() => router.push(`/book/export?id=${book.id}`)}
-                  onDelete={() => setDeleting(book)}
-                />
-              ))}
-            </div>
-          )}
+          ))}
         </section>
 
-        {/* 特性 */}
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <FeatureCard
-            icon={<Layers className="size-4" />}
-            title="动态字段管理"
-            desc="音标、词性释义、词族、词性变换、联想助记、例句、情景标签……14 类字段随意增删、拖动排序；改字段名，已有数据自动跟着搬。"
-          />
-          <FeatureCard
-            icon={<Upload className="size-4" />}
-            title="JSON 导入即成书"
-            desc="WulonVocab / ECDICT / OALD / CSV 自动识别；AI 生成的词表直接导入；缺字段就自动推断——导完那一刻，版也排好了。"
-          />
-          <FeatureCard
-            icon={<FileDown className="size-4" />}
-            title="打印级导出"
-            desc="A4 / B5 / A5 / 16 开 / 32 开；双栏词典版式、封面与索引、镜像装订边距；矢量 PDF 文字可搜索，PNG 最高 384 DPI，拿去打印店就能装订。"
-          />
+        {/* 学习模式 */}
+        <section className="mt-10 rounded-2xl border border-gray-300 bg-background-200 p-6">
+          <div className="t-h-20">两种学习模式，随你切换</div>
+          <p className="t-label-13 mt-1 max-w-2xl text-gray-800">
+            「翻卡自评」先回忆再对照评级；「选择题」从四个释义中选出正确的一项（干扰项来自词书内同词性释义）。
+            忘记的词会在本轮稍后再次出现，进度按 FSRS 智能排程自动安排。
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className="rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">翻卡自评</span>
+            <span className="rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">看词选义选择题</span>
+            <span className="rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">系统语音自动发音</span>
+            <span className="rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">键盘 DFJK / WEIO 快捷操作</span>
+          </div>
         </section>
 
-        {/* Skill 横幅 */}
-        <section className="flex flex-wrap items-center gap-4 rounded-2xl border border-gray-300 bg-background-200 p-5">
-          <span className="grid size-10 place-items-center rounded-xl bg-gray-1000 text-background-100">
+        {/* AI Skill */}
+        <section className="mt-10 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl border border-gray-300 bg-background-100 p-6">
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-gray-1000 text-background-100">
             <Sparkles className="size-5" />
           </span>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 basis-[16rem]">
             <div className="t-h-16">把需求交给 AI，得到可直接导入的词表</div>
-            <p className="t-label-13 mt-0.5 text-gray-800">
+            <p className="t-label-13 mt-1 text-gray-800">
               「帮我整理 50 个雅思写作高频词，要有词族、搭配和真题例句」——AI 按 Skill 规范输出 JSON，导入后直接排版导出。
             </p>
           </div>
-          <Link href="/skill">
-            <Button variant="secondary">
-              查看 Skill <ArrowRight className="size-3.5" />
-            </Button>
+          <Link
+            href="/skill"
+            className="t-button inline-flex h-9 w-full items-center justify-center gap-2 rounded-md bg-background-100 px-3.5 text-gray-1000 shadow-geist-border transition-colors hover:bg-gray-100 sm:w-auto"
+          >
+            查看 AI Skill <ArrowRight className="size-3.5" />
           </Link>
         </section>
+
+        {/* Footer */}
+        <footer className="mt-12 flex flex-wrap items-center justify-between gap-3 border-t border-gray-300 pt-6">
+          <span className="t-label-12 text-gray-700">WulonVocab · 词库、字段与学习进度只存在这台设备的浏览器里（IndexedDB）</span>
+          <div className="flex items-center gap-4">
+            <a
+              href="https://incoruptus.github.io/wulonvocab/"
+              className="t-label-12 inline-flex items-center gap-1 text-gray-800 hover:text-gray-1000"
+              target="_blank"
+              rel="noreferrer"
+            >
+              在线版
+            </a>
+            <a
+              href="https://github.com/incoruptus/wulonvocab"
+              className="t-label-12 inline-flex items-center gap-1 text-gray-800 hover:text-gray-1000"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <ExternalLink className="size-3.5" /> GitHub
+            </a>
+          </div>
+        </footer>
       </main>
-
-      <footer className="border-t border-gray-300 py-5 text-center">
-        <span className="t-label-12 text-gray-700">WulonVocab · 词库、字段与配置只存在这台设备的浏览器里（IndexedDB）· 随时导出 JSON 带走</span>
-      </footer>
-
-      {/* 新建词库 */}
-      <Dialog open={newOpen} onOpenChange={setNewOpen} widthClass="max-w-lg">
-        <DialogHeader title="新建词库" desc="挑一套排版底子先开工；字段之后随时能加、能删、能拖动排序。" />
-        <DialogBody className="space-y-4">
-          <div className="space-y-1.5">
-            <div className="t-label-13 font-medium text-gray-900">词库名称</div>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：考研核心词汇 · Unit 1" autoFocus />
-          </div>
-          <div className="space-y-1.5">
-            <div className="t-label-13 font-medium text-gray-900">字段模板</div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {SCHEMA_PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setPresetId(p.id)}
-                  className={cx(
-                    "rounded-lg p-2.5 text-left transition-colors",
-                    presetId === p.id ? "bg-blue-100 shadow-geist-border" : "bg-background-200 hover:bg-gray-100",
-                  )}
-                >
-                  <div className="t-label-13 font-medium text-gray-1000">{p.name}</div>
-                  <div className="t-label-12 mt-0.5 line-clamp-2 text-gray-800">{p.description}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </DialogBody>
-        <DialogFooter>
-          <Button variant="secondary" onClick={() => setNewOpen(false)}>
-            取消
-          </Button>
-          <Button
-            onClick={() => {
-              const b = createBook(name.trim() || "未命名词库", presetId);
-              setNewOpen(false);
-              setName("");
-              toast.success("词库已创建");
-              router.push(`/book?id=${b.id}`);
-            }}
-          >
-            创建并开始
-          </Button>
-        </DialogFooter>
-      </Dialog>
-
-      {/* 导入 */}
-      <ImportDialog
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        onImported={(id) => {
-          toast.success("导入完成，正在打开…");
-          router.push(`/book?id=${id}`);
-        }}
-      />
-
-      {/* 删除确认 */}
-      <Dialog open={deleting !== null} onOpenChange={(v) => !v && setDeleting(null)}>
-        <DialogHeader
-          title="删除词库"
-          desc={deleting ? `「${deleting.name}」里的 ${deleting.entries.length} 个词条会一起消失，且无法找回——先导出 JSON 备份更稳妥。` : ""}
-        />
-        <DialogFooter>
-          <Button variant="secondary" onClick={() => setDeleting(null)}>
-            取消
-          </Button>
-          <Button
-            variant="error"
-            onClick={() => {
-              if (deleting) {
-                deleteBook(deleting.id);
-                toast.success("词库已删除");
-              }
-              setDeleting(null);
-            }}
-          >
-            确认删除
-          </Button>
-        </DialogFooter>
-      </Dialog>
     </div>
-  );
-}
-
-function StatCard({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) {
-  return (
-    <Card className="flex items-center gap-3">
-      <span className="grid size-9 place-items-center rounded-lg bg-gray-100 text-gray-900">{icon}</span>
-      <div>
-        <div className="t-h-24 tabular-nums">{value}</div>
-        <div className="t-label-12 text-gray-800">{label}</div>
-      </div>
-    </Card>
-  );
-}
-
-function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
-  return (
-    <Card>
-      <span className="grid size-9 place-items-center rounded-lg bg-blue-100 text-blue-900">{icon}</span>
-      <div className="t-h-16 mt-3">{title}</div>
-      <p className="t-label-13 mt-1.5 leading-relaxed text-gray-800">{desc}</p>
-    </Card>
-  );
-}
-
-function BookCard({
-  book,
-  onOpen,
-  onExport,
-  onDelete,
-}: {
-  book: Wordbook;
-  onOpen: () => void;
-  onExport: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <Card className="group relative flex cursor-pointer flex-col transition-shadow hover:shadow-geist-md" onClick={onOpen}>
-      <div className="flex items-start gap-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-gray-100 text-[20px]">
-          {book.meta?.coverEmoji || "📖"}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="t-h-16 truncate">{book.name}</div>
-          <div className="t-label-12 mt-0.5 text-gray-800">
-            {book.entries.length} 个词 · {book.schema.sections.length} 个字段 · 更新于 {timeAgo(book.updatedAt)}
-          </div>
-        </div>
-        <div onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <IconButton label="词库操作" size="sm" className="opacity-0 transition-opacity group-hover:opacity-100">
-                <MoreHorizontal className="size-4" />
-              </IconButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={onOpen}>
-                <BookOpen className="size-3.5" /> 打开
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onExport}>
-                <FileDown className="size-3.5" /> 导出工作室
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => {
-                  downloadText(`${slugify(book.name)}.json`, serializeBookDoc(book));
-                  toast.success("已导出 JSON");
-                }}
-              >
-                <FileJson className="size-3.5" /> 导出 JSON
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => {
-                  useAppStore.getState().duplicateBook(book.id);
-                  toast.success("已复制成一册新的");
-                }}
-              >
-                <Layers className="size-3.5" /> 复制
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem danger onSelect={onDelete}>
-                <Trash2 className="size-3.5" /> 删除
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-      {book.description ? (
-        <p className="t-label-13 mt-3 line-clamp-2 text-gray-800">{book.description}</p>
-      ) : null}
-      <div className="mt-3 flex flex-wrap gap-1">
-        {book.tags.slice(0, 4).map((t) => (
-          <span key={t} className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-900">
-            {t}
-          </span>
-        ))}
-        <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-gray-700 opacity-0 transition-opacity group-hover:opacity-100">
-          <Download className="size-3" /> 点击打开
-        </span>
-      </div>
-    </Card>
   );
 }

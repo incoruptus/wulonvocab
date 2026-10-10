@@ -23,7 +23,7 @@ export function ExportPageClient() {
           title="未找到该词库"
           desc="无法打开导出工作室。"
           action={
-            <Link href="/">
+            <Link href="/books">
               <Button variant="secondary">返回词库列表</Button>
             </Link>
           }

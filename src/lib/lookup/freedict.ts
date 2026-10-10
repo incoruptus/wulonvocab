@@ -103,7 +103,7 @@ function dedupe(list: string[]): string[] {
 export const freeDictAdapter: DictionaryAdapter = {
   kind: "freedict",
   async lookup({ word, signal }: LookupContext): Promise<LookupDraft> {
-    const { signal: s, done } = withTimeout(20000, signal);
+    const { signal: s, done } = withTimeout(10000, signal);
     try {
       const res = await fetch(`${API}${encodeURIComponent(word)}`, { signal: s });
       if (res.status === 404) throw new LookupError("该词典未收录此单词");

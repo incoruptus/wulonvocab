@@ -87,6 +87,21 @@ export async function searchLocalDictionary(
   return { row: undefined, suggestions };
 }
 
+/** 同步建议（仅使用已加载到内存的词库；未加载时返回空数组，不触发 IO） */
+export function peekLocalSuggestions(id: string, prefix: string, limit = 8): string[] {
+  const data = cache.get(id);
+  const target = prefix.trim().toLowerCase();
+  if (!data || !target) return [];
+  const rows = data.rows;
+  const idx = lowerBound(rows, target);
+  const out: string[] = [];
+  for (let i = idx; i < rows.length && out.length < limit; i += 1) {
+    if (!rows[i].w.startsWith(target)) break;
+    out.push(rows[i].w);
+  }
+  return out;
+}
+
 /* ---------------- 导入 ---------------- */
 
 const META_RESERVED = new Set(["headword", "word", "term", "spelling", "expression", "单词", "tag", "tags"].map(canonicalKey));

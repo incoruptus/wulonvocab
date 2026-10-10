@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Loader2 } from "lucide-react";
 import * as ToggleGroupPrimitive from "@radix-ui/react-toggle-group";
@@ -196,11 +197,32 @@ export function Spinner({ className }: { className?: string }) {
   return <Loader2 className={cx("size-4 animate-spin text-gray-800", className)} />;
 }
 
-export function Kbd({ children }: { children: React.ReactNode }) {
+/** 键位控件（Geist 键帽风格：6px 圆角、内嵌底边、等宽字体） */
+export function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <kbd className="t-mono-12 inline-flex h-5 min-w-5 items-center justify-center rounded border border-gray-400 bg-gray-100 px-1.5 text-gray-900">
+    <kbd
+      className={cx(
+        "inline-flex h-[22px] min-w-[22px] select-none items-center justify-center rounded-md border border-gray-400/80 bg-gray-100 px-1.5",
+        "font-mono text-[11px] leading-none text-gray-900 shadow-[inset_0_-1.5px_0_var(--ds-gray-a300)]",
+        className,
+      )}
+    >
       {children}
     </kbd>
+  );
+}
+
+/** 一组键位（如 [W][E][I][O]） */
+export function KbdGroup({ keys, className, separator = "" }: { keys: string[]; className?: string; separator?: string }) {
+  return (
+    <span className={cx("inline-flex items-center gap-1", className)}>
+      {keys.map((k, i) => (
+        <Fragment key={k}>
+          {i > 0 && separator ? <span className="text-[11px] text-gray-700">{separator}</span> : null}
+          <Kbd>{k}</Kbd>
+        </Fragment>
+      ))}
+    </span>
   );
 }
 

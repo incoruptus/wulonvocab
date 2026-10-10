@@ -4,12 +4,16 @@ import { freeDictAdapter } from "./freedict";
 import { localDictAdapter } from "./localdict";
 import { httpAdapter } from "./http";
 import { aiAdapter } from "./ai";
+import { zeroDictAdapter } from "./zerodict";
+import { youdaoAdapter } from "./youdao";
 
 const ADAPTERS: Record<LookupSourceConfig["kind"], DictionaryAdapter> = {
   freedict: freeDictAdapter,
   localdict: localDictAdapter,
   http: httpAdapter,
   ai: aiAdapter,
+  zerodict: zeroDictAdapter,
+  youdao: youdaoAdapter,
 };
 
 export function adapterFor(kind: LookupSourceConfig["kind"]): DictionaryAdapter {

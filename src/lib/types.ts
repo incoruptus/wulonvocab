@@ -246,6 +246,8 @@ export interface Entry {
   createdAt: number;
   updatedAt: number;
   source?: EntrySource;
+  /** 学习调度状态（SRS，见 lib/study） */
+  srs?: import("./study/types").StudySrs;
 }
 
 // ============================================================
@@ -269,6 +271,8 @@ export interface Wordbook {
   entries: Entry[];
   exportSettings: ExportSettings;
   meta?: WordbookMetaInfo;
+  /** 学习（SRS）配置与每日记录 */
+  study?: import("./study/types").BookStudy;
 }
 
 // ============================================================
@@ -360,7 +364,7 @@ export interface AppSettings {
 // 词库检索（Lookup）
 // ============================================================
 
-export type LookupKind = "freedict" | "localdict" | "http" | "ai";
+export type LookupKind = "freedict" | "localdict" | "http" | "ai" | "zerodict" | "youdao";
 
 export interface LookupSourceConfig {
   id: string;
