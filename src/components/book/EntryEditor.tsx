@@ -1,0 +1,267 @@
+"use client";
+
+import { useState } from "react";
+import { Copy, EyeOff, Plus, Search, Sparkles, Star, Trash2 } from "lucide-react";
+import type { Entry, SectionDef, SectionType, Wordbook } from "@/lib/types";
+import { extraKeys, isValueEmpty, SECTION_TYPE_LIST, SECTIONS, sortSections } from "@/lib/sections";
+import { useAppStore } from "@/lib/store";
+import { Button, IconButton } from "@/components/ui/button";
+import { Badge, Chip, EmptyState, SegmentedControl } from "@/components/ui/misc";
+import { Dialog, DialogBody, DialogFooter, DialogHeader, Tip } from "@/components/ui/overlay";
+import { SectionIcon } from "@/components/icon";
+import { ValueEditor } from "@/components/value/ValueEditor";
+import { TagsEditor } from "@/components/value/ValueEditor";
+import { PosDatalist } from "@/components/value/SensesEditor";
+import { cx, formatDateTime } from "@/lib/utils";
+import { toast } from "sonner";
+
+export function EntryEditor({
+  book,
+  entry,
+  onDeleted,
+  onRequestLookup,
+}: {
+  book: Wordbook;
+  entry: Entry;
+  onDeleted: () => void;
+  onRequestLookup: () => void;
+}) {
+  const updateEntry = useAppStore((s) => s.updateEntry);
+  const setEntryValue = useAppStore((s) => s.setEntryValue);
+  const removeEntries = useAppStore((s) => s.removeEntries);
+  const duplicateEntry = useAppStore((s) => s.duplicateEntry);
+  const promoteField = useAppStore((s) => s.promoteField);
+  const [promoting, setPromoting] = useState<string | null>(null);
+  const [promoteType, setPromoteType] = useState<SectionType>("text");
+
+  const sections = sortSections(book.schema.sections);
+  const extras = extraKeys(entry.values, sections);
+
+  const deleteKey = (key: string) => {
+    const next = { ...entry.values };
+    delete next[key];
+    updateEntry(book.id, entry.id, { values: next });
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <PosDatalist />
+      {/* 词条头部 */}
+      <div className="space-y-3 border-b border-gray-300 px-5 py-4">
+        <div className="flex items-start gap-3">
+          <input
+            value={entry.headword}
+            onChange={(e) => updateEntry(book.id, entry.id, { headword: e.target.value })}
+            placeholder="输入单词…"
+            className="t-h-24 min-w-0 flex-1 bg-transparent text-gray-1000 outline-none placeholder:text-gray-600"
+            spellCheck={false}
+            autoFocus={!entry.headword}
+          />
+          <div className="flex shrink-0 items-center gap-1.5 pt-1">
+            <IconButton
+              label={entry.starred ? "取消星标" : "加星标"}
+              onClick={() => useAppStore.getState().toggleStar(book.id, entry.id)}
+              className={cx("size-8", entry.starred && "text-amber-700")}
+            >
+              <Star className="size-4" fill={entry.starred ? "currentColor" : "none"} />
+            </IconButton>
+            <Button variant="secondary" size="sm" onClick={onRequestLookup}>
+              <Search className="size-3.5" /> 检索填充
+            </Button>
+            <IconButton label="复制词条" onClick={() => duplicateEntry(book.id, entry.id)}>
+              <Copy className="size-3.5" />
+            </IconButton>
+            <IconButton
+              label="删除词条"
+              className="text-gray-800 hover:text-red-900"
+              onClick={() => {
+                removeEntries(book.id, [entry.id]);
+                onDeleted();
+                toast.success("已删除词条");
+              }}
+            >
+              <Trash2 className="size-3.5" />
+            </IconButton>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <SegmentedControl
+            size="sm"
+            value={entry.status}
+            onValueChange={(v) => useAppStore.getState().setEntryStatus(book.id, entry.id, v)}
+            options={[
+              { value: "new", label: "未学" },
+              { value: "learning", label: "在学" },
+              { value: "mastered", label: "已掌握" },
+            ]}
+          />
+          <div className="flex min-w-52 flex-1 items-center gap-2">
+            <span className="t-label-12 shrink-0 text-gray-800">标签</span>
+            <TagsEditor items={entry.tags} onChange={(tags) => updateEntry(book.id, entry.id, { tags })} placeholder="cet4、考研…" />
+          </div>
+        </div>
+        <div className="t-label-12 flex items-center gap-3 text-gray-700">
+          <span>创建于 {formatDateTime(entry.createdAt)}</span>
+          <span>更新于 {formatDateTime(entry.updatedAt)}</span>
+          {entry.source ? (
+            <span>
+              来源：{entry.source.kind === "lookup" ? "词典检索" : entry.source.kind === "import" ? "导入" : entry.source.kind === "ai" ? "AI 生成" : "手动"}
+              {entry.source.label ? ` · ${entry.source.label}` : ""}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* 动态字段 */}
+      <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
+        <div className="space-y-5 px-5 py-4">
+          {sections.length === 0 ? (
+            <EmptyState
+              icon={<Sparkles className="size-4" />}
+              title="还没有字段"
+              desc="到「字段设计」添加字段，或应用一套预设模板（牛津词典风 / 极简记忆卡…）。"
+            />
+          ) : null}
+          {sections.map((section) => (
+            <SectionForm
+              key={section.id}
+              section={section}
+              entry={entry}
+              onChange={(v) => setEntryValue(book.id, entry.id, section.key, v)}
+            />
+          ))}
+
+          {extras.length ? (
+            <div className="rounded-xl bg-background-200 p-3 shadow-geist-border">
+              <div className="mb-2 flex items-center gap-2">
+                <Sparkles className="size-3.5 text-amber-800" />
+                <span className="t-h-14">未定义字段</span>
+                <span className="t-label-12 text-gray-800">
+                  数据中存在这些字段，但尚未加入字段表；可「提升」为正式字段参与排版
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {extras.map((key) => (
+                  <div key={key} className="flex items-center gap-2 rounded-lg bg-background-100 p-2 shadow-geist-border">
+                    <span className="t-mono-13 w-36 shrink-0 truncate text-gray-900">{key}</span>
+                    <span className="t-label-12 min-w-0 flex-1 truncate text-gray-700">
+                      {renderExtraPreview(entry.values[key])}
+                    </span>
+                    <Button
+                      variant="tertiary"
+                      size="sm"
+                      onClick={() => {
+                        setPromoting(key);
+                        setPromoteType("text");
+                      }}
+                    >
+                      <Plus className="size-3.5" /> 提升为字段
+                    </Button>
+                    <IconButton label="删除该键" size="sm" className="size-7 text-gray-800 hover:text-red-900" onClick={() => deleteKey(key)}>
+                      <Trash2 className="size-3.5" />
+                    </IconButton>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* 提升字段对话框 */}
+      <Dialog open={promoting !== null} onOpenChange={(v) => !v && setPromoting(null)}>
+        <DialogHeader
+          title="提升为字段"
+          desc={`「${promoting ?? ""}」将加入字段表，出现在编辑器与所有导出卡片中。`}
+        />
+        <DialogBody className="space-y-3">
+          <div className="t-label-13 text-gray-900">字段类型</div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {SECTION_TYPE_LIST.map((t) => {
+              const def = SECTIONS[t];
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setPromoteType(t)}
+                  className={cx(
+                    "flex items-center gap-2 rounded-lg p-2 text-left text-[13px] transition-colors",
+                    promoteType === t ? "bg-blue-100 text-blue-1000 shadow-geist-border" : "bg-background-200 hover:bg-gray-100",
+                  )}
+                >
+                  <SectionIcon name={def.icon} className="size-3.5 shrink-0 text-gray-900" />
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{def.label}</span>
+                    <span className="block truncate text-[11px] text-gray-700">{def.hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => setPromoting(null)}>
+            取消
+          </Button>
+          <Button
+            onClick={() => {
+              if (!promoting) return;
+              promoteField(book.id, promoting, promoteType);
+              setPromoting(null);
+              toast.success(`已将「${promoting}」提升为字段`);
+            }}
+          >
+            确认提升
+          </Button>
+        </DialogFooter>
+      </Dialog>
+    </div>
+  );
+}
+
+function renderExtraPreview(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  if (Array.isArray(v)) return v.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join("；");
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
+function SectionForm({
+  section,
+  entry,
+  onChange,
+}: {
+  section: SectionDef;
+  entry: Entry;
+  onChange: (v: unknown) => void;
+}) {
+  const def = SECTIONS[section.type];
+  const value = entry.values[section.key];
+  const empty = isValueEmpty(section.type, value);
+  return (
+    <section className="space-y-2">
+      <header className="flex items-center gap-2">
+        <SectionIcon name={section.icon} className="size-3.5 text-gray-900" />
+        <h3 className="t-h-14 text-gray-1000">{section.label}</h3>
+        <Badge variant="gray" size="sm">
+          {def.label}
+        </Badge>
+        {!section.visible ? (
+          <Tip tip="该字段当前设置为「不在导出中显示」，可在字段设计或导出工作室中打开">
+            <span className="inline-flex items-center gap-1 text-[11px] text-amber-900">
+              <EyeOff className="size-3" /> 导出隐藏
+            </span>
+          </Tip>
+        ) : null}
+        {empty ? <span className="t-label-12 text-gray-700">未填写</span> : null}
+        <span className="ml-auto">
+          <Chip color="gray" className="!h-5 !text-[11px]">
+            {section.key}
+          </Chip>
+        </span>
+      </header>
+      <ValueEditor section={section} value={value} onChange={onChange} />
+    </section>
+  );
+}

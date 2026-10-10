@@ -1,0 +1,73 @@
+{
+  "format": "wulonvocab",
+  "version": 1,
+  "wordbook": {
+    "name": "示例 · 极简 3 词",
+    "description": "不提供 schema，字段由应用自动识别；适合快速验证导入流程。",
+    "tags": ["示例"]
+  },
+  "entries": [
+    {
+      "headword": "abandon",
+      "tags": ["cet4", "ky"],
+      "values": {
+        "phonetic": { "uk": "/əˈbændən/", "us": "/əˈbændən/" },
+        "senses": [
+          {
+            "pos": "v.",
+            "translation": "抛弃；遗弃；放弃",
+            "definition": "to leave sb/sth with no intention of returning",
+            "examples": [{ "en": "The baby had been abandoned by its mother.", "zh": "这个婴儿被母亲遗弃了。" }],
+            "synonyms": ["desert", "forsake"],
+            "notes": "abandon hope 放弃希望"
+          }
+        ],
+        "family": [{ "key": "abandonment", "value": "n. 遗弃；放弃" }],
+        "contexts": ["考研", "新闻"]
+      }
+    },
+    {
+      "headword": "resilient",
+      "tags": ["ielts", "toefl"],
+      "values": {
+        "phonetic": { "uk": "/rɪˈzɪliənt/", "us": "/rɪˈzɪliənt/" },
+        "senses": [
+          {
+            "pos": "adj.",
+            "translation": "有韧性的；能迅速恢复的；适应力强的",
+            "definition": "able to recover quickly after something unpleasant",
+            "examples": [{ "en": "Children are often more resilient than adults.", "zh": "孩子们往往比大人恢复得更快。" }],
+            "synonyms": ["tough", "adaptable"],
+            "antonyms": ["fragile", "vulnerable"]
+          }
+        ],
+        "family": [{ "key": "resilience", "value": "n. 韧性；恢复力；适应力" }],
+        "contexts": ["雅思写作", "心理学"]
+      }
+    },
+    {
+      "headword": "comprehensive",
+      "tags": ["cet4", "ky", "ielts"],
+      "values": {
+        "phonetic": { "uk": "/ˌkɒmprɪˈhensɪv/", "us": "/ˌkɑːmprɪˈhensɪv/" },
+        "senses": [
+          {
+            "pos": "adj.",
+            "translation": "全面的；综合的；包罗万象的",
+            "definition": "including everything that is necessary; complete",
+            "examples": [{ "en": "a comprehensive study of the subject", "zh": "对该课题的全面研究", "source": "OALD" }],
+            "synonyms": ["thorough", "extensive"],
+            "antonyms": ["partial", "limited"],
+            "notes": "辨析：comprehensive=覆盖全；comprehensible=能被理解的"
+          }
+        ],
+        "family": [
+          { "key": "comprehend", "value": "v. 理解；领会" },
+          { "key": "comprehension", "value": "n. 理解（力）；阅读理解" },
+          { "key": "comprehensible", "value": "adj. 可理解的；易懂的" }
+        ],
+        "contexts": ["教育", "报告写作"]
+      }
+    }
+  ]
+}

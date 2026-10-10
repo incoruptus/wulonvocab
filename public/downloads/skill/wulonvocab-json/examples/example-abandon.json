@@ -1,0 +1,102 @@
+{
+  "format": "wulonvocab",
+  "version": 1,
+  "wordbook": {
+    "name": "示例 · 牛津词典风（abandon）",
+    "description": "展示全部字段类型的完整示例，可直接导入。",
+    "tags": ["示例", "考研"],
+    "meta": { "language": "en", "level": "CET4 / 考研", "coverEmoji": "📖" }
+  },
+  "schema": {
+    "sections": [
+      { "key": "phonetic", "label": "音标", "type": "pronunciation", "icon": "Volume2", "order": 0, "visible": true, "builtin": true, "options": { "showUk": true, "showUs": true, "showAudio": false } },
+      { "key": "senses", "label": "词性与释义", "type": "senses", "icon": "Layers", "order": 1, "visible": true, "builtin": true, "options": { "groupByPos": true, "posStyle": "badge", "showDefinition": true, "showTranslation": true, "showExamples": true, "showUsage": true, "showPatterns": true, "showSynonyms": true, "showAntonyms": false, "showCollocations": true, "showNotes": true } },
+      { "key": "family", "label": "词族", "type": "keyvalue", "icon": "GitBranch", "order": 2, "visible": true, "builtin": true, "options": { "keyLabel": "词", "valueLabel": "释义", "inline": false } },
+      { "key": "transforms", "label": "词性变换", "type": "transforms", "icon": "Repeat", "order": 3, "visible": true, "builtin": true, "options": { "showPos": true, "showNote": true } },
+      { "key": "collocations", "label": "常用搭配", "type": "list", "icon": "List", "order": 4, "visible": true, "builtin": true, "options": { "ordered": false } },
+      { "key": "associations", "label": "联想与助记", "type": "list", "icon": "Lightbulb", "order": 5, "visible": true, "builtin": true, "options": { "ordered": false } },
+      { "key": "contexts", "label": "情景标签", "type": "tags", "icon": "Tag", "order": 6, "visible": true, "builtin": true, "options": { "color": "teal" } },
+      { "key": "examplesExtra", "label": "情景例句", "type": "examples", "icon": "Quote", "order": 7, "visible": true, "builtin": true, "options": { "showZh": true, "numbering": false } },
+      { "key": "notes", "label": "学习笔记", "type": "markdown", "icon": "AlignLeft", "order": 8, "visible": true, "builtin": true, "options": {} },
+      { "key": "etymology", "label": "词源", "type": "text", "icon": "BookOpen", "order": 9, "visible": true, "builtin": true, "options": { "prefix": "词源" } }
+    ]
+  },
+  "entries": [
+    {
+      "headword": "abandon",
+      "tags": ["cet4", "ky"],
+      "starred": true,
+      "values": {
+        "phonetic": { "uk": "/əˈbændən/", "us": "/əˈbændən/" },
+        "senses": [
+          {
+            "pos": "v.",
+            "translation": "抛弃；遗弃（尤指对你有责任的人）",
+            "definition": "to leave somebody, especially somebody you are responsible for, with no intention of returning",
+            "examples": [
+              { "en": "The baby had been abandoned by its mother.", "zh": "这个婴儿被母亲遗弃了。", "source": "OALD" },
+              { "en": "People often simply abandon their pets when they go abroad.", "zh": "人们出国时常常就这么遗弃宠物。" }
+            ],
+            "usage": "常用被动语态 be abandoned by；过去分词 abandoned 常作形容词「被遗弃的」",
+            "patterns": ["abandon sb/sth", "abandon sb to sth"],
+            "synonyms": ["desert", "leave", "forsake"],
+            "antonyms": [],
+            "collocations": ["abandon sb to their fate 让某人听天由命"],
+            "notes": ""
+          },
+          {
+            "pos": "v.",
+            "translation": "（因危险或无法停留而）放弃，离开，舍弃",
+            "definition": "to leave a thing or place, especially because it is impossible or dangerous to stay",
+            "examples": [
+              { "en": "Snow forced many drivers to abandon their vehicles.", "zh": "大雪迫使许多司机弃车而行。", "source": "OALD" },
+              { "en": "He gave the order to abandon ship.", "zh": "他下令弃船。", "source": "OALD" }
+            ],
+            "usage": "",
+            "patterns": ["abandon sth", "abandon ship"],
+            "synonyms": ["evacuate", "leave behind"],
+            "antonyms": [],
+            "collocations": ["be forced to abandon sth 被迫放弃某物"],
+            "notes": ""
+          },
+          {
+            "pos": "v.",
+            "translation": "中止，放弃（未完成的事）；放弃（希望）",
+            "definition": "to stop doing something, especially before it is finished; to stop having something",
+            "examples": [
+              { "en": "They abandoned the match because of rain.", "zh": "因下雨他们中止了比赛。", "source": "OALD" },
+              { "en": "She abandoned hope of any reconciliation.", "zh": "她放弃了任何和解的希望。" }
+            ],
+            "usage": "考点：abandon hope（放弃希望）、abandon oneself to（沉溺于）",
+            "patterns": ["abandon sth", "abandon hope of sth", "abandon oneself to sth"],
+            "synonyms": ["give up", "drop", "scrap"],
+            "antonyms": ["continue", "maintain"],
+            "collocations": ["abandon hope 放弃希望", "altogether abandon sth 彻底放弃"],
+            "notes": ""
+          }
+        ],
+        "family": [
+          { "key": "abandonment", "value": "n. 遗弃；放弃；中止" },
+          { "key": "abandoned", "value": "adj. 被遗弃的；废弃的" },
+          { "key": "abandon", "value": "n. 放纵；放任（with gay abandon 纵情地）" }
+        ],
+        "transforms": [
+          { "form": "abandons", "pos": "v.", "note": "第三人称单数" },
+          { "form": "abandoned", "pos": "v.", "note": "过去式 / 过去分词" },
+          { "form": "abandoning", "pos": "v.", "note": "现在分词" }
+        ],
+        "collocations": ["with gay abandon 纵情地；无所顾忌地", "abandon ship 弃船"],
+        "associations": [
+          "a（一个）+ band（带子）+ on（在…上）：一条带子被丢在路边无人认领 → 抛弃、遗弃",
+          "词根 band = 控制：a + bandon，交出控制权 → 放弃"
+        ],
+        "contexts": ["考研", "新闻", "文学"],
+        "examplesExtra": [
+          { "en": "The plans for reform were quietly abandoned.", "zh": "改革方案被悄然放弃。", "source": "考研真题例句" }
+        ],
+        "notes": "**记忆钩子**：abandon 与 abundant（大量的）只差一个字母——abandon 是「丢掉」，abundant 是「多得丢不完」。",
+        "etymology": "源自古法语 abandoner，a-（置于）+ bandon（控制），本义「交出控制权」。"
+      }
+    }
+  ]
+}

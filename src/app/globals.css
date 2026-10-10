@@ -1,0 +1,407 @@
+@import "tailwindcss";
+
+/* ============================================================
+   WulonVocab · Geist 设计系统令牌
+   令牌值取自 Vercel Geist 设计系统（vercel.com/geist，2026-10 实测）
+   - 两级背景：background-100 / background-200
+   - 10 级灰度：100 背景 → 1000 文本
+   - 语义色：blue=信息、green=健康、amber=警示、red=错误（均取 10 级）
+   ============================================================ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* 背景 */
+  --ds-background-100: hsla(0, 0%, 100%, 1);
+  --ds-background-200: hsla(0, 0%, 98%, 1);
+  /* 灰色 10 级 */
+  --ds-gray-100: hsla(0, 0%, 95%, 1);
+  --ds-gray-200: hsla(0, 0%, 92%, 1);
+  --ds-gray-300: hsla(0, 0%, 90%, 1);
+  --ds-gray-400: hsla(0, 0%, 92%, 1);
+  --ds-gray-500: hsla(0, 0%, 79%, 1);
+  --ds-gray-600: hsla(0, 0%, 66%, 1);
+  --ds-gray-700: hsla(0, 0%, 56%, 1);
+  --ds-gray-800: hsla(0, 0%, 49%, 1);
+  --ds-gray-900: hsla(0, 0%, 30%, 1);
+  --ds-gray-1000: hsla(0, 0%, 9%, 1);
+  /* 灰色 alpha */
+  --ds-gray-a100: #0000000d;
+  --ds-gray-a200: #00000014;
+  --ds-gray-a300: #0000001a;
+  --ds-gray-a400: #00000014;
+  --ds-gray-a500: #00000036;
+  --ds-gray-a600: #00000057;
+  --ds-gray-a700: #00000070;
+  --ds-gray-a800: #00000082;
+  --ds-gray-a900: #000000b3;
+  /* 蓝色 */
+  --ds-blue-100: hsla(212, 100%, 97%, 1);
+  --ds-blue-200: hsla(210, 100%, 96%, 1);
+  --ds-blue-300: hsla(210, 100%, 94%, 1);
+  --ds-blue-400: hsla(209, 100%, 90%, 1);
+  --ds-blue-500: hsla(209, 100%, 80%, 1);
+  --ds-blue-600: hsla(208, 100%, 66%, 1);
+  --ds-blue-700: hsla(212, 100%, 48%, 1);
+  --ds-blue-800: hsla(212, 100%, 41%, 1);
+  --ds-blue-900: hsla(211, 100%, 42%, 1);
+  --ds-blue-1000: hsla(211, 100%, 15%, 1);
+  /* 红 */
+  --ds-red-600: hsla(359, 90%, 71%, 1);
+  --ds-red-700: hsla(358, 75%, 59%, 1);
+  --ds-red-800: hsla(358, 70%, 52%, 1);
+  --ds-red-900: hsla(358, 66%, 48%, 1);
+  /* 琥珀 */
+  --ds-amber-600: hsla(36, 90%, 62%, 1);
+  --ds-amber-700: hsla(39, 100%, 57%, 1);
+  --ds-amber-800: hsla(35, 100%, 52%, 1);
+  --ds-amber-900: hsla(30, 100%, 32%, 1);
+  /* 绿 */
+  --ds-green-600: hsla(125, 60%, 64%, 1);
+  --ds-green-700: hsla(131, 41%, 46%, 1);
+  --ds-green-800: hsla(132, 43%, 39%, 1);
+  --ds-green-900: hsla(133, 50%, 32%, 1);
+  /* 紫 / 青（Badge 备用） */
+  --ds-purple-700: rgb(120, 32, 188);
+  --ds-teal-700: rgb(6, 122, 110);
+
+  --ds-focus-color: hsla(212, 100%, 48%, 1);
+  --ds-focus-ring: 0 0 0 2px var(--ds-background-100), 0 0 0 4px var(--ds-focus-color);
+
+  color-scheme: light;
+}
+
+.dark {
+  --ds-background-100: hsla(0, 0%, 4%, 1);
+  --ds-background-200: hsla(0, 0%, 0%, 1);
+  --ds-gray-100: hsla(0, 0%, 10%, 1);
+  --ds-gray-200: hsla(0, 0%, 12%, 1);
+  --ds-gray-300: hsla(0, 0%, 16%, 1);
+  --ds-gray-400: hsla(0, 0%, 18%, 1);
+  --ds-gray-500: hsla(0, 0%, 27%, 1);
+  --ds-gray-600: hsla(0, 0%, 53%, 1);
+  --ds-gray-700: hsla(0, 0%, 56%, 1);
+  --ds-gray-800: hsla(0, 0%, 49%, 1);
+  --ds-gray-900: hsla(0, 0%, 63%, 1);
+  --ds-gray-1000: hsla(0, 0%, 93%, 1);
+  --ds-gray-a100: #ffffff0f;
+  --ds-gray-a200: #ffffff17;
+  --ds-gray-a300: #ffffff21;
+  --ds-gray-a400: #ffffff24;
+  --ds-gray-a500: #ffffff3d;
+  --ds-gray-a600: #ffffff82;
+  --ds-gray-a700: #ffffff8a;
+  --ds-gray-a800: #ffffff78;
+  --ds-gray-a900: #ffffff9c;
+  --ds-blue-100: hsla(216, 50%, 12%, 1);
+  --ds-blue-200: hsla(214, 59%, 15%, 1);
+  --ds-blue-300: hsla(213, 71%, 20%, 1);
+  --ds-blue-400: hsla(212, 78%, 23%, 1);
+  --ds-blue-500: hsla(211, 86%, 27%, 1);
+  --ds-blue-600: hsla(206, 100%, 50%, 1);
+  --ds-blue-700: hsla(212, 100%, 48%, 1);
+  --ds-blue-800: hsla(212, 100%, 41%, 1);
+  --ds-blue-900: hsla(210, 100%, 66%, 1);
+  --ds-blue-1000: hsla(206, 100%, 96%, 1);
+  --ds-red-600: hsla(358, 75%, 59%, 1);
+  --ds-red-700: hsla(358, 75%, 59%, 1);
+  --ds-red-800: hsla(358, 69%, 52%, 1);
+  --ds-red-900: hsla(358, 100%, 69%, 1);
+  --ds-amber-600: hsla(39, 85%, 49%, 1);
+  --ds-amber-700: hsla(39, 100%, 57%, 1);
+  --ds-amber-800: hsla(35, 100%, 52%, 1);
+  --ds-amber-900: hsla(39, 90%, 50%, 1);
+  --ds-green-600: hsla(135, 70%, 34%, 1);
+  --ds-green-700: hsla(131, 41%, 46%, 1);
+  --ds-green-800: hsla(132, 43%, 39%, 1);
+  --ds-green-900: hsla(131, 43%, 57%, 1);
+  --ds-purple-700: rgb(191, 122, 240);
+  --ds-teal-700: rgb(86, 207, 190);
+
+  --ds-focus-color: hsla(210, 100%, 66%, 1);
+  --ds-focus-ring: 0 0 0 2px var(--ds-background-100), 0 0 0 4px var(--ds-focus-color);
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--ds-background-100);
+  --color-background-100: var(--ds-background-100);
+  --color-background-200: var(--ds-background-200);
+
+  --color-gray-100: var(--ds-gray-100);
+  --color-gray-200: var(--ds-gray-200);
+  --color-gray-300: var(--ds-gray-300);
+  --color-gray-400: var(--ds-gray-400);
+  --color-gray-500: var(--ds-gray-500);
+  --color-gray-600: var(--ds-gray-600);
+  --color-gray-700: var(--ds-gray-700);
+  --color-gray-800: var(--ds-gray-800);
+  --color-gray-900: var(--ds-gray-900);
+  --color-gray-1000: var(--ds-gray-1000);
+  --color-gray-a100: var(--ds-gray-a100);
+  --color-gray-a200: var(--ds-gray-a200);
+  --color-gray-a300: var(--ds-gray-a300);
+  --color-gray-a400: var(--ds-gray-a400);
+  --color-gray-a500: var(--ds-gray-a500);
+  --color-gray-a600: var(--ds-gray-a600);
+  --color-gray-a700: var(--ds-gray-a700);
+  --color-gray-a800: var(--ds-gray-a800);
+  --color-gray-a900: var(--ds-gray-a900);
+
+  --color-blue-100: var(--ds-blue-100);
+  --color-blue-200: var(--ds-blue-200);
+  --color-blue-300: var(--ds-blue-300);
+  --color-blue-400: var(--ds-blue-400);
+  --color-blue-500: var(--ds-blue-500);
+  --color-blue-600: var(--ds-blue-600);
+  --color-blue-700: var(--ds-blue-700);
+  --color-blue-800: var(--ds-blue-800);
+  --color-blue-900: var(--ds-blue-900);
+  --color-blue-1000: var(--ds-blue-1000);
+
+  --color-red-600: var(--ds-red-600);
+  --color-red-700: var(--ds-red-700);
+  --color-red-800: var(--ds-red-800);
+  --color-red-900: var(--ds-red-900);
+  --color-amber-600: var(--ds-amber-600);
+  --color-amber-700: var(--ds-amber-700);
+  --color-amber-800: var(--ds-amber-800);
+  --color-amber-900: var(--ds-amber-900);
+  --color-green-600: var(--ds-green-600);
+  --color-green-700: var(--ds-green-700);
+  --color-green-800: var(--ds-green-800);
+  --color-green-900: var(--ds-green-900);
+  --color-purple-700: var(--ds-purple-700);
+  --color-teal-700: var(--ds-teal-700);
+
+  --font-sans: var(--font-geist-sans), "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo,
+    "Cascadia Mono", "Noto Sans Mono CJK SC", monospace;
+
+  --shadow-geist-2xs: 0px 1px 1px #0000000a;
+  --shadow-geist-xs: 0px 1px 2px #0000000a;
+  --shadow-geist-sm: 0px 2px 2px #0000000a;
+  --shadow-geist-md: 0px 2px 2px #0000000a, 0px 8px 8px -8px #0000000a;
+  --shadow-geist-lg: 0px 2px 2px #0000000a, 0px 8px 16px -4px #0000000a;
+  --shadow-geist-xl: 0px 1px 1px #00000005, 0px 4px 8px -4px #0000000a,
+    0px 16px 24px -8px #0000000f;
+  --shadow-geist-border: 0 0 0 1px var(--ds-gray-a400);
+  --shadow-geist-menu: 0 0 0 1px #00000014, 0px 1px 1px #00000005,
+    0px 4px 8px -4px #0000000a, 0px 16px 24px -8px #0000000f;
+  --shadow-geist-modal: 0 0 0 1px #00000014, 0px 1px 1px #00000005,
+    0px 8px 16px -4px #0000000a, 0px 24px 32px -8px #0000000f;
+
+  --ease-swift: cubic-bezier(0.175, 0.885, 0.32, 1.1);
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    background: var(--ds-background-100);
+    color: var(--ds-gray-1000);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 20px;
+  }
+  ::selection {
+    background: var(--ds-blue-700);
+    color: #fff;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ds-focus-color);
+    outline-offset: 1px;
+  }
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--ds-gray-a300);
+    border-radius: 8px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--ds-gray-a500);
+    background-clip: content-box;
+    border: 3px solid transparent;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  [contenteditable]:focus {
+    outline: none;
+  }
+}
+
+@layer utilities {
+  /* Geist 字号系统（实测于 vercel.com） */
+  .t-h-32 { font-size: 32px; line-height: 40px; letter-spacing: -0.04em; font-weight: 600; }
+  .t-h-24 { font-size: 24px; line-height: 32px; letter-spacing: -0.04em; font-weight: 600; }
+  .t-h-20 { font-size: 20px; line-height: 26px; letter-spacing: -0.02em; font-weight: 600; }
+  .t-h-16 { font-size: 16px; line-height: 24px; letter-spacing: -0.02em; font-weight: 600; }
+  .t-h-14 { font-size: 14px; line-height: 20px; letter-spacing: -0.02em; font-weight: 600; }
+  .t-copy-16 { font-size: 16px; line-height: 24px; }
+  .t-copy-14 { font-size: 14px; line-height: 20px; }
+  .t-copy-13 { font-size: 13px; line-height: 18px; }
+  .t-label-14 { font-size: 14px; line-height: 20px; }
+  .t-label-13 { font-size: 13px; line-height: 16px; font-feature-settings: "tnum"; }
+  .t-label-12 { font-size: 12px; line-height: 16px; }
+  .t-button { font-size: 14px; line-height: 20px; font-weight: 500; }
+  .t-mono-13 { font-family: var(--font-mono); font-size: 13px; line-height: 18px; }
+  .t-mono-12 { font-family: var(--font-mono); font-size: 12px; line-height: 16px; }
+
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--ds-gray-a300) transparent;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .grid-bg {
+    background-image: radial-gradient(var(--ds-gray-a200) 1px, transparent 1px);
+    background-size: 16px 16px;
+  }
+}
+
+/* ============================================================
+   导出页面（预览与打印共用同一 DOM 结构，保证所见即所得）
+   ============================================================ */
+.wv-page {
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  flex: none;
+}
+.wv-flow-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.wv-block {
+  flex: none;
+}
+/* 打印时浏览器对背景色/边框的处理 */
+@media print {
+  html,
+  body {
+    background: #fff !important;
+  }
+  .wv-doc {
+    display: block !important;
+    gap: 0 !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+  .wv-page {
+    margin: 0 !important;
+    box-shadow: none !important;
+    outline: none !important;
+    break-after: page;
+    page-break-after: always;
+  }
+  .wv-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+/* ============================================================
+   导出卡片排版：全部使用 em 相对单位，随容器 font-size 缩放，
+   屏幕预览与打印共用同一套 DOM，保证「所见即所得」。
+   ============================================================ */
+.wv-card {
+  color: var(--wv-fg, #1b1b1b);
+  line-height: var(--wv-lh, 1.6);
+  font-size: inherit;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.wv-card * {
+  box-sizing: border-box;
+}
+.wv-mono {
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+.wv-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 1.7em;
+  padding: 0 0.6em;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--wv-accent, #0068d6) 32%, transparent);
+  color: color-mix(in srgb, var(--wv-accent, #0068d6) 78%, #1b1b1b);
+  font-size: 0.78em;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wv-chip--plain {
+  border-color: color-mix(in srgb, currentColor 22%, transparent);
+  color: inherit;
+}
+.wv-chip--fill {
+  background: color-mix(in srgb, var(--wv-accent, #0068d6) 10%, transparent);
+}
+.wv-sense-num {
+  font-variant-numeric: tabular-nums;
+  color: var(--wv-accent, #0068d6);
+  font-weight: 600;
+  font-size: 0.9em;
+}
+.wv-rule {
+  border: 0;
+  border-top: 1px solid var(--wv-line, #e6e6e6);
+}
+.wv-quote {
+  border-left: 0.22em solid var(--wv-accent, #0068d6);
+  padding-left: 0.6em;
+}
+.wv-writing-line {
+  border-bottom: 1px dashed var(--wv-line, #d9d9d9);
+  height: 1.9em;
+}
+.wv-page-cover-title {
+  font-size: 2.6em;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.wv-index-col {
+  column-gap: 1.4em;
+}
+.wv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+.wv-table th,
+.wv-table td {
+  border: 1px solid var(--wv-line, #e0e0e0);
+  padding: 0.3em 0.55em;
+  text-align: left;
+  vertical-align: top;
+}
+.wv-table th {
+  background: color-mix(in srgb, var(--wv-accent, #0068d6) 7%, transparent);
+  font-weight: 600;
+}
