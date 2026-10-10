@@ -1,15 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useAppStore } from "@/lib/store";
 import { ExportStudio } from "@/components/export/ExportStudio";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/misc";
 
 export function ExportPageClient() {
-  const params = useParams<{ id: string }>();
-  const id = params?.id ?? "";
+  const searchParams = useSearchParams();
+  const id = searchParams.get("id") ?? "";
   const hydrated = useAppStore((s) => s.hydrated);
   const book = useAppStore((s) => s.books.find((b) => b.id === id));
 

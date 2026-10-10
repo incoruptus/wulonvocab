@@ -76,20 +76,19 @@ export function SensesEditor({
               )}
               <div className="flex shrink-0 items-center">
                 <Tip tip="上移">
-                  <IconButton label="上移" size="sm" className="size-6" disabled={i === 0} onClick={() => move(i, -1)}>
+                  <IconButton label="上移" size="xs" disabled={i === 0} onClick={() => move(i, -1)}>
                     ↑
                   </IconButton>
                 </Tip>
                 <Tip tip="下移">
-                  <IconButton label="下移" size="sm" className="size-6" disabled={i === senses.length - 1} onClick={() => move(i, 1)}>
+                  <IconButton label="下移" size="xs" disabled={i === senses.length - 1} onClick={() => move(i, 1)}>
                     ↓
                   </IconButton>
                 </Tip>
                 <Tip tip="复制义项">
                   <IconButton
                     label="复制"
-                    size="sm"
-                    className="size-6"
+                    size="xs"
                     onClick={() => {
                       const copy: SenseItem = { ...sense, id: crypto.randomUUID(), examples: sense.examples.map((e) => ({ ...e })), patterns: [...sense.patterns], synonyms: [...sense.synonyms], antonyms: [...sense.antonyms], collocations: [...sense.collocations] };
                       const next = [...senses];
@@ -103,8 +102,7 @@ export function SensesEditor({
                 <Tip tip="删除义项">
                   <IconButton
                     label="删除"
-                    size="sm"
-                    className="size-6 text-gray-800 hover:text-red-900"
+                    size="xs" className="text-gray-800 hover:text-red-900"
                     onClick={() => onChange(senses.filter((s) => s.id !== sense.id))}
                   >
                     <Trash2 className="size-3" />

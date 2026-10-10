@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, EyeOff, Plus, Search, Sparkles, Star, Trash2 } from "lucide-react";
+import { Copy, ChevronLeft, EyeOff, Plus, Search, Sparkles, Star, Trash2 } from "lucide-react";
 import type { Entry, SectionDef, SectionType, Wordbook } from "@/lib/types";
 import { extraKeys, isValueEmpty, SECTION_TYPE_LIST, SECTIONS, sortSections } from "@/lib/sections";
 import { useAppStore } from "@/lib/store";
@@ -20,11 +20,14 @@ export function EntryEditor({
   entry,
   onDeleted,
   onRequestLookup,
+  onBack,
 }: {
   book: Wordbook;
   entry: Entry;
   onDeleted: () => void;
   onRequestLookup: () => void;
+  /** 窄屏：返回词条列表 */
+  onBack?: () => void;
 }) {
   const updateEntry = useAppStore((s) => s.updateEntry);
   const setEntryValue = useAppStore((s) => s.setEntryValue);
@@ -47,7 +50,16 @@ export function EntryEditor({
     <div className="flex h-full min-h-0 flex-col">
       <PosDatalist />
       {/* 词条头部 */}
-      <div className="space-y-3 border-b border-gray-300 px-5 py-4">
+      <div className="space-y-3 border-b border-gray-300 px-4 py-4 lg:px-5">
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            className="t-label-13 -ml-1 inline-flex items-center gap-1 text-gray-800 hover:text-gray-1000 lg:hidden"
+          >
+            <ChevronLeft className="size-3.5" /> 词条列表
+          </button>
+        ) : null}
         <div className="flex items-start gap-3">
           <input
             value={entry.headword}
@@ -61,18 +73,20 @@ export function EntryEditor({
             <IconButton
               label={entry.starred ? "取消星标" : "加星标"}
               onClick={() => useAppStore.getState().toggleStar(book.id, entry.id)}
-              className={cx("size-8", entry.starred && "text-amber-700")}
+              size="sm"
+              className={cx(entry.starred && "text-amber-700")}
             >
               <Star className="size-4" fill={entry.starred ? "currentColor" : "none"} />
             </IconButton>
             <Button variant="secondary" size="sm" onClick={onRequestLookup}>
               <Search className="size-3.5" /> 检索填充
             </Button>
-            <IconButton label="复制词条" onClick={() => duplicateEntry(book.id, entry.id)}>
+            <IconButton label="复制词条" size="sm" onClick={() => duplicateEntry(book.id, entry.id)}>
               <Copy className="size-3.5" />
             </IconButton>
             <IconButton
               label="删除词条"
+              size="sm"
               className="text-gray-800 hover:text-red-900"
               onClick={() => {
                 removeEntries(book.id, [entry.id]);
@@ -119,7 +133,7 @@ export function EntryEditor({
             <EmptyState
               icon={<Sparkles className="size-4" />}
               title="还没有字段"
-              desc="到「字段设计」添加字段，或应用一套预设模板（牛津词典风 / 极简记忆卡…）。"
+              desc="去「字段设计」挑几个字段，或一键套用模板（牛津词典风 / 极简记忆卡…），马上就能写。"
             />
           ) : null}
           {sections.map((section) => (
@@ -137,7 +151,7 @@ export function EntryEditor({
                 <Sparkles className="size-3.5 text-amber-800" />
                 <span className="t-h-14">未定义字段</span>
                 <span className="t-label-12 text-gray-800">
-                  数据中存在这些字段，但尚未加入字段表；可「提升」为正式字段参与排版
+                  这些内容在数据里，但还没进字段表——「提升为字段」后即可出现在排版里。
                 </span>
               </div>
               <div className="space-y-1.5">
@@ -157,7 +171,7 @@ export function EntryEditor({
                     >
                       <Plus className="size-3.5" /> 提升为字段
                     </Button>
-                    <IconButton label="删除该键" size="sm" className="size-7 text-gray-800 hover:text-red-900" onClick={() => deleteKey(key)}>
+                    <IconButton label="删除该键" size="sm" className="text-gray-800 hover:text-red-900" onClick={() => deleteKey(key)}>
                       <Trash2 className="size-3.5" />
                     </IconButton>
                   </div>

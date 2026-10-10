@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/field";
 import { Badge, Card, SegmentedControl } from "@/components/ui/misc";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/overlay";
+import { assetPath } from "@/lib/paths";
 import { cx, uid } from "@/lib/utils";
 
 type Target = "new" | "append" | "replace";
@@ -131,7 +132,7 @@ export function ImportDialog({
     >
       <DialogHeader
         title="导入 JSON / CSV"
-        desc="支持 WulonVocab 格式、纯词条数组、词典对象（ECDICT / OALD 结构自动识别），无需预先整理字段。"
+        desc="WulonVocab 文档、词条数组、词典对象、CSV / NDJSON 都能进；结构自动识别，先导进来再说。"
       />
       <DialogBody className="space-y-4">
         {!parsed ? (
@@ -145,7 +146,7 @@ export function ImportDialog({
                   { value: "paste", label: "粘贴文本" },
                 ]}
               />
-              <a href="/samples/sample-import.json" download className="t-label-12 text-blue-900 underline decoration-dotted">
+              <a href={assetPath("/samples/sample-import.json")} download className="t-label-12 text-blue-900 underline decoration-dotted">
                 下载示例 JSON
               </a>
             </div>

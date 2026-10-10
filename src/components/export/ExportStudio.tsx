@@ -81,7 +81,7 @@ export function ExportStudio({ book }: { book: Wordbook }) {
   return (
     <div className="flex h-dvh flex-col bg-background-100">
       {/* 顶部工具栏 */}
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-gray-300 px-4">
+      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-gray-300 px-3 py-2 lg:h-14 lg:flex-nowrap lg:px-4 lg:py-0">
         <IconButton label="返回词库" onClick={() => window.history.back()}>
           <ChevronLeft className="size-4" />
         </IconButton>
@@ -114,15 +114,16 @@ export function ExportStudio({ book }: { book: Wordbook }) {
               <DropdownMenuItem onSelect={() => void onPng(3.125, false)}>300 DPI · 逐页下载</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button size="md" onClick={onPrint}>
-            <Printer className="size-4" /> 打印 / 矢量 PDF
+          <Button size="md" className="shrink-0" onClick={onPrint}>
+            <Printer className="size-4" /> 打印
+            <span className="hidden sm:inline"> / 矢量 PDF</span>
           </Button>
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         {/* 设置面板 */}
-        <aside className="w-[336px] shrink-0 overflow-y-auto border-r border-gray-300 px-4 py-4 scroll-thin">
+        <aside className="max-h-[45vh] w-full shrink-0 overflow-y-auto border-b border-gray-300 px-4 py-3 scroll-thin lg:h-full lg:max-h-none lg:w-[336px] lg:border-b-0 lg:border-r lg:py-4">
           <Panel title="纸张与方向" defaultOpen>
             <Field label="纸张尺寸">
               <Select value={settings.paper} onChange={(e) => patch({ paper: e.target.value as ExportSettings["paper"] })}>
@@ -159,7 +160,7 @@ export function ExportStudio({ book }: { book: Wordbook }) {
                   { value: "portrait", label: "纵向" },
                   { value: "landscape", label: "横向" },
                 ]}
-                className="w-full justify-stretch"
+                grow
               />
             </Field>
             <Field label="纸张色调">
@@ -167,7 +168,7 @@ export function ExportStudio({ book }: { book: Wordbook }) {
                 value={settings.tone}
                 onValueChange={(v) => patch({ tone: v })}
                 options={(Object.keys(TONES) as (keyof typeof TONES)[]).map((id) => ({ value: id, label: TONES[id].name, title: TONES[id].hint }))}
-                className="w-full"
+                grow
               />
             </Field>
           </Panel>
@@ -227,7 +228,7 @@ export function ExportStudio({ book }: { book: Wordbook }) {
                   { value: "flow", label: "流式分栏" },
                   { value: "grid", label: "网格闪卡" },
                 ]}
-                className="w-full"
+                grow
               />
             </Field>
             {settings.layout === "flow" ? (
@@ -241,7 +242,7 @@ export function ExportStudio({ book }: { book: Wordbook }) {
                       { value: "2", label: "2 栏" },
                       { value: "3", label: "3 栏" },
                     ]}
-                    className="w-full"
+                    grow
                   />
                 </Field>
                 <SliderRow label="栏间距" value={settings.columnGap} min={4} max={16} step={1} suffix="mm" onChange={(v) => patch({ columnGap: v })} />
@@ -273,7 +274,7 @@ export function ExportStudio({ book }: { book: Wordbook }) {
                   { value: "compact", label: "紧凑" },
                   { value: "notebook", label: "手账" },
                 ]}
-                className="w-full"
+                grow
               />
             </Field>
             <Field label="字体">
@@ -284,7 +285,7 @@ export function ExportStudio({ book }: { book: Wordbook }) {
                   { value: "sans", label: "无衬线（Geist）" },
                   { value: "serif", label: "衬线（宋体）" },
                 ]}
-                className="w-full"
+                grow
               />
             </Field>
             <SliderRow label="字号" value={settings.fontScale * 100} min={85} max={130} step={5} suffix="%" onChange={(v) => patch({ fontScale: v / 100 })} />
@@ -310,7 +311,7 @@ export function ExportStudio({ book }: { book: Wordbook }) {
                   { value: "list", label: "列表顺序" },
                   { value: "az", label: "字母序" },
                 ]}
-                className="w-full"
+                grow
               />
             </Field>
           </Panel>

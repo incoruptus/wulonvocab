@@ -53,10 +53,10 @@ export default function SettingsPage() {
   return (
     <div className="flex min-h-dvh flex-col">
       <TopNav />
-      <main className="mx-auto w-full max-w-4xl flex-1 space-y-8 px-6 py-8">
+      <main className="mx-auto w-full max-w-4xl flex-1 space-y-6 px-4 py-6 sm:space-y-8 sm:px-6 sm:py-8">
         <div>
           <h1 className="t-h-24">设置</h1>
-          <p className="t-label-13 mt-1 text-gray-800">所有数据保存在本机浏览器中（IndexedDB），不上传任何服务器。</p>
+          <p className="t-label-13 mt-1 text-gray-800">词库、字段表、检索配置都只存在这台设备的浏览器里（IndexedDB）：断网可用、刷新不丢、随时导出 JSON 带走。</p>
         </div>
 
         {/* 外观 */}
@@ -73,7 +73,7 @@ export default function SettingsPage() {
                   { value: "dark", label: "深色" },
                   { value: "system", label: "跟随系统" },
                 ]}
-                className="w-full"
+                grow
               />
             </div>
             <div className="space-y-1.5">
@@ -86,7 +86,7 @@ export default function SettingsPage() {
 
         {/* 数据源 */}
         <Card className="space-y-4">
-          <CardTitle desc="检索单词时使用的词典数据源，可随时启用 / 停用">
+          <CardTitle desc="按启用的来源并行取词，结果分组展示，任你挑用。">
             <span className="inline-flex items-center gap-2">
               <Wifi className="size-4 text-gray-800" /> 词典检索数据源
             </span>
@@ -129,7 +129,7 @@ export default function SettingsPage() {
         {/* 本地词库 */}
         <Card className="space-y-4">
           <CardTitle
-            desc="导入 OALD / ECDICT 等词典数据集（JSON / CSV），作为离线检索源；数据只存本机"
+            desc="把 OALD / ECDICT 等词典数据集（JSON / CSV）导进来离线查词；ECDICT stardict.csv 有 76 万条，建议先用常用词子集（几万条）打底。"
             right={
               <div>
                 <Button size="sm" variant="secondary" loading={dictBusy} onClick={() => dictFileRef.current?.click()}>
@@ -157,7 +157,7 @@ export default function SettingsPage() {
             <EmptyState
               icon={<HardDrive className="size-4" />}
               title="尚未导入本地词库"
-              desc="支持 ECDICT stardict.csv、OALD 导出 JSON、以及通用 { 单词 → 内容 } 字典。建议使用常用词子集（数万条）以获得最佳性能。"
+              desc="ECDICT stardict.csv、OALD 导出 JSON、「单词 → 内容」字典都认；几十万条也能吃下，只是首次检索会慢一点。"
             />
           ) : (
             <div className="space-y-2">
@@ -193,7 +193,7 @@ export default function SettingsPage() {
 
         {/* 备份 */}
         <Card className="space-y-4">
-          <CardTitle desc="导出完整备份（词库 + 设置 + 数据源），或从备份恢复">
+          <CardTitle desc="词库、字段表、检索配置打包成一个 JSON；换电脑、重装浏览器，原样恢复。">
             <span className="inline-flex items-center gap-2">
               <Archive className="size-4 text-gray-800" /> 备份与恢复
             </span>

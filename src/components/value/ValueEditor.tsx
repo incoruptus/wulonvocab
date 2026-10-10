@@ -185,13 +185,13 @@ function ItemTools({
 }) {
   return (
     <div className="flex shrink-0 items-center">
-      <IconButton label="上移" size="sm" disabled={!up} onClick={() => onMove(-1)} className="size-7">
+      <IconButton label="上移" size="xs" disabled={!up} onClick={() => onMove(-1)}>
         <ArrowUp className="size-3.5" />
       </IconButton>
-      <IconButton label="下移" size="sm" disabled={!down} onClick={() => onMove(1)} className="size-7">
+      <IconButton label="下移" size="xs" disabled={!down} onClick={() => onMove(1)}>
         <ArrowDown className="size-3.5" />
       </IconButton>
-      <IconButton label="删除" size="sm" onClick={onRemove} className="size-7 text-gray-800 hover:text-red-900">
+      <IconButton label="删除" size="xs" onClick={onRemove} className="text-gray-800 hover:text-red-900">
         <Trash2 className="size-3.5" />
       </IconButton>
     </div>
@@ -448,8 +448,7 @@ function TableEditor({ value, onChange }: { value: TableValue; onChange: (v: Tab
                     {columns.length > 1 ? (
                       <IconButton
                         label="删除列"
-                        size="sm"
-                        className="size-6 text-gray-800 hover:text-red-900"
+                        size="xs" className="text-gray-800 hover:text-red-900"
                         onClick={() =>
                           onChange({
                             columns: columns.filter((_, k) => k !== i),
@@ -476,8 +475,7 @@ function TableEditor({ value, onChange }: { value: TableValue; onChange: (v: Tab
                 <td className="w-7 border-0 p-1">
                   <IconButton
                     label="删除行"
-                    size="sm"
-                    className="size-6 text-gray-800 hover:text-red-900"
+                    size="xs" className="text-gray-800 hover:text-red-900"
                     onClick={() => onChange({ columns, rows: rows.filter((_, k) => k !== ri) })}
                   >
                     <Trash2 className="size-3" />
@@ -526,8 +524,7 @@ function ImagesEditor({ items, onChange }: { items: ImageValue[]; onChange: (v: 
           </div>
           <IconButton
             label="删除"
-            size="sm"
-            className="size-7 text-gray-800 hover:text-red-900"
+            size="xs" className="text-gray-800 hover:text-red-900"
             onClick={() => onChange(items.filter((_, k) => k !== i))}
           >
             <Trash2 className="size-3.5" />

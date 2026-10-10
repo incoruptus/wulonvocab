@@ -19,6 +19,7 @@ export const buttonVariants = cva(
         ghost: "bg-transparent text-gray-900 hover:bg-gray-100 hover:text-gray-1000",
       },
       size: {
+        xs: "h-6 px-2 text-[12px]",
         sm: "h-8 px-3 text-[13px]",
         md: "h-9 px-3.5",
         lg: "h-10 px-4 text-[15px]",

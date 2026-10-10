@@ -43,9 +43,9 @@ export function SchemaDesigner({ book }: { book: Wordbook }) {
   };
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col lg:flex-row">
       {/* 字段列表 */}
-      <div className="flex w-[380px] shrink-0 flex-col border-r border-gray-300">
+      <div className="flex max-h-[45vh] w-full shrink-0 flex-col border-b border-gray-300 lg:h-full lg:max-h-none lg:w-[380px] lg:border-b-0 lg:border-r">
         <div className="flex items-center gap-2 border-b border-gray-300 p-3">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -183,7 +183,7 @@ function SortableFieldRow({
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <IconButton label="字段操作" size="sm" className="size-6 opacity-0 group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
+          <IconButton label="字段操作" size="xs" className="opacity-0 group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
             <span className="text-[14px] leading-none">⋯</span>
           </IconButton>
         </DropdownMenuTrigger>

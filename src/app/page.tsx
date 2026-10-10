@@ -41,18 +41,18 @@ export default function DashboardPage() {
   return (
     <div className="flex min-h-dvh flex-col">
       <TopNav />
-      <main className="mx-auto w-full max-w-6xl flex-1 space-y-10 px-6 py-8">
+      <main className="mx-auto w-full max-w-6xl flex-1 space-y-8 px-4 py-6 sm:space-y-10 sm:px-6 sm:py-8">
         {/* Hero */}
         <section className="relative overflow-hidden rounded-2xl border border-gray-300 bg-gradient-to-br from-background-100 to-background-200 p-8">
           <div className="pointer-events-none absolute -right-20 -top-24 size-72 rounded-full opacity-[0.12]" style={{ background: "radial-gradient(circle, #0068d6, transparent 70%)" }} />
           <div className="pointer-events-none absolute -bottom-28 right-24 size-64 rounded-full opacity-[0.10]" style={{ background: "radial-gradient(circle, #7c3aed, transparent 70%)" }} />
           <Badge variant="blue" size="sm">
-            <Sparkles className="size-3" /> 动态字段驱动的单词本工坊
+            <Sparkles className="size-3" /> 14 类字段 · JSON 导入 · 打印级导出
           </Badge>
           <h1 className="t-h-32 mt-4 max-w-2xl text-gray-1000">把单词，做成一本真正精美的书。</h1>
           <p className="t-copy-14 mt-3 max-w-xl text-gray-900">
-            字段自由组合（词性释义 / 词族 / 词性变换 / 联想 / 例句 / 情景标签…），JSON 一键导入自动排版，
-            A4 · B5 · A5 导出即印，装订成册。
+            音标、词性释义、词族、词性变换、联想助记、例句、情景标签……字段随你增删；
+            导入 JSON 立即排好版，导出 A4 / B5 / A5 打印装订，就是一本书。
           </p>
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <Button size="lg" onClick={() => setNewOpen(true)}>
@@ -66,11 +66,11 @@ export default function DashboardPage() {
               variant="tertiary"
               onClick={() => {
                 const b = addSampleBook();
-                toast.success("已创建示例词库");
-                router.push(`/book/${b.id}`);
+                toast.success("示例已建好：3 个词、10 个字段，直接看效果");
+                router.push(`/book?id=${b.id}`);
               }}
             >
-              <Sparkles className="size-4" /> 创建示例词库
+              <Sparkles className="size-4" /> 创建示例（3 词）
             </Button>
           </div>
         </section>
@@ -78,8 +78,8 @@ export default function DashboardPage() {
         {/* 统计 */}
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <StatCard label="词库" value={books.length} icon={<BookOpen className="size-4" />} />
-          <StatCard label="词条总数" value={stats.entries} icon={<Layers className="size-4" />} />
-          <StatCard label="字段总数" value={stats.fields} icon={<Pencil className="size-4" />} />
+          <StatCard label="收录词条" value={stats.entries} icon={<Layers className="size-4" />} />
+          <StatCard label="自定义字段" value={stats.fields} icon={<Pencil className="size-4" />} />
         </section>
 
         {/* 词库列表 */}
@@ -96,8 +96,8 @@ export default function DashboardPage() {
             <Card className="py-0">
               <EmptyState
                 icon={<BookOpen className="size-4" />}
-                title="还没有词库"
-                desc="新建一个空词库、导入 JSON/CSV 词表，或先创建示例感受完整流程。"
+                title="书架还是空的"
+                desc="新建一本开始写，或导入现成词表；想先看效果，就点「创建示例（3 词）」——完整词卡长什么样，一眼就知道。"
                 action={
                   <div className="flex gap-2">
                     <Button size="sm" onClick={() => setNewOpen(true)}>
@@ -108,10 +108,10 @@ export default function DashboardPage() {
                       variant="secondary"
                       onClick={() => {
                         const b = addSampleBook();
-                        router.push(`/book/${b.id}`);
+                        router.push(`/book?id=${b.id}`);
                       }}
                     >
-                      创建示例
+                      创建示例（3 词）
                     </Button>
                   </div>
                 }
@@ -123,8 +123,8 @@ export default function DashboardPage() {
                 <BookCard
                   key={book.id}
                   book={book}
-                  onOpen={() => router.push(`/book/${book.id}`)}
-                  onExport={() => router.push(`/book/${book.id}/export`)}
+                  onOpen={() => router.push(`/book?id=${book.id}`)}
+                  onExport={() => router.push(`/book/export?id=${book.id}`)}
                   onDelete={() => setDeleting(book)}
                 />
               ))}
@@ -137,17 +137,17 @@ export default function DashboardPage() {
           <FeatureCard
             icon={<Layers className="size-4" />}
             title="动态字段管理"
-            desc="词性下分释义与用法、词族、词性变换、联想、例句、情景标签……任意增删字段、拖动排序，实时预览排版效果。"
+            desc="音标、词性释义、词族、词性变换、联想助记、例句、情景标签……14 类字段随意增删、拖动排序；改字段名，已有数据自动跟着搬。"
           />
           <FeatureCard
             icon={<Upload className="size-4" />}
-            title="导入即排版"
-            desc="WulonVocab / ECDICT / OALD 结构自动识别，AI 生成的 JSON 直接导入；未知字段不丢失，可一键提升为正式字段。"
+            title="JSON 导入即成书"
+            desc="WulonVocab / ECDICT / OALD / CSV 自动识别；AI 生成的词表直接导入；缺字段就自动推断——导完那一刻，版也排好了。"
           />
           <FeatureCard
             icon={<FileDown className="size-4" />}
             title="打印级导出"
-            desc="A4 / B5 / A5 / 16开 / 32开，矢量 PDF（文字可搜索）与 300DPI PNG，双栏词典版式、镜像装订边距、封面与索引。"
+            desc="A4 / B5 / A5 / 16 开 / 32 开；双栏词典版式、封面与索引、镜像装订边距；矢量 PDF 文字可搜索，PNG 最高 384 DPI，拿去打印店就能装订。"
           />
         </section>
 
@@ -159,7 +159,7 @@ export default function DashboardPage() {
           <div className="min-w-0 flex-1">
             <div className="t-h-16">把需求交给 AI，得到可直接导入的词表</div>
             <p className="t-label-13 mt-0.5 text-gray-800">
-              「帮我整理 50 个雅思写作高频词，带词族、搭配和真题例句」——AI 按 WulonVocab Skill 规范输出 JSON，导入即可排版导出。
+              「帮我整理 50 个雅思写作高频词，要有词族、搭配和真题例句」——AI 按 Skill 规范输出 JSON，导入后直接排版导出。
             </p>
           </div>
           <Link href="/skill">
@@ -171,12 +171,12 @@ export default function DashboardPage() {
       </main>
 
       <footer className="border-t border-gray-300 py-5 text-center">
-        <span className="t-label-12 text-gray-700">WulonVocab · 本地优先 · 数据保存在你的浏览器 IndexedDB 中</span>
+        <span className="t-label-12 text-gray-700">WulonVocab · 词库、字段与配置只存在这台设备的浏览器里（IndexedDB）· 随时导出 JSON 带走</span>
       </footer>
 
       {/* 新建词库 */}
       <Dialog open={newOpen} onOpenChange={setNewOpen} widthClass="max-w-lg">
-        <DialogHeader title="新建词库" desc="选择一套字段模板开始，之后可随时增删字段。" />
+        <DialogHeader title="新建词库" desc="挑一套排版底子先开工；字段之后随时能加、能删、能拖动排序。" />
         <DialogBody className="space-y-4">
           <div className="space-y-1.5">
             <div className="t-label-13 font-medium text-gray-900">词库名称</div>
@@ -212,7 +212,7 @@ export default function DashboardPage() {
               setNewOpen(false);
               setName("");
               toast.success("词库已创建");
-              router.push(`/book/${b.id}`);
+              router.push(`/book?id=${b.id}`);
             }}
           >
             创建并开始
@@ -226,7 +226,7 @@ export default function DashboardPage() {
         onOpenChange={setImportOpen}
         onImported={(id) => {
           toast.success("导入完成，正在打开…");
-          router.push(`/book/${id}`);
+          router.push(`/book?id=${id}`);
         }}
       />
 
@@ -234,7 +234,7 @@ export default function DashboardPage() {
       <Dialog open={deleting !== null} onOpenChange={(v) => !v && setDeleting(null)}>
         <DialogHeader
           title="删除词库"
-          desc={deleting ? `「${deleting.name}」包含 ${deleting.entries.length} 个词条，删除后不可恢复。` : ""}
+          desc={deleting ? `「${deleting.name}」里的 ${deleting.entries.length} 个词条会一起消失，且无法找回——先导出 JSON 备份更稳妥。` : ""}
         />
         <DialogFooter>
           <Button variant="secondary" onClick={() => setDeleting(null)}>
@@ -300,7 +300,7 @@ function BookCard({
         <div className="min-w-0 flex-1">
           <div className="t-h-16 truncate">{book.name}</div>
           <div className="t-label-12 mt-0.5 text-gray-800">
-            {book.entries.length} 词 · {book.schema.sections.length} 字段 · {timeAgo(book.updatedAt)}
+            {book.entries.length} 个词 · {book.schema.sections.length} 个字段 · 更新于 {timeAgo(book.updatedAt)}
           </div>
         </div>
         <div onClick={(e) => e.stopPropagation()}>
@@ -328,7 +328,7 @@ function BookCard({
               <DropdownMenuItem
                 onSelect={() => {
                   useAppStore.getState().duplicateBook(book.id);
-                  toast.success("已复制词库");
+                  toast.success("已复制成一册新的");
                 }}
               >
                 <Layers className="size-3.5" /> 复制

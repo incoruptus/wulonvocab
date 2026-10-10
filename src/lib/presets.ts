@@ -424,7 +424,7 @@ export function createSampleBook(): Wordbook {
   return {
     id: uid(),
     name: "示例词库 · 核心 3 词",
-    description: "内置示例，展示字段模板、检索与导出效果。可直接编辑或删除。",
+    description: "内置示例：3 个词，10 个字段全部用上。随便改、随便删，用来熟悉流程最合适。",
     tags: ["示例"],
     createdAt: now,
     updatedAt: now,

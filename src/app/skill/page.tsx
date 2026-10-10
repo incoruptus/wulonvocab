@@ -7,6 +7,7 @@ import { ArrowRight, Check, Copy, Download, FileJson, FolderTree, Sparkles, Term
 import { TopNav } from "@/components/app/TopNav";
 import { Button } from "@/components/ui/button";
 import { Badge, Card } from "@/components/ui/misc";
+import { assetPath } from "@/lib/paths";
 import { copyText } from "@/lib/utils";
 
 const PROMPT_TEMPLATE = `请使用 wulonvocab-json skill，帮我生成一份可直接导入 WulonVocab 的单词本 JSON：
@@ -69,7 +70,7 @@ export default function SkillPage() {
   return (
     <div className="flex min-h-dvh flex-col">
       <TopNav />
-      <main className="mx-auto w-full max-w-4xl flex-1 space-y-8 px-6 py-8">
+      <main className="mx-auto w-full max-w-4xl flex-1 space-y-6 px-4 py-6 sm:space-y-8 sm:px-6 sm:py-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <Badge variant="blue" size="sm">
@@ -82,12 +83,12 @@ export default function SkillPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <a href="/downloads/skill/wulonvocab-json/SKILL.md" download>
+            <a href={assetPath("/downloads/skill/wulonvocab-json/SKILL.md")} download>
               <Button>
                 <Download className="size-4" /> 下载 SKILL.md
               </Button>
             </a>
-            <a href="/samples/sample-import.json" download>
+            <a href={assetPath("/samples/sample-import.json")} download>
               <Button variant="secondary">
                 <FileJson className="size-4" /> 示例 JSON
               </Button>
@@ -159,7 +160,7 @@ export default function SkillPage() {
                 <span className="t-mono-13 min-w-0 flex-1 truncate">{f.path}</span>
                 <span className="t-label-12 hidden min-w-0 flex-1 truncate text-gray-800 sm:block">{f.desc}</span>
                 <a
-                  href={`/downloads/skill/wulonvocab-json/${f.path}`}
+                  href={assetPath(`/downloads/skill/wulonvocab-json/${f.path}`)}
                   download
                   className="t-label-13 inline-flex shrink-0 items-center gap-1 text-blue-900 hover:underline"
                 >

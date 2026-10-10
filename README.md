@@ -27,13 +27,23 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-打开首页 → 「创建示例词库」即可体验完整流程：编辑 → 实时预览 → 导出工作室 → 打印装订。
+打开首页 → 「创建示例（3 词）」即可体验完整流程：编辑 → 实时预览 → 导出工作室 → 打印装订。
+
+### 在线版（GitHub Pages）
+
+已配置静态托管：<https://incoruptus.github.io/wulonvocab/>（推送 `main` 后由
+[`deploy-pages.yml`](.github/workflows/deploy-pages.yml) 自动构建部署）。
+
+- 静态托管下采用查询参数路由（`/book?id=…`），无需服务器；
+- 部署产物本地预览：`npm run build:pages && npm run serve:pages` → <http://localhost:4010/wulonvocab/>；
+- 首次部署若 Actions 无权自动开启 Pages，请在仓库 Settings → Pages 把 Source 设为 **GitHub Actions**。
 
 ### 常用命令
 
 | 命令 | 说明 |
 | --- | --- |
 | `npm run dev` / `build` / `start` | 开发 / 生产构建 / 生产启动 |
+| `npm run build:pages` / `serve:pages` | 构建 GitHub Pages 静态站点（out/）/ 本地预览产物 |
 | `npm run typecheck` | TypeScript 全量类型检查 |
 | `npm run lint` | ESLint（含 React Hooks 规则） |
 | `npm test` | Vitest 单元测试（归一化 / 分页 / 导入） |

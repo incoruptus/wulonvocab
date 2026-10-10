@@ -14,11 +14,11 @@ export default function ImportPage() {
   return (
     <div className="flex min-h-dvh flex-col">
       <TopNav />
-      <main className="mx-auto w-full max-w-4xl flex-1 space-y-6 px-6 py-10">
+      <main className="mx-auto w-full max-w-4xl flex-1 space-y-6 px-4 py-6 sm:px-6 sm:py-10">
         <div>
           <h1 className="t-h-24">导入词表</h1>
           <p className="t-copy-14 mt-2 text-gray-900">
-            WulonVocab 对数据格式非常宽容：文件里有什么字段，就渲染什么字段。缺少字段结构时会自动识别类型，导入即可自动排版。
+            文件里有什么字段，就排什么字段：缺结构就自动推断，格式不标准也尽力读懂——导入，就是排版。
           </p>
         </div>
 
@@ -47,7 +47,7 @@ export default function ImportPage() {
             </span>
             <div className="t-h-16 mt-3">纯单词列表</div>
             <p className="t-label-13 mt-1.5 text-gray-800">
-              数组、NDJSON、或按「单词 → 内容」映射的对象都可以；后续可用「词典检索」批量补全释义。
+              数组、NDJSON、「单词 → 内容」映射都行；先入库，回头用「词典检索」批量补释义。
             </p>
           </Card>
           <Card>
@@ -71,7 +71,7 @@ export default function ImportPage() {
         </div>
 
         <p className="t-label-12 text-center text-gray-700">
-          提示：导入是本地解析，文件不会上传到任何服务器。
+          全程本地解析——文件不出这台电脑。
         </p>
       </main>
 
@@ -79,7 +79,7 @@ export default function ImportPage() {
         open={open}
         onOpenChange={setOpen}
         onImported={(id) => {
-          router.push(`/book/${id}`);
+          router.push(`/book?id=${id}`);
         }}
       />
     </div>

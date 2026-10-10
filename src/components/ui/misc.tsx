@@ -124,12 +124,15 @@ export function SegmentedControl<T extends string>({
   onValueChange,
   options,
   size = "md",
+  grow,
   className,
 }: {
   value: T;
   onValueChange: (v: T) => void;
   options: { value: T; label: React.ReactNode; title?: string }[];
   size?: "sm" | "md";
+  /** 撑满容器宽度，各分段等分（表单控件形态） */
+  grow?: boolean;
   className?: string;
 }) {
   return (
@@ -137,7 +140,11 @@ export function SegmentedControl<T extends string>({
       type="single"
       value={value}
       onValueChange={(v) => v && onValueChange(v as T)}
-      className={cx("inline-flex items-center gap-0.5 rounded-md bg-gray-100 p-0.5", className)}
+      className={cx(
+        "inline-flex items-center gap-0.5 rounded-md bg-gray-100 p-0.5",
+        grow && "flex w-full",
+        className,
+      )}
     >
       {options.map((opt) => (
         <ToggleGroupPrimitive.Item
@@ -147,6 +154,7 @@ export function SegmentedControl<T extends string>({
           className={cx(
             "inline-flex items-center justify-center gap-1.5 rounded-[5px] text-gray-900 transition-colors",
             size === "sm" ? "h-6 px-2 text-[12px]" : "h-7 px-2.5 text-[13px]",
+            grow && "min-w-0 flex-1",
             "hover:text-gray-1000 data-[state=on]:bg-background-100 data-[state=on]:text-gray-1000 data-[state=on]:shadow-geist-xs",
           )}
         >

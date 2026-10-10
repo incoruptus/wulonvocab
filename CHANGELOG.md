@@ -2,6 +2,26 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [未发布]
+
+### 新增
+- **GitHub Pages 静态托管**：`npm run build:pages` 一键导出静态站点（`out/`）+
+  `deploy-pages.yml` 工作流（推送 main 自动部署到 <https://incoruptus.github.io/wulonvocab/>）+
+  `serve:pages` 本地预览；构建后处理补齐段缓存文件（静态主机不可重写 URL）。
+- 品牌图标：黑底白色茶杯（顶栏与站点 icon.svg 同步）；移除脚手架遗留的示例 SVG。
+
+### 变更
+- 路由重构为查询参数（`/book?id=…`、`/book/export?id=…`），兼容静态导出与无服务器托管。
+- **控件形态审计**：SegmentedControl 新增 `grow`（表单内等分撑满，修复「分段长度不齐 / 尾部留空」）；
+  IconButton 尺寸体系归一为 `xs` 24px（密集行内工具）/ `sm` 32px（表单行）/ `md` 36px（工具栏），
+  清除所有 `size-6/size-7` 覆盖式 hack；约定写入 `AGENTS.md`。
+- **文案全面重写**：仪表盘、工作区、设置、导入等界面改为更具体生动的表述（带数字与动词，
+  例如「创建示例（3 词）」「ECDICT stardict.csv 有 76 万条」）。
+
+### 修复
+- **Hydration 不匹配**：顶栏主题图标改为读取 `useResolvedTheme()`（水合后统一取值），
+  消除了 Next.js 开发工具报告的 client/server 渲染差异。
+
 ## [0.1.0] - 2026-10-10
 
 ### 新增

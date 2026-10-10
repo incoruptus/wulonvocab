@@ -102,7 +102,7 @@ export function EntryList({
               { value: "learning", label: "在学" },
               { value: "mastered", label: "已掌握" },
             ]}
-            className="flex-1 justify-stretch"
+            grow
           />
           <IconButton
             label="只看星标"
@@ -146,7 +146,7 @@ export function EntryList({
           <EmptyState
             icon={<Search className="size-4" />}
             title={book.entries.length === 0 ? "还没有词条" : "没有匹配的词条"}
-            desc={book.entries.length === 0 ? "点击下方按钮新建，或使用「检索」从词典获取。" : "试试其他关键词或清除筛选。"}
+            desc={book.entries.length === 0 ? "先新建一个，或用「检索」从词典取词；整批词表直接走「导入」。" : "换个关键词，或清掉状态 / 标签筛选再看看。"}
             action={
               <Button size="sm" onClick={() => createEntry()}>
                 <Plus className="size-3.5" /> 新建词条
@@ -233,8 +233,7 @@ function EntryRow({
       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
         <IconButton
           label={entry.starred ? "取消星标" : "加星标"}
-          size="sm"
-          className="size-6"
+          size="xs"
           onClick={(e) => {
             e.stopPropagation();
             onStar();
@@ -244,7 +243,7 @@ function EntryRow({
         </IconButton>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <IconButton label="更多操作" size="sm" className="size-6" onClick={(e) => e.stopPropagation()}>
+            <IconButton label="更多操作" size="xs" onClick={(e) => e.stopPropagation()}>
               <span className="text-[14px] leading-none">⋯</span>
             </IconButton>
           </DropdownMenuTrigger>

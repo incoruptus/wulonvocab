@@ -42,6 +42,24 @@
 6. 打印路径基于隐藏 iframe 克隆 + 动态 `@page`；`@page` 内注入字面 mm 值，不使用 CSS 变量。
 7. 分页单元与渲染切片必须对齐（`sliceValue` 不重新归一化，输入须为规范形态）。
 
+## 控件形态约定（审计结论，新代码必须遵守）
+
+- **高度体系**：`xs` 24px / `sm` 32px / `md` 36px / `lg` 40px；同一行的控件必须同高对齐；
+- 密集行内工具（列表项操作、义项头工具、表格增删按钮）= `xs`；表单行内的按钮 = `sm`；页头 / 工具栏 = `md`；
+- **禁止**用 `className="size-6/size-7"` 之类覆盖 IconButton 尺寸——统一走 `size` 变体；
+- `SegmentedControl`：表单内一律 `grow`（等分撑满整行），页头 Tab 场景保持内容宽度；
+- 主题 / 系统相关渲染必须读 `useResolvedTheme()`（来自 Providers），**禁止在渲染期访问 `document`**（hydration 不匹配）；
+- 文案风格：具体、有动词、给数字（「3 个词、10 个字段」优于「示例数据」），避免空泛的「强大 / 便捷」。
+
+## 部署约束（GitHub Pages 静态导出）
+
+- 路由参数一律走**查询串**（`/book?id=…`、`/book/export?id=…`）：静态导出不支持动态段；
+- 公开目录资源引用必须用 `assetPath()`（`src/lib/paths.ts`）带 `NEXT_PUBLIC_BASE_PATH` 前缀；
+- 导出构建 `npm run build:pages`（= `WV_EXPORT=1` + basePath `/wulonvocab`，输出 `out/`）；
+  `WV_EXPORT=1` 时自动关闭 cacheComponents/partialPrefetching 并开启 `output: export` + `trailingSlash`；
+- 构建后处理会把 Next 段缓存 payload 补成客户端实际请求的点号文件名（静态主机无法重写，勿删）；
+- 本地预览：`npm run serve:pages`（4010 端口，模拟 `/wulonvocab` 子路径）。
+
 ## 目录红线
 
 - `public/downloads/skill/` 是生成物（由 `scripts/sync-skill.mjs` 生成），不要手工编辑。

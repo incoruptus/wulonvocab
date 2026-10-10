@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Moon, Sun } from "lucide-react";
 import { useAppStore } from "@/lib/store";
+import { useResolvedTheme } from "@/components/app/Providers";
 import { cx } from "@/lib/utils";
 import { IconButton } from "@/components/ui/button";
 
@@ -16,15 +17,15 @@ const NAV = [
 
 export function TopNav({ right }: { right?: React.ReactNode }) {
   const pathname = usePathname();
-  const theme = useAppStore((s) => s.settings.theme);
   const setSettings = useAppStore((s) => s.setSettings);
-  const isDark = theme === "dark" || (theme === "system" && typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
+  const resolvedTheme = useResolvedTheme();
+  const isDark = resolvedTheme === "dark";
   return (
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-5 border-b border-gray-300 bg-background-100/85 px-4 backdrop-blur">
-      <Link href="/" className="flex items-center gap-2.5">
-        <span className="t-h-16 tracking-[-0.02em]">WulonVocab</span>
+    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-gray-300 bg-background-100/85 px-3 backdrop-blur sm:gap-5 sm:px-4">
+      <Link href="/" className="flex shrink-0 items-center gap-2.5">
+        <span className="t-h-16 hidden tracking-[-0.02em] min-[420px]:inline">WulonVocab</span>
       </Link>
-      <nav className="flex items-center gap-0.5">
+      <nav className="no-scrollbar flex min-w-0 items-center gap-0.5 overflow-x-auto">
         {NAV.map((item) => {
           const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
           return (
@@ -32,7 +33,7 @@ export function TopNav({ right }: { right?: React.ReactNode }) {
               key={item.href}
               href={item.href}
               className={cx(
-                "rounded-md px-2.5 py-1.5 text-[13px] transition-colors",
+                "shrink-0 rounded-md px-2.5 py-1.5 text-[13px] transition-colors",
                 active ? "bg-gray-100 font-medium text-gray-1000" : "text-gray-900 hover:bg-gray-100 hover:text-gray-1000",
               )}
             >
@@ -41,7 +42,7 @@ export function TopNav({ right }: { right?: React.ReactNode }) {
           );
         })}
       </nav>
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         {right}
         <IconButton
           label={isDark ? "切换浅色" : "切换深色"}

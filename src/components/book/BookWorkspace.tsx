@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   ChevronLeft, Download, FileDown, Layers, MoreHorizontal, PanelRight, Pencil, Search, Trash2, Upload, Wand2,
@@ -21,13 +21,13 @@ import { SchemaDesigner } from "@/components/book/SchemaDesigner";
 import { LookupPanel } from "@/components/lookup/LookupPanel";
 import { ImportDialog } from "@/components/import/ImportDialog";
 import { EntryHeaderBlock, SectionBlock, type CardCtx } from "@/components/export/blocks";
-import { downloadText, slugify } from "@/lib/utils";
+import { cx, downloadText, slugify } from "@/lib/utils";
 import { TopNav } from "@/components/app/TopNav";
 
 export function BookWorkspace() {
-  const params = useParams<{ id: string }>();
   const router = useRouter();
-  const id = params?.id ?? "";
+  const searchParams = useSearchParams();
+  const id = searchParams.get("id") ?? "";
   const hydrated = useAppStore((s) => s.hydrated);
   const book = useAppStore((s) => s.books.find((b) => b.id === id));
   const [tab, setTab] = useState<"entries" | "fields">("entries");
@@ -38,6 +38,8 @@ export function BookWorkspace() {
   const [renameValue, setRenameValue] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
+  /** 窄屏主从视图：词条列表 / 编辑器 */
+  const [mobilePane, setMobilePane] = useState<"list" | "editor">("list");
 
   const selected = useMemo(() => {
     if (!book) return null;
@@ -76,9 +78,10 @@ export function BookWorkspace() {
             <Button variant="secondary" size="sm" onClick={() => setLookupOpen(true)}>
               <Search className="size-3.5" /> 检索
             </Button>
-            <Link href={`/book/${book.id}/export`}>
+            <Link href={`/book/export?id=${book.id}`}>
               <Button size="sm">
-                <FileDown className="size-3.5" /> 导出工作室
+                <FileDown className="size-3.5" />
+                导出<span className="hidden sm:inline">工作室</span>
               </Button>
             </Link>
           </>
@@ -86,16 +89,16 @@ export function BookWorkspace() {
       />
 
       {/* 词库头 */}
-      <div className="flex items-center gap-3 border-b border-gray-300 px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-gray-300 px-3 py-2.5 sm:px-4">
         <Link href="/" className="t-label-13 inline-flex items-center gap-1 text-gray-800 hover:text-gray-1000">
           <ChevronLeft className="size-3.5" /> 词库
         </Link>
         <span className="text-gray-500">/</span>
-        <span className="t-h-16 max-w-64 truncate">{book.name}</span>
-        <span className="t-label-12 text-gray-700">
-          {book.entries.length} 词 · {book.schema.sections.length} 字段
+        <span className="t-h-16 max-w-40 truncate sm:max-w-64">{book.name}</span>
+        <span className="t-label-12 hidden text-gray-700 md:inline">
+          {book.entries.length} 个词 · {book.schema.sections.length} 个字段
         </span>
-        <div className="ml-3">
+        <div className="order-last w-full sm:order-none sm:ml-3 sm:w-auto">
           <SegmentedControl
             value={tab}
             onValueChange={setTab}
@@ -108,7 +111,7 @@ export function BookWorkspace() {
         <div className="ml-auto flex items-center gap-1">
           <IconButton
             label={showPreview ? "隐藏预览" : "显示预览"}
-            className={showPreview ? "bg-gray-100" : ""}
+            className={cx("hidden xl:inline-flex", showPreview && "bg-gray-100")}
             onClick={() => setShowPreview((v) => !v)}
           >
             <PanelRight className="size-4" />
@@ -131,7 +134,7 @@ export function BookWorkspace() {
               <DropdownMenuItem
                 onSelect={() => {
                   useAppStore.getState().duplicateBook(book.id);
-                  toast.success("已复制词库");
+                  toast.success("已复制成一册新的");
                 }}
               >
                 <Layers className="size-3.5" /> 复制词库
@@ -156,30 +159,49 @@ export function BookWorkspace() {
       {/* 主体 */}
       {tab === "entries" ? (
         <div className="flex min-h-0 flex-1">
-          <div className="w-[320px] shrink-0 border-r border-gray-300">
-            <EntryList book={book} selectedId={selectedId} onSelect={setSelectedId} />
+          <div
+            className={cx(
+              "w-full shrink-0 border-r border-gray-300 lg:block lg:w-[320px]",
+              mobilePane === "editor" ? "hidden" : "block",
+            )}
+          >
+            <EntryList
+              book={book}
+              selectedId={selectedId}
+              onSelect={(id) => {
+                setSelectedId(id);
+                if (id) setMobilePane("editor");
+              }}
+            />
           </div>
-          <div className="min-w-0 flex-1">
+          <div className={cx("min-w-0 flex-1", mobilePane === "list" ? "hidden lg:block" : "block")}>
             {selected ? (
               <EntryEditor
                 key={selected.id}
                 book={book}
                 entry={selected}
-                onDeleted={() => setSelectedId(null)}
+                onBack={() => setMobilePane("list")}
+                onDeleted={() => {
+                  setSelectedId(null);
+                  setMobilePane("list");
+                }}
                 onRequestLookup={() => setLookupOpen(true)}
               />
             ) : (
               <EmptyState
                 icon={<Wand2 className="size-4" />}
-                title={book.entries.length ? "选择一个词条开始编辑" : "创建你的第一个词条"}
-                desc="左侧列表选择词条；也可以用「检索」从词典获取，或「导入」批量写入。"
+                title={book.entries.length ? "从左边挑一个词，开始写" : "先写你的第一个词"}
+                desc="点开左侧词条就能编辑；「词典检索」拉来音标与释义，「导入」整批写入。右侧实时预览它在纸上的样子。"
                 action={
                   <div className="flex gap-2">
                     <Button
                       size="sm"
                       onClick={() => {
                         const e = useAppStore.getState().addEntry(book.id, { headword: "" });
-                        if (e) setSelectedId(e.id);
+                        if (e) {
+                          setSelectedId(e.id);
+                          setMobilePane("editor");
+                        }
                       }}
                     >
                       新建词条
@@ -194,8 +216,7 @@ export function BookWorkspace() {
           </div>
           {showPreview && selected ? (
             <PreviewPanel book={book} entry={selected} onClose={() => setShowPreview(false)} />
-          ) : null}
-        </div>
+          ) : null}        </div>
       ) : (
         <div className="min-h-0 flex-1">
           <SchemaDesigner book={book} />
@@ -294,7 +315,7 @@ function PreviewPanel({ book, entry, onClose }: { book: NonNullable<ReturnType<t
     .filter((sec) => !settings.hideEmpty || !isValueEmpty(sec.type, entry.values[sec.key]));
 
   return (
-    <aside className="flex w-[360px] shrink-0 flex-col border-l border-gray-300 bg-background-200">
+    <aside className="hidden w-[360px] shrink-0 flex-col border-l border-gray-300 bg-background-200 xl:flex">
       <div className="flex items-center gap-2 border-b border-gray-300 px-3 py-2.5">
         <span className="t-h-14">实时预览</span>
         <Badge variant="gray" size="sm">
@@ -302,7 +323,7 @@ function PreviewPanel({ book, entry, onClose }: { book: NonNullable<ReturnType<t
         </Badge>
         <span className="t-label-12 text-gray-700">以导出样式渲染</span>
         <div className="ml-auto flex items-center gap-1">
-          <Link href={`/book/${book.id}/export`}>
+          <Link href={`/book/export?id=${book.id}`}>
             <Button size="sm" variant="secondary">
               <FileDown className="size-3.5" /> 导出
             </Button>
