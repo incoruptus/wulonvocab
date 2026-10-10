@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { Toaster } from "sonner";
 import { TooltipPrimitive } from "@/components/ui/overlay";
+import { ACCENTS } from "@/lib/paper";
 import { useAppStore } from "@/lib/store";
 
 /** 已解析的主题（含 system），水合后才准确；渲染期读取它不会产生 hydration 不匹配 */
@@ -17,7 +18,22 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const hydrated = useAppStore((s) => s.hydrated);
   const setHydrated = useAppStore((s) => s.setHydrated);
   const theme = useAppStore((s) => s.settings.theme);
+  const accent = useAppStore((s) => s.settings.accent);
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
+
+  // 界面强调色管线：写入 <html data-accent> + --ui-accent-hex，
+  // globals.css 按亮/暗两套公式重定向 blue 语义色阶；默认 Geist 蓝时不设属性（保持原令牌）
+  useEffect(() => {
+    const el = document.documentElement;
+    const def = accent && accent !== "blue" ? ACCENTS[accent] : undefined;
+    if (!def) {
+      el.removeAttribute("data-accent");
+      el.style.removeProperty("--ui-accent-hex");
+    } else {
+      el.setAttribute("data-accent", def.id);
+      el.style.setProperty("--ui-accent-hex", def.hex);
+    }
+  }, [accent]);
 
   useEffect(() => {
     const unsub = useAppStore.persist.onFinishHydration(() => {

@@ -55,7 +55,14 @@
    导出侧一律经 `fontStackFor()` 引用变量，不得内联拼字体栈。
 8. **图片型 PDF 内存约定**：一律 `toCanvas → JPEG Blob → Uint8Array` 直传 jsPDF（勿用 base64 dataURL），
    每页后释放画布并让出事件循环，大词库导出不崩标签页。
+   **字体内联只允许走 `print.ts` 的 `loadedFontEmbedCss()`**（只内联本次导出页面实际加载过的分片）；
+   禁止使用 html-to-image 默认的全量 `getFontEmbedCSS`——自托管 CJK 有数百个 unicode-range 分片，
+   全量内联会内存爆炸崩页。
 9. 分页单元与渲染切片必须对齐（`sliceValue` 不重新归一化，输入须为规范形态）。
+10. **界面强调色管线**：单一通路 = `Providers`（写 `<html data-accent>` + `--ui-accent-hex`）
+    + `globals.css` 的 blue 语义阶重定向（亮/暗两套 `color-mix` 公式）。**新控件引用 blue-* 语义色
+    即可自动跟随强调色**（如 `bg-blue-700`、`text-blue-900`），禁止硬编码其它点缀色；
+    默认「Geist 蓝」不设属性以保持原令牌；导出/印刷强调色是另一套（书籍级 `--wv-accent`），两者互不影响。
 
 ## 控件形态约定（审计结论，新代码必须遵守）
 

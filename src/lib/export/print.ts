@@ -1,4 +1,4 @@
-import { getFontEmbedCSS, toBlob, toCanvas } from "html-to-image";
+import { toBlob, toCanvas } from "html-to-image";
 import { slugify } from "../utils";
 
 export interface PaperMm {
@@ -104,10 +104,89 @@ export interface CaptureOptions {
   onProgress?: (done: number, total: number) => void;
 }
 
-async function sharedFontCss(first: HTMLElement | undefined): Promise<string | undefined> {
-  if (!first) return undefined;
+/**
+ * 字体内联（PNG / 图片型 PDF 专用）：
+ * 自托管 CJK 字体按 unicode-range 拆成数百个分片，html-to-image 默认会把**全部** @font-face
+ * 资源 base64 内联进每页 SVG（600+ 个文件、几十 MB），内存直接爆炸崩掉标签页。
+ * 这里改为：只内联「本页实际加载过」的字形分片（通常 5~10 个，几百 KB）——
+ * 未加载的分片 = 页面上不存在的字形，不嵌也不影响渲染。
+ */
+async function loadedFontEmbedCss(): Promise<string | undefined> {
+  if (typeof document === "undefined") return undefined;
   try {
-    return await getFontEmbedCSS(first);
+    await document.fonts.ready;
+  } catch {
+    /* ignore */
+  }
+  const loaded = new Set<string>();
+  for (const entry of performance.getEntriesByType("resource")) {
+    if (/\.woff2?(\?|$)/.test(entry.name)) loaded.add(entry.name.split("?")[0]);
+  }
+  if (!loaded.size) return undefined;
+
+  const dataCache = new Map<string, Promise<string>>();
+  const inline = (url: string): Promise<string> => {
+    const cached = dataCache.get(url);
+    if (cached) return cached;
+    const task = (async () => {
+      const res = await fetch(url, { cache: "force-cache" });
+      if (!res.ok) throw new Error(`字体分片读取失败（HTTP ${res.status}）`);
+      const buf = new Uint8Array(await res.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < buf.length; i += 0x8000) {
+        bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+      }
+      return `data:font/woff2;base64,${btoa(bin)}`;
+    })();
+    dataCache.set(url, task);
+    return task;
+  };
+
+  const rules: string[] = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    let cssRules: CSSRuleList;
+    try {
+      cssRules = sheet.cssRules;
+    } catch {
+      continue;
+    }
+    const base = sheet.href ?? document.baseURI;
+    for (const rule of Array.from(cssRules)) {
+      if (rule.type !== CSSRule.FONT_FACE_RULE) continue;
+      const style = (rule as CSSFontFaceRule).style;
+      const src = style.getPropertyValue("src");
+      if (!src) continue;
+      const urls = [...src.matchAll(/url\((?:"|')?([^"')]+)(?:"|')?\)/g)]
+        .map((m) => m[1])
+        .filter((u) => loaded.has(new URL(u, base).href.split("?")[0]));
+      if (!urls.length) continue;
+      const sources: string[] = [];
+      for (const u of urls) {
+        try {
+          sources.push(`url("${await inline(new URL(u, base).href)}") format("woff2")`);
+        } catch {
+          /* 单个分片失败则跳过（该字形回退系统字体） */
+        }
+      }
+      if (!sources.length) continue;
+      const family = style.getPropertyValue("font-family");
+      const weight = style.getPropertyValue("font-weight") || "400";
+      const fontStyle = style.getPropertyValue("font-style") || "normal";
+      const unicodeRange = style.getPropertyValue("unicode-range");
+      rules.push(
+        `@font-face{font-family:${family};font-style:${fontStyle};font-weight:${weight};font-display:swap;src:${sources.join(",")};${
+          unicodeRange ? `unicode-range:${unicodeRange};` : ""
+        }}`,
+      );
+    }
+  }
+  return rules.length ? rules.join("\n") : undefined;
+}
+
+/** 每次导出重建（已加载分片集合会随页面使用而增长，不做跨导出缓存） */
+async function sharedFontCss(): Promise<string | undefined> {
+  try {
+    return await loadedFontEmbedCss();
   } catch {
     return undefined;
   }
@@ -115,7 +194,7 @@ async function sharedFontCss(first: HTMLElement | undefined): Promise<string | u
 
 export async function capturePagesAsPng(pages: HTMLElement[], options: CaptureOptions = {}): Promise<Blob[]> {
   const { pixelRatio = 3.125, backgroundColor = "#ffffff", onProgress } = options;
-  const fontEmbedCSS = await sharedFontCss(pages[0]);
+  const fontEmbedCSS = await sharedFontCss();
   const blobs: Blob[] = [];
   for (let i = 0; i < pages.length; i += 1) {
     const blob = await toBlob(pages[i], {
@@ -136,7 +215,7 @@ export interface RasterPdfOptions extends CaptureOptions {
 
 export async function exportRasterPdf(pages: HTMLElement[], paper: PaperMm, options: RasterPdfOptions = {}): Promise<Blob> {
   const { pixelRatio = 2.5, quality = 0.92, backgroundColor = "#ffffff", onProgress } = options;
-  const fontEmbedCSS = await sharedFontCss(pages[0]);
+  const fontEmbedCSS = await sharedFontCss();
   const { jsPDF } = await import("jspdf");
   const orientation = paper.width > paper.height ? "landscape" : "portrait";
   const pdf = new jsPDF({ orientation, unit: "mm", format: [paper.width, paper.height], compress: true });

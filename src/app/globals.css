@@ -124,6 +124,41 @@
   color-scheme: dark;
 }
 
+/* ============================================================
+   界面强调色管线（设置 → 外观 → 强调色）
+   Providers 在 <html> 写 data-accent 与 --ui-accent-hex；
+   这里把 blue 语义色阶重定向到所选强调色（亮/暗各一套 color-mix 公式）。
+   全站 blue-* 工具类（开关选中、链接、浅色底、焦点环、Badge…）随之统一切换；
+   默认「Geist 蓝」不设 data-accent，原令牌保持像素级不变（印刷/导出走 --wv-accent，不受影响）。
+   ============================================================ */
+:root[data-accent] {
+  --ds-blue-100: color-mix(in srgb, var(--ui-accent-hex) 6%, white);
+  --ds-blue-200: color-mix(in srgb, var(--ui-accent-hex) 9%, white);
+  --ds-blue-300: color-mix(in srgb, var(--ui-accent-hex) 13%, white);
+  --ds-blue-400: color-mix(in srgb, var(--ui-accent-hex) 18%, white);
+  --ds-blue-500: color-mix(in srgb, var(--ui-accent-hex) 45%, white);
+  --ds-blue-600: color-mix(in srgb, var(--ui-accent-hex) 72%, white);
+  --ds-blue-700: var(--ui-accent-hex);
+  --ds-blue-800: color-mix(in srgb, var(--ui-accent-hex) 84%, black);
+  --ds-blue-900: color-mix(in srgb, var(--ui-accent-hex) 88%, black);
+  --ds-blue-1000: color-mix(in srgb, var(--ui-accent-hex) 32%, black);
+  --ds-focus-color: var(--ui-accent-hex);
+}
+
+.dark[data-accent] {
+  --ds-blue-100: color-mix(in srgb, var(--ui-accent-hex) 16%, #0a0a0a);
+  --ds-blue-200: color-mix(in srgb, var(--ui-accent-hex) 20%, #0a0a0a);
+  --ds-blue-300: color-mix(in srgb, var(--ui-accent-hex) 26%, #0a0a0a);
+  --ds-blue-400: color-mix(in srgb, var(--ui-accent-hex) 30%, #0a0a0a);
+  --ds-blue-500: color-mix(in srgb, var(--ui-accent-hex) 38%, #0a0a0a);
+  --ds-blue-600: color-mix(in srgb, var(--ui-accent-hex) 78%, white);
+  --ds-blue-700: var(--ui-accent-hex);
+  --ds-blue-800: color-mix(in srgb, var(--ui-accent-hex) 90%, white);
+  --ds-blue-900: color-mix(in srgb, var(--ui-accent-hex) 55%, white);
+  --ds-blue-1000: color-mix(in srgb, var(--ui-accent-hex) 18%, white);
+  --ds-focus-color: color-mix(in srgb, var(--ui-accent-hex) 55%, white);
+}
+
 @theme inline {
   --color-background: var(--ds-background-100);
   --color-background-100: var(--ds-background-100);
