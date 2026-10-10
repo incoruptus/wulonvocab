@@ -69,34 +69,73 @@ export interface ChatConfig {
   model: string;
 }
 
+/** 多模态内容块（OpenAI 兼容；图片仅允许出现在 user 消息） */
+export type ChatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string; detail?: "low" | "high" | "auto" | "original" } };
+
+export interface ToolCall {
+  id: string;
+  type?: string;
+  function: { name: string; arguments: string };
+}
+
+export interface ToolDef {
+  type: "function";
+  function: { name: string; description: string; parameters: Record<string, unknown> };
+}
+
 export interface ChatMessage {
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
+  content: string | ChatContentPart[] | null;
+  /** assistant 的历史工具调用（回传时必须原样带上） */
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+}
+
+export interface ChatCompletionResult {
   content: string;
+  toolCalls: ToolCall[];
+}
+
+interface ChatResponseMessage {
+  content?: unknown;
+  tool_calls?: unknown;
 }
 
 interface ChatResponse {
-  choices?: { message?: { content?: string } }[];
+  choices?: { message?: ChatResponseMessage }[];
   error?: { message?: string };
 }
 
+const EMPTY_RESULT_HINT = "模型未返回内容";
+
 /**
- * OpenAI 兼容 chat/completions 调用。
- * - jsonMode：请求 response_format=json_object；服务端不支持时自动降级重试；
- * - 返回助手消息文本；网络/服务端错误统一抛 LookupError（含友好信息）。
+ * OpenAI 兼容 chat/completions 调用（完整版）。
+ * - jsonMode：请求 response_format=json_object；服务端不支持时自动降级重试（与 tools 互斥，带 tools 时不发）；
+ * - tools：function calling 定义数组；
+ * - 返回 { content, toolCalls }；网络/服务端错误统一抛 LookupError（含友好信息）。
  */
-export async function chatCompletion(
+export async function chatCompletionMessage(
   cfg: ChatConfig,
   messages: ChatMessage[],
-  opts: { temperature?: number; jsonMode?: boolean; signal?: AbortSignal; timeoutMs?: number } = {},
-): Promise<string> {
+  opts: {
+    temperature?: number;
+    jsonMode?: boolean;
+    tools?: ToolDef[];
+    signal?: AbortSignal;
+    timeoutMs?: number;
+  } = {},
+): Promise<ChatCompletionResult> {
   const baseUrl = (cfg.baseUrl ?? "").trim().replace(/\/+$/, "");
   const apiKey = (cfg.apiKey ?? "").trim();
   const model = (cfg.model ?? "").trim();
   if (!baseUrl) throw new LookupError("未配置 API Base URL");
   if (!model) throw new LookupError("未配置模型名称");
   const endpoint = baseUrl.endsWith("/chat/completions") ? baseUrl : `${baseUrl}/chat/completions`;
+  const hasTools = Boolean(opts.tools?.length);
 
-  const attempt = async (jsonMode: boolean): Promise<string> => {
+  const attempt = async (jsonMode: boolean): Promise<ChatCompletionResult> => {
     const { signal: s, done } = withTimeout(opts.timeoutMs ?? 60000, opts.signal);
     try {
       let res: Response;
@@ -111,7 +150,8 @@ export async function chatCompletion(
             model,
             temperature: opts.temperature ?? 0.2,
             messages,
-            ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+            ...(jsonMode && !hasTools ? { response_format: { type: "json_object" } } : {}),
+            ...(hasTools ? { tools: opts.tools } : {}),
           }),
           signal: s,
         });
@@ -127,7 +167,7 @@ export async function chatCompletion(
           const err = JSON.parse(text) as ChatResponse;
           if (err.error?.message) msg = err.error.message;
         } catch {
-          /* ignore */
+          if (text.trim()) msg = `HTTP ${res.status}：${text.trim().slice(0, 200)}`;
         }
         throw new LookupError(msg);
       }
@@ -137,15 +177,29 @@ export async function chatCompletion(
       } catch {
         throw new LookupError("AI 接口返回的不是 JSON");
       }
-      const content = (parsed as ChatResponse).choices?.[0]?.message?.content;
-      if (!content) throw new LookupError("模型未返回内容");
-      return content;
+      const message = (parsed as ChatResponse).choices?.[0]?.message;
+      if (!message) throw new LookupError(EMPTY_RESULT_HINT);
+      const content =
+        typeof message.content === "string"
+          ? message.content
+          : Array.isArray(message.content)
+            ? (message.content as { type?: string; text?: string }[])
+                .filter((p) => p.type === "text" && typeof p.text === "string")
+                .map((p) => p.text as string)
+                .join("\n")
+            : "";
+      const rawCalls = Array.isArray(message.tool_calls) ? (message.tool_calls as ToolCall[]) : [];
+      const toolCalls = rawCalls.filter(
+        (c) => c && typeof c.id === "string" && typeof c.function?.name === "string" && typeof c.function?.arguments === "string",
+      );
+      if (!content && !toolCalls.length) throw new LookupError(EMPTY_RESULT_HINT);
+      return { content, toolCalls };
     } finally {
       done();
     }
   };
 
-  if (opts.jsonMode === false) return attempt(false);
+  if (opts.jsonMode === false || hasTools) return attempt(false);
   try {
     return await attempt(true);
   } catch (e) {
@@ -154,6 +208,17 @@ export async function chatCompletion(
     }
     throw e;
   }
+}
+
+/** 简化版：只要助手文本（既有调用方兼容） */
+export async function chatCompletion(
+  cfg: ChatConfig,
+  messages: ChatMessage[],
+  opts: { temperature?: number; jsonMode?: boolean; signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<string> {
+  const result = await chatCompletionMessage(cfg, messages, opts);
+  if (!result.content) throw new LookupError(EMPTY_RESULT_HINT);
+  return result.content;
 }
 
 /** 从模型输出中提取 JSON 文本（剥离代码块围栏 / 前后说明文字） */

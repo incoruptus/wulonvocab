@@ -47,7 +47,7 @@ export default function BooksPage() {
         <section className="flex flex-wrap items-center gap-3">
           <div className="min-w-0">
             <h1 className="t-h-24">我的词库</h1>
-            <p className="t-label-13 mt-1 text-gray-800">管理词书与字段；进入学习中心开始复习，或到导出工作室排成可打印的书。</p>
+            <p className="t-label-13 mt-1 text-gray-800">每本词书都有自己的字段与进度——接着写，接着背，或者排成一本可以打印的书。</p>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <Button onClick={() => setNewOpen(true)}>
@@ -79,7 +79,7 @@ export default function BooksPage() {
         {/* 词库列表 */}
         <section className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="t-h-20">我的词库</h2>
+            <h2 className="t-h-20">书架</h2>
             <Link href="/skill" className="t-label-13 inline-flex items-center gap-1 text-blue-900 hover:underline">
               让 AI 帮你整理词表 <ArrowRight className="size-3.5" />
             </Link>
@@ -130,7 +130,7 @@ export default function BooksPage() {
         </main>
 
       <footer className="border-t border-gray-300 py-5 text-center">
-        <span className="t-label-12 text-gray-700">WulonVocab · 词库、字段与配置只存在这台设备的浏览器里（IndexedDB）· 随时导出 JSON 带走</span>
+        <span className="t-label-12 text-gray-700">词库与配置只住在你的设备里 · 随时导出 JSON 带走</span>
       </footer>
 
       {/* 新建词库 */}

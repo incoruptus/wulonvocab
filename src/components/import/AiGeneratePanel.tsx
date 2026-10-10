@@ -34,7 +34,14 @@ function firstGloss(values: Record<string, unknown>): { phonetic: string; gloss:
 }
 
 /** 内置 AI 生成词表：按 Skill 规范构造提示词 → 生成 → 预览 → 一键导入（与文件导入共用管线）。 */
-export function AiGeneratePanel({ onImported }: { onImported: (bookId: string) => void }) {
+export function AiGeneratePanel({
+  onImported,
+  variant = "panel",
+}: {
+  onImported: (bookId: string) => void;
+  /** hero：首页场景——无卡片外框、标题更醒目，由页面提供容器 */
+  variant?: "panel" | "hero";
+}) {
   const books = useAppStore((s) => s.books);
   const lookupSources = useAppStore((s) => s.lookupSources);
   const replaceBook = useAppStore((s) => s.replaceBook);
@@ -132,17 +139,20 @@ export function AiGeneratePanel({ onImported }: { onImported: (bookId: string) =
     reset();
   };
 
+  const Shell = variant === "hero" ? ("div" as const) : Card;
+
   return (
-    <Card className="space-y-4">
+    <Shell className="space-y-4">
       <div className="flex items-start gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-purple-700/10 text-purple-700">
           <Sparkles className="size-4" />
         </span>
         <div className="min-w-0">
-          <div className="t-h-16">AI 生成词表</div>
+          <div className={variant === "hero" ? "t-h-20" : "t-h-16"}>AI 词表工坊</div>
           <p className="t-label-13 mt-0.5 text-gray-800">
-            内置生成：描述需求，AI 按 WulonVocab Skill 规范直接输出词库并一键导入。
-            也可以把 <Link href="/skill" className="text-blue-900 hover:underline">Skill 文件</Link> 交给外部 AI 走手动流程。
+            {variant === "hero"
+              ? "说一句你想背什么词、想要哪些字段——AI 按 WulonVocab 规范生成，预览后一键入库。"
+              : "描述需求，AI 按 WulonVocab Skill 规范直接输出词库并一键导入；也可以把 Skill 文件交给外部 AI 走手动流程。"}
           </p>
         </div>
       </div>
@@ -150,8 +160,8 @@ export function AiGeneratePanel({ onImported }: { onImported: (bookId: string) =
       {!configured ? (
         <div className="space-y-3">
           <div className="rounded-lg bg-amber-700/10 p-3 text-[13px] text-amber-900">
-            尚未配置 AI 数据源。到「设置 → 词典数据源」添加或启用一个 AI 源（OpenAI 兼容接口：Base URL + 模型名，可选 API Key），
-            即可在这里直接生成词表；生成与检索共用同一份配置。
+            还没有接上 AI——到「设置 → 词典数据源」选一家服务商、贴上 Key（只保存在本机），就能在这里直接生成词表；
+            生成与词典检索共用同一份配置。
           </div>
           <Link href="/settings">
             <Button variant="secondary" size="sm">
@@ -195,7 +205,7 @@ export function AiGeneratePanel({ onImported }: { onImported: (bookId: string) =
               </Button>
               {running ? (
                 <>
-                  <span className="t-label-12 text-gray-700">大词表（20+ 条）可能需要 1–2 分钟，请保持页面打开</span>
+                  <span className="t-label-12 text-gray-700">大词表要等 1–2 分钟，先别关页面</span>
                   <button
                     type="button"
                     className="t-label-12 text-gray-800 underline decoration-dotted hover:text-gray-1000"
@@ -266,6 +276,6 @@ export function AiGeneratePanel({ onImported }: { onImported: (bookId: string) =
           )}
         </>
       )}
-    </Card>
+    </Shell>
   );
 }

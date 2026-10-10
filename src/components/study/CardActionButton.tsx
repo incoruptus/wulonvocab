@@ -31,7 +31,8 @@ export function CardActionButton({
       onClick={onClick}
       className={cx(
         "relative grid size-11 shrink-0 place-items-center rounded-full bg-gray-100 transition-colors hover:bg-gray-200",
-        active ? "text-amber-700" : "text-gray-900",
+        "dark:bg-gray-300 dark:hover:bg-gray-400",
+        active ? "text-amber-700" : "text-gray-900 dark:text-gray-1000",
         className,
       )}
     >

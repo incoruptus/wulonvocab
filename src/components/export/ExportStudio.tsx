@@ -14,9 +14,10 @@ import {
   Printer,
   SlidersHorizontal,
 } from "lucide-react";
-import type { ExportSettings, Wordbook } from "@/lib/types";
+import type { CardStyle, ExportSettings, Wordbook } from "@/lib/types";
 import { ACCENTS, MARGIN_PRESETS, PAPERS, TONES } from "@/lib/paper";
 import { sortSections } from "@/lib/sections";
+import { EXPORT_THEMES, applyTheme, normalizeCardStyle } from "@/lib/export/themes";
 import { useAppStore } from "@/lib/store";
 import { Button, IconButton } from "@/components/ui/button";
 import { Field, Input, Select, Slider, SwitchRow } from "@/components/ui/field";
@@ -446,6 +447,7 @@ function PanelsLayout({ settings, patch }: PanelGroupProps) {
           <>
             <SliderRow label="网格列数" value={settings.grid.columns} min={1} max={4} step={1} onChange={(v) => patch({ grid: { columns: v } })} />
             <SliderRow label="网格行数" value={settings.grid.rows} min={2} max={10} step={1} onChange={(v) => patch({ grid: { rows: v } })} />
+            <SliderRow label="网格间距" value={settings.grid.gapMm ?? 4} min={2} max={16} step={1} suffix="mm" onChange={(v) => patch({ grid: { gapMm: v } })} />
             <SwitchRow label="显示单元格边框" checked={settings.grid.showBorder} onCheckedChange={(v) => patch({ grid: { showBorder: v } })} />
             <SwitchRow
               label="闪卡精简模式"
@@ -460,23 +462,107 @@ function PanelsLayout({ settings, patch }: PanelGroupProps) {
   );
 }
 
+/** 主题缩略骨架图（固定灰阶 + 少量强调点，避免"换色"认知） */
+function ThemeThumb({ id }: { id: CardStyle }) {
+  const line = "bg-gray-400/70";
+  if (id === "dictionary") {
+    return (
+      <div className="h-14 w-full rounded bg-background-200 p-2">
+        <div className={cx("h-[2px] w-2/5 rounded", line)} />
+        <div className="mt-1.5 space-y-[3px]">
+          <div className="flex items-center gap-[3px]">
+            <span className="font-mono text-[8px] text-gray-700">1.</span>
+            <div className={cx("h-[1px] flex-1 rounded", line)} />
+          </div>
+          <div className="pl-[11px]">
+            <div className={cx("h-[1px] w-4/5 rounded", line)} />
+          </div>
+          <div className="flex items-center gap-[3px]">
+            <span className="font-mono text-[8px] text-gray-700">2.</span>
+            <div className={cx("h-[1px] flex-1 rounded", line)} />
+          </div>
+          <div className="pl-[11px]">
+            <div className={cx("h-[1px] w-3/5 rounded", line)} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (id === "swiss") {
+    return (
+      <div className="flex h-14 w-full flex-col justify-between rounded bg-background-200 p-2">
+        <div className={cx("h-[2px] w-1/3 rounded", line)} />
+        <div className={cx("h-[1px] w-1/2 rounded", line)} />
+        <div className="pl-4">
+          <div className={cx("h-[1px] w-1/3 rounded", line)} />
+        </div>
+        <div className={cx("h-[1px] w-1/4 rounded", line)} />
+      </div>
+    );
+  }
+  if (id === "notebook") {
+    return (
+      <div className="relative h-14 w-full overflow-hidden rounded bg-background-200 p-2">
+        <div className="absolute inset-x-2 top-2 space-y-[5px]">
+          {Array.from({ length: 9 }).map((_, i) => (
+            <div key={i} className={cx("h-[1px] w-full opacity-45", line)} />
+          ))}
+        </div>
+        <div className="relative">
+          <span className="inline-block rotate-[-1.2deg] rounded-[3px] bg-blue-100 px-1.5 py-[1px] text-[8px] text-blue-900">标签</span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="grid h-14 w-full grid-cols-2 gap-2 rounded bg-background-200 p-2">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="rounded border border-gray-400/60" />
+      ))}
+    </div>
+  );
+}
+
 /** 卡片：卡片样式 · 字段显示 */
 function PanelsCards({ settings, patch, book }: PanelGroupProps) {
   const visibleSections = sortSections(book.schema.sections);
+  const [applyDefaults, setApplyDefaults] = useState(true);
   return (
     <>
       <Panel title="卡片样式" defaultOpen>
-        <Field label="风格">
-          <SegmentedControl
-            value={settings.cardStyle}
-            onValueChange={(v) => patch({ cardStyle: v })}
-            options={[
-              { value: "classic", label: "经典" },
-              { value: "minimal", label: "极简" },
-              { value: "compact", label: "紧凑" },
-              { value: "notebook", label: "手账" },
-            ]}
-            grow
+        <Field label="风格（结构骨架）">
+          <div className="grid grid-cols-2 gap-2">
+            {EXPORT_THEMES.map((t) => {
+              const active = normalizeCardStyle(settings.cardStyle) === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => {
+                    if (applyDefaults) {
+                      patch(applyTheme(settings, t.id));
+                      toast.success(`已切换到「${t.name}」，并应用结构默认值`, { description: t.signature });
+                    } else {
+                      patch({ cardStyle: t.id });
+                    }
+                  }}
+                  className={cx(
+                    "rounded-lg border p-2 text-left transition-colors",
+                    active ? "border-blue-600/60 bg-blue-100" : "border-gray-300 bg-background-100 hover:bg-gray-100",
+                  )}
+                >
+                  <ThemeThumb id={t.id} />
+                  <div className="t-label-13 mt-1.5 font-medium text-gray-1000">{t.name}</div>
+                  <div className="t-label-12 text-gray-700">{t.signature}</div>
+                </button>
+              );
+            })}
+          </div>
+          <SwitchRow
+            label="切换时应用结构默认值"
+            hint="字体、字号、行距、间距、分页与网格随主题调整；之后仍可逐项微调"
+            checked={applyDefaults}
+            onCheckedChange={setApplyDefaults}
           />
         </Field>
         <Field label="字体">

@@ -6,6 +6,7 @@ import { computeGeometry, getPaperBox, mmToPx } from "@/lib/paper";
 import { buildSenseUnits, isValueEmpty, sortSections, valueLength, type SenseCell } from "@/lib/sections";
 import { paginate, type MeasuredBlock, type PaginationResult } from "@/lib/export/paginate";
 import { EntryHeaderBlock, fontStackFor, SectionBlock, type CardCtx } from "@/components/export/blocks";
+import { normalizeExportSettings, themeCssVars } from "@/lib/export/themes";
 
 const SPLITTABLE_TYPES: SectionType[] = ["senses", "examples", "keyvalue", "transforms", "image", "list", "tags", "table"];
 
@@ -68,7 +69,12 @@ function unitRangesFor(type: SectionType, value: unknown, groupByPos: boolean): 
   return Array.from({ length: n }, (_, i) => [i, i + 1] as [number, number]);
 }
 
-export function useExportDocument(book: Wordbook, settings: ExportSettings): ExportDocument {
+/** 各主题的块内间距（mm；见 themes-2026-10.md §2） */
+const INTRA_GAP_MM: Record<string, number> = { dictionary: 1.6, swiss: 3.2, notebook: 2.8, flashcard: 2.4 };
+
+export function useExportDocument(book: Wordbook, rawSettings: ExportSettings): ExportDocument {
+  // 迁移与补齐（旧 cardStyle / grid.gapMm）在入口统一处理，测量与渲染共享同一份设置
+  const settings = useMemo(() => normalizeExportSettings(rawSettings), [rawSettings]);
   const elsRef = useRef(new Map<string, HTMLElement>());
   const [heights, setHeights] = useState<Map<string, number>>(new Map());
   const register = useCallback(
@@ -115,7 +121,7 @@ export function useExportDocument(book: Wordbook, settings: ExportSettings): Exp
   const specs = useMemo<BlockSpec[]>(() => {
     const out: BlockSpec[] = [];
     const entryGapPx = mmToPx(settings.entryGap);
-    const intraGapPx = mmToPx(settings.cardStyle === "compact" ? 1.6 : 2.4);
+    const intraGapPx = mmToPx(INTRA_GAP_MM[settings.cardStyle] ?? 2.4);
     entries.forEach((entry, entryIndex) => {
       out.push({
         id: `h:${entry.id}`,
@@ -318,6 +324,7 @@ export function MeasureLayer({ doc }: { doc: ExportDocument }) {
           fontSize: geometry.pageFontCss,
           ["--wv-lh" as string]: ctx.settings.lineHeight,
           fontFamily: fontStackFor(ctx.settings.fontFamily),
+          ...themeCssVars(ctx.settings.cardStyle),
         }}
       >
         {specs.map((spec) => {

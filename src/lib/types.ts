@@ -44,7 +44,8 @@ export interface MarginSetting {
   mirror: boolean;
 }
 
-export type CardStyle = "classic" | "minimal" | "compact" | "notebook";
+/** 导出卡片主题（=结构骨架，见 docs/research/themes-2026-10.md） */
+export type CardStyle = "dictionary" | "swiss" | "notebook" | "flashcard";
 
 // ============================================================
 // 字段体系（动态字段管理核心）
@@ -307,6 +308,8 @@ export interface GridSettings {
   showBorder: boolean;
   /** 网格模式下是否只显示「头部 + 首字段」的闪卡样式 */
   flashcard: boolean;
+  /** 网格间距 mm（普通网格 4；闪卡主题 10） */
+  gapMm: number;
 }
 
 export interface ExportSettings {
@@ -407,6 +410,8 @@ export interface LookupResult {
   error?: string;
   tookMs: number;
   raw?: unknown;
+  /** 结果来自本地缓存（可「重新检索」刷新） */
+  fromCache?: boolean;
 }
 
 // ============================================================

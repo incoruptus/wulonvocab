@@ -6,6 +6,8 @@ import { isValueEmpty, sortSections } from "@/lib/sections";
 import { SectionBlock, accentCssVar, type CardCtx } from "@/components/export/blocks";
 import { speakWord } from "@/lib/study/tts";
 import { CardActionButton } from "@/components/study/CardActionButton";
+import { useResolvedTheme } from "@/components/app/Providers";
+import { cx } from "@/lib/utils";
 
 /** 学习卡片：正面（单词 + 音标 + 发音）→ 轻点翻面显示释义与例句 */
 export function StudyCard({
@@ -23,10 +25,11 @@ export function StudyCard({
   starred: boolean;
   onToggleStar: () => void;
 }) {
+  const isDark = useResolvedTheme() === "dark";
   const s = book.exportSettings;
   const ctxSettings: ExportSettings = {
     ...s,
-    cardStyle: "minimal",
+    cardStyle: "swiss",
     showSectionLabels: true,
     hideEmpty: true,
     writingLines: 0,
@@ -37,11 +40,23 @@ export function StudyCard({
     .filter((sec) => sec.type !== "pronunciation") // 卡头已展示音标，避免重复
     .filter((sec) => !isValueEmpty(sec.type, entry.values[sec.key]));
   const pron = (entry.values["phonetic"] ?? {}) as { uk?: string; us?: string };
+  // 深色纸面：卡片容器与内部排版变量整体切到暗色（亮色纸感仅在浅色主题下使用）
+  const themeStyle: React.CSSProperties = isDark
+    ? {
+        color: "var(--ds-gray-1000)",
+        ["--wv-fg" as string]: "var(--ds-gray-1000)",
+        ["--wv-soft" as string]: "var(--ds-gray-900)",
+        ["--wv-line" as string]: "var(--ds-gray-400)",
+      }
+    : { color: "#1b1b1b" };
 
   return (
     <div
-      className="wv-card w-full max-w-xl cursor-pointer rounded-2xl bg-white p-5 shadow-geist-md sm:p-7"
-      style={{ ...accentCssVar(ctx), fontSize: "12pt", lineHeight: 1.65, color: "#1b1b1b" }}
+      className={cx(
+        "wv-card w-full max-w-xl cursor-pointer rounded-2xl p-5 shadow-geist-md touch-manipulation sm:p-7",
+        isDark ? "bg-gray-100" : "bg-white",
+      )}
+      style={{ ...accentCssVar(ctx), fontSize: "12pt", lineHeight: 1.65, ...themeStyle }}
       onClick={() => {
         if (!revealed) onReveal();
       }}

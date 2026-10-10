@@ -6,7 +6,9 @@ import { CheckCircle2, Loader2, Search, Sparkles, XCircle } from "lucide-react";
 import type { Entry, LookupResult, Wordbook } from "@/lib/types";
 import { makeEntry } from "@/lib/presets";
 import { draftToValues } from "@/lib/importer";
+import { isValueEmpty } from "@/lib/sections";
 import { runLookup } from "@/lib/lookup";
+import { runBatchLookup, type BatchLookupItem } from "@/lib/lookup/batch";
 import { peekLocalSuggestions } from "@/lib/lookup/localdict";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
@@ -24,26 +26,47 @@ export function LookupPanel({
   book,
   targetEntry,
   onApplied,
+  initialTab,
+  fillEntryIds,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   book: Wordbook;
   targetEntry: Entry | null;
   onApplied: (entryId: string) => void;
+  /** 打开时的默认页签（批量栏「批量检索」会带 fill + 选中集） */
+  initialTab?: "single" | "batch" | "fill";
+  /** 补全范围（词条 id）；缺省时扫描全书的空缺释义词条 */
+  fillEntryIds?: string[];
 }) {
   const sources = useAppStore((s) => s.lookupSources);
   const dictionaries = useAppStore((s) => s.dictionaries);
   const [word, setWord] = useState("");
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<LookupResult[]>([]);
+  const [resultsBySource, setResultsBySource] = useState<Record<string, LookupResult>>({});
+  const [pending, setPending] = useState<Set<string>>(new Set());
+  const [fromCache, setFromCache] = useState(false);
   const [batchText, setBatchText] = useState("");
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
   const [batchFailed, setBatchFailed] = useState<string[]>([]);
+  const [fillRunning, setFillRunning] = useState(false);
+  const [fillProgress, setFillProgress] = useState({ done: 0, total: 0 });
+  const [fillItems, setFillItems] = useState<BatchLookupItem[] | null>(null);
+  const [fillChecked, setFillChecked] = useState<Set<string>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
 
   const activeSources = useMemo(() => sources.filter((s) => s.enabled && !excluded.has(s.id)), [sources, excluded]);
+
+  /** 补全候选：指定词条集优先，否则扫描「空缺释义」的词条 */
+  const fillCandidates = useMemo(() => {
+    if (fillEntryIds?.length) {
+      const ids = new Set(fillEntryIds);
+      return book.entries.filter((e) => ids.has(e.id));
+    }
+    return book.entries.filter((e) => isValueEmpty("senses", e.values["senses"]));
+  }, [book.entries, fillEntryIds]);
 
   // 输入建议：当前词库前缀 + 已加载本地词库前缀（不触发网络）
   const suggestions = useMemo(() => {
@@ -63,20 +86,36 @@ export function LookupPanel({
     return out.slice(0, 10);
   }, [word, book.entries, dictionaries]);
 
-  const doLookup = async (override?: string) => {
+  // 渐进渲染：按数据源占位，谁先返回谁先显示；命中缓存则瞬间全出
+  const doLookup = async (override?: string, opts?: { refresh?: boolean }) => {
     const w = (override ?? word ?? "").trim() || (targetEntry?.headword ?? "").trim();
     if (!w) {
       toast.error("请输入要检索的单词");
       return;
     }
     setLoading(true);
-    setResults([]);
+    setResultsBySource({});
+    setFromCache(false);
+    setPending(new Set(activeSources.map((s) => s.id)));
     try {
-      const res = await runLookup(w, activeSources, book.schema, { localDictIds: dictionaries.map((d) => d.id) });
-      setResults(res);
-      if (res.every((r) => !r.ok)) toast.error("所有数据源均未返回结果");
+      const res = await runLookup(w, activeSources, book.schema, {
+        localDictIds: dictionaries.map((d) => d.id),
+        bypassCache: opts?.refresh,
+        onPartial: (r) => {
+          setResultsBySource((prev) => ({ ...prev, [r.sourceId]: r }));
+          setPending((prev) => {
+            if (!prev.has(r.sourceId)) return prev;
+            const next = new Set(prev);
+            next.delete(r.sourceId);
+            return next;
+          });
+        },
+      });
+      if (res.some((r) => r.fromCache)) setFromCache(true);
+      if (res.length > 0 && res.every((r) => !r.ok)) toast.error("所有数据源均未返回结果");
     } finally {
       setLoading(false);
+      setPending(new Set());
     }
   };
 
@@ -123,34 +162,32 @@ export function LookupPanel({
     setBatchFailed([]);
     const controller = new AbortController();
     abortRef.current = controller;
+    const items = await runBatchLookup(
+      words.map((w) => ({ key: w, word: w })),
+      {
+        sources: activeSources,
+        schema: book.schema,
+        localDictIds: dictionaries.map((d) => d.id),
+        signal: controller.signal,
+        onProgress: (done, total) => setBatchProgress({ done, total }),
+      },
+    );
     const newEntries: Entry[] = [];
     const failed: string[] = [];
-    for (let i = 0; i < words.length; i += 1) {
-      if (controller.signal.aborted) break;
-      const w = words[i];
-      try {
-        const res = await runLookup(w, activeSources, book.schema, {
-          localDictIds: dictionaries.map((d) => d.id),
-          signal: controller.signal,
-        });
-        const best = res.find((r) => r.ok && r.draft);
-        if (best?.draft) {
-          const { values } = draftToValues(best.draft.values, book.schema, {}, {});
-          newEntries.push(
-            makeEntry({
-              headword: w,
-              tags: best.draft.suggestedTags ?? [],
-              values,
-              source: { kind: "lookup", label: best.sourceLabel, at: now() },
-            }),
-          );
-        } else {
-          failed.push(w);
-        }
-      } catch {
-        failed.push(w);
+    for (const it of items) {
+      if (it.best?.draft) {
+        const { values } = draftToValues(it.best.draft.values, book.schema, {}, {});
+        newEntries.push(
+          makeEntry({
+            headword: it.word,
+            tags: it.best.draft.suggestedTags ?? [],
+            values,
+            source: { kind: "lookup", label: it.best.sourceLabel, at: now() },
+          }),
+        );
+      } else {
+        failed.push(it.word);
       }
-      setBatchProgress({ done: i + 1, total: words.length });
     }
     if (newEntries.length) {
       useAppStore.getState().appendEntries(book.id, newEntries);
@@ -162,6 +199,60 @@ export function LookupPanel({
     setBatchFailed(failed);
     setBatchRunning(false);
     abortRef.current = null;
+  };
+
+  /** 补全空缺：批量检索 → diff 预览 → 应用（只补空缺、不覆盖） */
+  const runFill = async () => {
+    const tasks = fillCandidates.map((e) => ({ key: e.id, word: e.headword }));
+    if (!tasks.length) {
+      toast.error("没有可补全的词条");
+      return;
+    }
+    setFillRunning(true);
+    setFillItems(null);
+    setFillChecked(new Set());
+    setFillProgress({ done: 0, total: tasks.length });
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const items = await runBatchLookup(tasks, {
+      sources: activeSources,
+      schema: book.schema,
+      localDictIds: dictionaries.map((d) => d.id),
+      signal: controller.signal,
+      onProgress: (done, total) => setFillProgress({ done, total }),
+    });
+    setFillItems(items);
+    setFillChecked(new Set(items.filter((it) => it.best).map((it) => it.key)));
+    setFillRunning(false);
+    abortRef.current = null;
+  };
+
+  const applyFill = () => {
+    const chosen = (fillItems ?? []).filter((it) => it.best && fillChecked.has(it.key));
+    if (!chosen.length) {
+      toast.error("没有勾选可应用的词条");
+      return;
+    }
+    let fieldsTotal = 0;
+    let firstId: string | null = null;
+    let applied = 0;
+    for (const it of chosen) {
+      const entry = book.entries.find((e) => e.id === it.key);
+      if (!entry || !it.best?.draft) continue;
+      const { values, added } = draftToValues(it.best.draft.values, book.schema, entry.values, { overwrite: false });
+      const tags = [...new Set([...entry.tags, ...(it.best.draft.suggestedTags ?? [])])];
+      useAppStore.getState().updateEntry(book.id, entry.id, {
+        values,
+        tags,
+        source: { kind: "lookup", label: it.best.sourceLabel, at: now() },
+      });
+      fieldsTotal += added.length;
+      applied += 1;
+      firstId ??= entry.id;
+    }
+    toast.success(`已补全 ${applied} 个词条（${fieldsTotal} 个字段）`, { description: "只补空缺，未覆盖已有内容" });
+    if (firstId) onApplied(firstId);
+    setFillItems(null);
   };
 
   return (
@@ -204,10 +295,11 @@ export function LookupPanel({
           })}
         </div>
 
-        <Tabs defaultValue="single">
+        <Tabs defaultValue={initialTab ?? "single"}>
           <TabsList>
             <TabsTrigger value="single">单词检索</TabsTrigger>
             <TabsTrigger value="batch">批量导入单词表</TabsTrigger>
+            <TabsTrigger value="fill">补全空缺</TabsTrigger>
           </TabsList>
 
           <TabsContent value="single" className="mt-3 space-y-3">
@@ -247,30 +339,51 @@ export function LookupPanel({
               </div>
             ) : null}
 
-            {loading ? (
+            {loading && Object.keys(resultsBySource).length === 0 ? (
               <div className="flex items-center justify-center gap-2 py-8 text-gray-800">
                 <Loader2 className="size-4 animate-spin" /> 正在查询 {activeSources.length} 个数据源
               </div>
             ) : null}
 
-            {!loading && results.length === 0 ? (
+            {!loading && Object.keys(resultsBySource).length === 0 ? (
               <EmptyState
                 icon={<Search className="size-4" />}
                 title="等待检索"
-                desc="结果会按数据源分组展示；应用到词条时只填充空缺字段。"
+                desc="结果会按数据源分组展示；应用到词条时只填充空缺字段。同一单词 30 天内会直接命中本地缓存。"
               />
             ) : null}
 
+            {fromCache ? (
+              <div className="flex items-center gap-2 rounded-lg bg-background-200 px-3 py-2 shadow-geist-border">
+                <Badge variant="gray" size="sm">
+                  缓存
+                </Badge>
+                <span className="t-label-12 text-gray-800">来自本地缓存（30 天内）</span>
+                <Button variant="secondary" size="sm" className="ml-auto" onClick={() => doLookup(undefined, { refresh: true })}>
+                  重新检索
+                </Button>
+              </div>
+            ) : null}
+
             <div className="space-y-3">
-              {results.map((r) => (
-                <ResultCard
-                  key={r.sourceId}
-                  result={r}
-                  targetEntry={targetEntry}
-                  onApply={(entry) => applyResult(r, entry)}
-                  onCreate={() => createFromResult(r)}
-                />
-              ))}
+              {activeSources.map((src) => {
+                const r = resultsBySource[src.id];
+                if (r) {
+                  return (
+                    <ResultCard
+                      key={src.id}
+                      result={r}
+                      targetEntry={targetEntry}
+                      onApply={(entry) => applyResult(r, entry)}
+                      onCreate={() => createFromResult(r)}
+                    />
+                  );
+                }
+                if (pending.has(src.id)) {
+                  return <ResultPendingCard key={src.id} label={src.label} />;
+                }
+                return null;
+              })}
             </div>
           </TabsContent>
 
@@ -313,6 +426,121 @@ export function LookupPanel({
               </div>
             ) : null}
           </TabsContent>
+
+          <TabsContent value="fill" className="mt-3 space-y-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="t-label-13 text-gray-900">
+                {fillEntryIds?.length
+                  ? `对所选 ${fillCandidates.length} 个词条批量检索`
+                  : `扫描到 ${fillCandidates.length} 个空缺释义的词条`}
+              </span>
+              <span className="t-label-12 text-gray-700">只补空缺字段、不覆盖已有内容；结果可逐条勾选</span>
+            </div>
+
+            {!fillItems ? (
+              <>
+                {fillCandidates.length ? (
+                  <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg bg-background-200 p-2 scroll-thin">
+                    {fillCandidates.slice(0, 200).map((e) => (
+                      <div key={e.id} className="flex items-center gap-2 rounded-md bg-background-100 px-2.5 py-1.5 shadow-geist-border">
+                        <span className="t-mono-13 shrink-0 font-medium text-gray-1000">{e.headword}</span>
+                        <span className="t-label-12 min-w-0 flex-1 truncate text-gray-700">尚无释义，待补全</span>
+                      </div>
+                    ))}
+                    {fillCandidates.length > 200 ? (
+                      <div className="t-label-12 px-2 py-1 text-gray-700">还有 {fillCandidates.length - 200} 个未显示（不影响处理）</div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <EmptyState
+                    icon={<CheckCircle2 className="size-4" />}
+                    title="没有空缺"
+                    desc="所有词条的释义都已填写；也可以多选词条后，从列表底部的「批量检索补全」发起。"
+                  />
+                )}
+                <div className="flex items-center gap-2">
+                  <Button onClick={runFill} loading={fillRunning} disabled={!fillCandidates.length}>
+                    <Sparkles className="size-4" /> 开始补全{fillCandidates.length ? `（${fillCandidates.length}）` : ""}
+                  </Button>
+                  {fillRunning ? (
+                    <>
+                      <span className="t-mono-12 text-gray-800">
+                        {fillProgress.done}/{fillProgress.total}
+                      </span>
+                      <Button variant="secondary" size="sm" onClick={() => abortRef.current?.abort()}>
+                        中止
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+                {fillRunning ? (
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      className="h-full rounded-full bg-blue-700 transition-[width]"
+                      style={{ width: `${Math.round((fillProgress.done / Math.max(1, fillProgress.total)) * 100)}%` }}
+                    />
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="green" size="sm">
+                    可补全 {fillItems.filter((it) => it.best).length}
+                  </Badge>
+                  {fillItems.some((it) => !it.best) ? (
+                    <Badge variant="amber" size="sm">
+                      未匹配 {fillItems.filter((it) => !it.best).length}
+                    </Badge>
+                  ) : null}
+                  <Button variant="tertiary" size="sm" onClick={runFill}>
+                    重新检索
+                  </Button>
+                </div>
+                <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg bg-background-200 p-2 scroll-thin">
+                  {fillItems.map((it) => (
+                    <label
+                      key={it.key}
+                      className={cx(
+                        "flex items-center gap-2 rounded-md bg-background-100 px-2.5 py-1.5 shadow-geist-border",
+                        it.best ? "cursor-pointer" : "opacity-65",
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        className="size-3.5 shrink-0 accent-blue-700"
+                        disabled={!it.best}
+                        checked={fillChecked.has(it.key)}
+                        onChange={() =>
+                          setFillChecked((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(it.key)) next.delete(it.key);
+                            else next.add(it.key);
+                            return next;
+                          })
+                        }
+                      />
+                      <span className="t-mono-13 shrink-0 font-medium text-gray-1000">{it.word}</span>
+                      {it.best ? (
+                        <span className="t-label-12 min-w-0 flex-1 truncate text-gray-900">{draftGloss(it.best.draft?.values)}</span>
+                      ) : (
+                        <span className="t-label-12 min-w-0 flex-1 truncate text-amber-900">{it.error}</span>
+                      )}
+                      {it.best ? <span className="t-label-12 hidden shrink-0 text-gray-700 sm:inline">{it.best.sourceLabel}</span> : null}
+                    </label>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button onClick={applyFill} disabled={fillChecked.size === 0}>
+                    应用 {fillChecked.size} 个词条（只补空缺）
+                  </Button>
+                  <Button variant="tertiary" onClick={() => setFillItems(null)}>
+                    返回重选
+                  </Button>
+                </div>
+              </>
+            )}
+          </TabsContent>
         </Tabs>
       </DialogBody>
       <DialogFooter>
@@ -325,6 +553,25 @@ export function LookupPanel({
 }
 
 /* ---------------- 结果卡片 ---------------- */
+
+/** 从 draft values 提取一行摘要（补全预览用） */
+function draftGloss(values: Record<string, unknown> | undefined): string {
+  const senses = values?.["senses"];
+  if (!Array.isArray(senses)) return "";
+  const first = senses[0] as { pos?: string; translation?: string } | undefined;
+  return first ? [first.pos, first.translation].filter(Boolean).join(" ").slice(0, 80) : "";
+}
+
+/** 检索中占位（渐进渲染：按源先到先显示） */
+function ResultPendingCard({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-xl bg-background-200 p-3 opacity-70 shadow-geist-border">
+      <Loader2 className="size-4 shrink-0 animate-spin text-gray-800" />
+      <span className="t-h-14">{label}</span>
+      <span className="t-label-12 text-gray-700">检索中…</span>
+    </div>
+  );
+}
 
 function ResultCard({
   result,
@@ -380,7 +627,11 @@ function ResultCard({
                     ? "AI"
                     : "HTTP API"}
         </Badge>
-        <span className="t-mono-12 ml-auto text-gray-700">{result.tookMs}ms</span>
+        {result.fromCache ? (
+          <span className="t-mono-12 ml-auto text-gray-700">缓存命中</span>
+        ) : (
+          <span className="t-mono-12 ml-auto text-gray-700">{result.tookMs}ms</span>
+        )}
       </div>
 
       {result.ok && draft ? (

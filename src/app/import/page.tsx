@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FileJson, FileSpreadsheet, Upload } from "lucide-react";
 import { TopNav } from "@/components/app/TopNav";
 import { AiGeneratePanel } from "@/components/import/AiGeneratePanel";
+import { DocImportPanel } from "@/components/import/DocImportPanel";
 import { ImportDialog } from "@/components/import/ImportDialog";
 import { TextImportPanel } from "@/components/import/TextImportPanel";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import { Card } from "@/components/ui/misc";
 export default function ImportPage() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [seed, setSeed] = useState<{ name: string; text: string } | null>(null);
   const goBook = (id: string) => router.push(`/book?id=${id}`);
   return (
     <div className="flex min-h-dvh flex-col">
@@ -21,12 +23,20 @@ export default function ImportPage() {
         <div>
           <h1 className="t-h-24">导入词表</h1>
           <p className="t-copy-14 mt-2 text-gray-900">
-            文件里有什么字段，就排什么字段：缺结构就自动推断，格式不标准也尽力读懂——导入，就是排版。
+            把你攒下的词交给我——你有的字段一个不少，缺的结构替你补齐。
           </p>
         </div>
 
         {/* 粘贴单词列表（最常用路径） */}
         <TextImportPanel onImported={goBook} />
+
+        {/* 文档 / 图片导入（本地优先，扫描件走视觉） */}
+        <DocImportPanel
+          onSeeded={(s) => {
+            setSeed(s);
+            setOpen(true);
+          }}
+        />
 
         {/* 文件导入 */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -36,7 +46,7 @@ export default function ImportPage() {
             </span>
             <div className="t-h-16 mt-3">WulonVocab JSON</div>
             <p className="t-label-13 mt-1.5 flex-1 text-gray-800">
-              标准格式：{"{ wordbook, schema, entries }"}；schema 可省略，导入时自动推断字段结构。词条数组、NDJSON、「单词 → 内容」映射对象也认。
+              标准格式 {"{ wordbook, schema, entries }"}；schema 可以省略——结构会自动推断。词条数组、NDJSON、「单词 → 内容」字典也认。
             </p>
             <Button variant="secondary" size="sm" className="mt-3 self-start" onClick={() => setOpen(true)}>
               <Upload className="size-3.5" /> 选择文件
@@ -48,7 +58,7 @@ export default function ImportPage() {
             </span>
             <div className="t-h-16 mt-3">ECDICT / OALD / 通用 CSV</div>
             <p className="t-label-13 mt-1.5 flex-1 text-gray-800">
-              自动识别 word / phonetic / translation / exchange / tag 等列，词形变化、考纲标签自动映射。
+              音标、释义、词形变化、考纲标签，自动对上号——从 ECDICT 到随手整理的表格都行。
             </p>
             <Button variant="secondary" size="sm" className="mt-3 self-start" onClick={() => setOpen(true)}>
               <Upload className="size-3.5" /> 选择文件
@@ -60,13 +70,17 @@ export default function ImportPage() {
         <AiGeneratePanel onImported={goBook} />
 
         <p className="t-label-12 text-center text-gray-700">
-          全程本地解析——文件不出这台电脑；词典匹配与 AI 生成仅在启用对应数据源时联网。
+          解析全部在本机完成；只有你主动启用在线词典或 AI 时，才会联网。
         </p>
       </main>
 
       <ImportDialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(v) => {
+          setOpen(v);
+          if (!v) setSeed(null);
+        }}
+        seed={seed}
         onImported={(id) => {
           router.push(`/book?id=${id}`);
         }}

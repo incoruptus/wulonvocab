@@ -42,3 +42,9 @@ next-env.d.ts
 
 public/fonts/
 
+
+public/pdfjs/
+
+
+test-fixtures/
+

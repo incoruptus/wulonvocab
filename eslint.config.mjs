@@ -14,6 +14,10 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "public/downloads/**",
+    // 生成物目录（构建前由 npm pre 脚本同步，见 scripts/sync-*.mjs）
+    "public/fonts/**",
+    "public/pdfjs/**",
+    "test-fixtures/**",
     "tsconfig.tsbuildinfo",
   ]),
 ]);

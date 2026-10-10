@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { FileJson, FileSpreadsheet, UploadCloud } from "lucide-react";
 import type { Wordbook } from "@/lib/types";
@@ -21,11 +21,14 @@ export function ImportDialog({
   onOpenChange,
   targetBook,
   onImported,
+  seed,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   targetBook?: Wordbook | null;
   onImported: (bookId: string) => void;
+  /** 外部预置内容（文档/图片抽取结果）：打开时直接进入解析预览 */
+  seed?: { name: string; text: string } | null;
 }) {
   const replaceBook = useAppStore((s) => s.replaceBook);
   const appendEntries = useAppStore((s) => s.appendEntries);
@@ -47,9 +50,10 @@ export function ImportDialog({
     setError(null);
     setName("");
     setTarget(targetBook ? "append" : "new");
+    lastSeedRef.current = null;
   };
 
-  const parse = (content: string, file: string) => {
+  const parse = useCallback((content: string, file: string) => {
     try {
       const p = parseImportText(content, file);
       if (p.kind === "unknown" || !p.rows.length) {
@@ -64,7 +68,19 @@ export function ImportDialog({
       setError((e as Error).message);
       setParsed(null);
     }
-  };
+  }, []);
+
+  // 种子模式：外部抽取好的文本（docx / pdf / 视觉转写）直接进入解析预览
+  const lastSeedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open || !seed) return;
+    const sig = `${seed.name}::${seed.text.length}`;
+    if (lastSeedRef.current === sig) return;
+    lastSeedRef.current = sig;
+    setFilename(seed.name);
+    setText(seed.text.slice(0, 5_000_000));
+    parse(seed.text, seed.name);
+  }, [open, seed, parse]);
 
   const readFile = async (file: File) => {
     setFilename(file.name);

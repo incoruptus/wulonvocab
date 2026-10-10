@@ -433,7 +433,7 @@
 }
 .wv-writing-line {
   border-bottom: 1px dashed var(--wv-line, #d9d9d9);
-  height: 1.9em;
+  height: var(--wv-write-pitch, 1.9em);
 }
 .wv-page-cover-title {
   font-size: 2.6em;

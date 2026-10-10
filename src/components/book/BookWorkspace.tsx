@@ -6,11 +6,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   Brain,
-  ChevronLeft, Download, FileDown, Layers, MoreHorizontal, PanelRight, Pencil, Search, Trash2, Upload, Wand2,
+  ChevronLeft, Download, FileDown, Layers, MoreHorizontal, PanelRight, Pencil, Search, Sparkles, Trash2, Upload, Wand2,
 } from "lucide-react";
 import type { Entry, Wordbook } from "@/lib/types";
 import { serializeBookDoc } from "@/lib/serializers";
 import { useAppStore } from "@/lib/store";
+import { AgentPanel } from "@/components/ai/AgentPanel";
 import { Button, IconButton } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { Badge, EmptyState, SegmentedControl } from "@/components/ui/misc";
@@ -22,6 +23,7 @@ import { SchemaDesigner } from "@/components/book/SchemaDesigner";
 import { LookupPanel } from "@/components/lookup/LookupPanel";
 import { ImportDialog } from "@/components/import/ImportDialog";
 import { studyOverview } from "@/lib/study/queue";
+import { normalizeCardStyle, themeById } from "@/lib/export/themes";
 import { cx, downloadText, slugify } from "@/lib/utils";
 import { TopNav } from "@/components/app/TopNav";
 
@@ -34,6 +36,8 @@ export function BookWorkspace() {
   const [tab, setTab] = useState<"entries" | "fields">("entries");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [lookupOpen, setLookupOpen] = useState(false);
+  const [lookupIntent, setLookupIntent] = useState<{ tab: "single" | "batch" | "fill"; ids?: string[] }>({ tab: "single" });
+  const [agentOpen, setAgentOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -59,6 +63,12 @@ export function BookWorkspace() {
   const [tagMode, setTagMode] = useState<"add" | "remove">("add");
   const [tagInput, setTagInput] = useState("");
   const anchorRef = useRef<string | null>(null);
+
+  /** 打开检索面板（可带页签与补全范围意图；批量栏用 fill 页签 + 选中集） */
+  const openLookup = (intent?: { tab?: "single" | "batch" | "fill"; ids?: string[] }) => {
+    setLookupIntent({ tab: intent?.tab ?? "single", ids: intent?.ids });
+    setLookupOpen(true);
+  };
 
   const exitSelect = () => {
     setSelecting(false);
@@ -219,9 +229,12 @@ export function BookWorkspace() {
               <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
                 <Upload className="size-3.5" /> 导入
               </Button>
-              <Button variant="secondary" size="sm" onClick={() => setLookupOpen(true)}>
+              <Button variant="secondary" size="sm" onClick={() => openLookup()}>
                 <Search className="size-3.5" /> 检索
               </Button>
+              <IconButton label="AI 词库管家" onClick={() => setAgentOpen(true)}>
+                <Sparkles className="size-4" />
+              </IconButton>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -233,8 +246,11 @@ export function BookWorkspace() {
                 <DropdownMenuItem onSelect={() => setImportOpen(true)}>
                   <Upload className="size-3.5" /> 导入
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setLookupOpen(true)}>
+                <DropdownMenuItem onSelect={() => openLookup()}>
                   <Search className="size-3.5" /> 词典检索
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setAgentOpen(true)}>
+                  <Sparkles className="size-3.5" /> AI 词库管家
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -346,6 +362,7 @@ export function BookWorkspace() {
               onRequestBatchStar={batchStar}
               onRequestBatchDelete={requestBatchDelete}
               onRequestExportSelected={exportSelected}
+              onRequestBatchLookup={() => openLookup({ tab: "fill", ids: [...selection] })}
               onQuickDelete={quickDelete}
               onStar={(entry) => useAppStore.getState().toggleStar(book.id, entry.id)}
             />
@@ -361,7 +378,7 @@ export function BookWorkspace() {
                   setSelectedId(null);
                   setMobilePane("list");
                 }}
-                onRequestLookup={() => setLookupOpen(true)}
+                onRequestLookup={() => openLookup()}
               />
             ) : (
               <EmptyState
@@ -382,7 +399,7 @@ export function BookWorkspace() {
                     >
                       新建词条
                     </Button>
-                    <Button variant="secondary" size="sm" onClick={() => setLookupOpen(true)}>
+                    <Button variant="secondary" size="sm" onClick={() => openLookup()}>
                       <Search className="size-3.5" /> 词典检索
                     </Button>
                   </div>
@@ -405,7 +422,11 @@ export function BookWorkspace() {
         book={book}
         targetEntry={selected}
         onApplied={(eid) => setSelectedId(eid)}
+        initialTab={lookupIntent.tab}
+        fillEntryIds={lookupIntent.ids}
       />
+
+      <AgentPanel book={book} open={agentOpen} onOpenChange={setAgentOpen} />
       <ImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
@@ -598,7 +619,7 @@ function PreviewPanel({ book, entry, onClose }: { book: NonNullable<ReturnType<t
       <div className="flex items-center gap-2 border-b border-gray-300 px-3 py-2.5">
         <span className="t-h-14">实时预览</span>
         <Badge variant="gray" size="sm">
-          {settings.cardStyle === "classic" ? "经典" : settings.cardStyle === "minimal" ? "极简" : settings.cardStyle === "compact" ? "紧凑" : "手账"}
+          {themeById(normalizeCardStyle(settings.cardStyle)).name}
         </Badge>
         <span className="t-label-12 text-gray-700">以导出样式渲染</span>
         <div className="ml-auto flex items-center gap-1">

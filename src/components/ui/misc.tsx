@@ -204,6 +204,8 @@ export function Kbd({ children, className }: { children: React.ReactNode; classN
       className={cx(
         "inline-flex h-[22px] min-w-[22px] select-none items-center justify-center rounded-md border border-gray-400/80 bg-gray-100 px-1.5",
         "font-mono text-[11px] leading-none text-gray-900 shadow-[inset_0_-1.5px_0_var(--ds-gray-a300)]",
+        // 暗色：键帽比页面底色略亮 + 清晰描边（避免暗底暗键帽看不清）
+        "dark:border-gray-500 dark:bg-gray-300 dark:text-gray-1000 dark:shadow-[inset_0_-1.5px_0_#00000080]",
         className,
       )}
     >

@@ -2,10 +2,20 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { Archive, Database, DownloadCloud, HardDrive, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
+import { Archive, Database, DownloadCloud, ExternalLink, HardDrive, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
 import type { LookupKind, LookupSourceConfig } from "@/lib/types";
 import { runLookup } from "@/lib/lookup";
+import {
+  CUSTOM_PROVIDER_ID,
+  PROVIDER_PRESETS,
+  fetchModelList,
+  matchProviderId,
+  probeConnection,
+  probeHint,
+  type FetchedModel,
+} from "@/lib/ai/providers";
 import { buildLocalDictRows, deleteLocalDictionaryData, dropDictionaryCache, makeDictionaryMeta, saveLocalDictionary } from "@/lib/lookup/localdict";
+import { BUILTIN_DICTS, downloadBuiltinDict, type BuiltinDict } from "@/lib/lookup/builtinDicts";
 import { parseImportText } from "@/lib/importer";
 import { defaultSchema } from "@/lib/presets";
 import { useAppStore } from "@/lib/store";
@@ -14,7 +24,9 @@ import { Button, IconButton } from "@/components/ui/button";
 import { Input, Select, SwitchRow, Textarea } from "@/components/ui/field";
 import { AccentPicker, Badge, Card, CardTitle, EmptyState, SegmentedControl } from "@/components/ui/misc";
 import { Dialog, DialogFooter, DialogHeader } from "@/components/ui/overlay";
-import { downloadText } from "@/lib/utils";
+import { cx, downloadText } from "@/lib/utils";
+
+const now = () => Date.now();
 
 export default function SettingsPage() {
   const settings = useAppStore((s) => s.settings);
@@ -29,6 +41,8 @@ export default function SettingsPage() {
 
   const [clearOpen, setClearOpen] = useState(false);
   const [dictBusy, setDictBusy] = useState(false);
+  const [builtinBusy, setBuiltinBusy] = useState<string | null>(null);
+  const [builtinProgress, setBuiltinProgress] = useState(0);
   const dictFileRef = useRef<HTMLInputElement>(null);
 
   const importDictionary = async (file: File) => {
@@ -47,6 +61,38 @@ export default function SettingsPage() {
       toast.error(`导入失败：${(e as Error).message}`, { id: t });
     } finally {
       setDictBusy(false);
+    }
+  };
+
+  /** 一键内置词典：下载（可进度）→ 解压 → 解析 → 写库 → 自动启用本地词库源 */
+  const importBuiltin = async (dict: BuiltinDict) => {
+    setBuiltinBusy(dict.id);
+    setBuiltinProgress(0);
+    const t = toast.loading(`正在下载「${dict.name}」…`);
+    try {
+      const text = await downloadBuiltinDict(dict, (r) => setBuiltinProgress(r));
+      toast.loading("正在解析与写入…", { id: t });
+      const parsed = parseImportText(text, `${dict.id}.csv`);
+      const rows = buildLocalDictRows(parsed);
+      if (!rows.length) throw new Error("未解析出有效词条");
+      const meta = {
+        id: `builtin-${dict.id}`,
+        name: dict.name,
+        source: "内置 · ECDICT (MIT)",
+        count: rows.length,
+        importedAt: now(),
+        note: `${parsed.kind} 结构 · 离线`,
+      };
+      await saveLocalDictionary(meta, rows);
+      addDictionary(meta);
+      const state = useAppStore.getState();
+      const localSrc = state.lookupSources.find((s) => s.kind === "localdict");
+      if (localSrc && !localSrc.enabled) state.updateLookupSource(localSrc.id, { enabled: true });
+      toast.success(`「${dict.name}」已就绪：${rows.length} 词 · 离线查词 <10ms`, { id: t });
+    } catch (e) {
+      toast.error(`导入失败：${(e as Error).message}`, { id: t });
+    } finally {
+      setBuiltinBusy(null);
     }
   };
 
@@ -129,7 +175,7 @@ export default function SettingsPage() {
         {/* 本地词库 */}
         <Card className="space-y-4">
           <CardTitle
-            desc="把 OALD / ECDICT 等词典数据集（JSON / CSV）导进来离线查词；ECDICT stardict.csv 有 76 万条，建议先用常用词子集（几万条）打底。"
+            desc="先一键内置离线词典（ECDICT 精要 / 标准），或导入 OALD / ECDICT 等数据集（JSON / CSV）。内置包按词频与考纲裁剪，下载后完全离线。"
             right={
               <div>
                 <Button size="sm" variant="secondary" loading={dictBusy} onClick={() => dictFileRef.current?.click()}>
@@ -153,6 +199,35 @@ export default function SettingsPage() {
               <Database className="size-4 text-gray-800" /> 本地词库
             </span>
           </CardTitle>
+          <div className="space-y-2 rounded-lg bg-background-200 p-3 shadow-geist-border">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="t-label-13 font-medium text-gray-900">内置词典 · 一键离线</span>
+              <span className="t-label-12 text-gray-700">ECDICT 子集（MIT）· 下载后不联网、查词 &lt;10ms</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {BUILTIN_DICTS.map((d) => (
+                <Button
+                  key={d.id}
+                  size="sm"
+                  variant="secondary"
+                  loading={builtinBusy === d.id}
+                  disabled={Boolean(builtinBusy)}
+                  onClick={() => importBuiltin(d)}
+                >
+                  <DownloadCloud className="size-3.5" /> {d.name} · {Math.round(d.words / 1000)}k 词（
+                  {(d.gzipBytes / 1048576).toFixed(1)}MB）
+                </Button>
+              ))}
+            </div>
+            {builtinBusy ? (
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+                <div
+                  className="h-full rounded-full bg-blue-700 transition-[width]"
+                  style={{ width: `${Math.round(builtinProgress * 100)}%` }}
+                />
+              </div>
+            ) : null}
+          </div>
           {dictionaries.length === 0 ? (
             <EmptyState
               icon={<HardDrive className="size-4" />}
@@ -283,6 +358,63 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
   const dictionaries = useAppStore((s) => s.dictionaries);
   const [testWord, setTestWord] = useState("abandon");
   const [testing, setTesting] = useState(false);
+  const [providerId, setProviderId] = useState(() => matchProviderId(source.config.baseUrl));
+  const [models, setModels] = useState<FetchedModel[] | null>(null);
+  const [modelsBusy, setModelsBusy] = useState(false);
+  const [probe, setProbe] = useState<{ busy: boolean; ok?: boolean; text?: string }>({ busy: false });
+
+  const activePreset = PROVIDER_PRESETS.find((p) => p.id === providerId);
+
+  /** 服务商一键填充：只写 Base URL / 模型 / 视觉模型默认值，不动 Key 与自定义内容 */
+  const applyPreset = (id: string) => {
+    setProviderId(id);
+    const preset = PROVIDER_PRESETS.find((p) => p.id === id);
+    if (!preset) return; // 自定义：保留现有填写
+    updateSource(source.id, {
+      config: {
+        baseUrl: preset.baseUrl,
+        model: preset.models.fast,
+        ...(preset.models.vision ? { visionModel: preset.models.vision } : {}),
+      },
+    });
+    setModels(null);
+    toast.success(`已按「${preset.label}」填充，粘贴 Key 即可`);
+  };
+
+  const pullModels = async () => {
+    if (!activePreset) {
+      toast.error("自定义服务商没有模型清单，直接填写模型名即可");
+      return;
+    }
+    setModelsBusy(true);
+    const t = toast.loading("正在拉取模型列表…");
+    try {
+      const list = await fetchModelList(activePreset, source.config.apiKey ?? "");
+      setModels(list);
+      toast.success(`拉取到 ${list.length} 个模型`, { id: t, description: "带「视觉」标注的模型可用于图片识别" });
+    } catch (e) {
+      toast.error(`拉取失败：${(e as Error).message}`, {
+        id: t,
+        description: "该服务商可能未开放 /models，可直接手填模型名",
+      });
+    } finally {
+      setModelsBusy(false);
+    }
+  };
+
+  const runProbe = async () => {
+    setProbe({ busy: true });
+    try {
+      const r = await probeConnection(source.config.baseUrl ?? "", source.config.apiKey ?? "", source.config.model ?? "");
+      const hint = r.ok ? "" : probeHint(r.status);
+      setProbe({ busy: false, ok: r.ok, text: r.ok ? `连接成功 · ${r.latencyMs}ms` : `${r.status}${hint ? ` · ${hint}` : ""}` });
+      if (r.ok) toast.success(`连接成功（${r.latencyMs}ms）`);
+      else toast.error(`连接失败：${r.status}${hint ? ` · ${hint}` : ""}`);
+    } catch (e) {
+      setProbe({ busy: false, ok: false, text: (e as Error).message });
+      toast.error((e as Error).message);
+    }
+  };
 
   const kindLabel: Record<LookupKind, string> = {
     freedict: "免费 · 无需配置",
@@ -337,7 +469,7 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
         <div className="mt-3 space-y-2.5">
           {source.kind === "freedict" ? (
             <p className="t-label-12 text-gray-800">
-              免费公开 API（dictionaryapi.dev）：英文释义、音标、近反义词。无需配置；如网络不可达可改用其他数据源。
+              dictionaryapi.dev：上游自 2023 年起停更、长期不稳定（默认关闭）。建议改用「网络综合词典」或内置离线词库。
             </p>
           ) : null}
 
@@ -372,30 +504,95 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
           {source.kind === "ai" ? (
             <div className="space-y-2.5">
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <Labeled label="服务商（一键填充）">
+                  <Select value={providerId} onChange={(e) => applyPreset(e.target.value)}>
+                    {PROVIDER_PRESETS.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                    <option value={CUSTOM_PROVIDER_ID}>自定义（OpenAI 兼容）</option>
+                  </Select>
+                </Labeled>
                 <Labeled label="API Base URL">
                   <Input
                     value={source.config.baseUrl ?? ""}
-                    onChange={(e) => updateSource(source.id, { config: { baseUrl: e.target.value } })}
+                    onChange={(e) => {
+                      updateSource(source.id, { config: { baseUrl: e.target.value } });
+                      setProviderId(matchProviderId(e.target.value));
+                    }}
                     placeholder="https://api.deepseek.com/v1"
                     className="t-mono-13"
                   />
                 </Labeled>
+              </div>
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 <Labeled label="模型">
                   <Input
                     value={source.config.model ?? ""}
                     onChange={(e) => updateSource(source.id, { config: { model: e.target.value } })}
                     placeholder="deepseek-chat / gpt-4o-mini …"
                     className="t-mono-13"
+                    list={models ? "wv-model-options" : undefined}
                   />
+                  {models ? (
+                    <>
+                      <datalist id="wv-model-options">
+                        {models.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {[m.vision ? "视觉" : "", m.free ? "免费" : "", m.contextK ? `${m.contextK}K 上下文` : ""]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </option>
+                        ))}
+                      </datalist>
+                      <div className="t-label-12 mt-1 text-gray-700">
+                        已拉取 {models.length} 个模型——输入框里可搜索；标「视觉」的能看图
+                      </div>
+                    </>
+                  ) : null}
                 </Labeled>
-              </div>
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                <Labeled label="API Key">
+                <Labeled label="API Key（只保存在本机）">
                   <Input
                     type="password"
                     value={source.config.apiKey ?? ""}
                     onChange={(e) => updateSource(source.id, { config: { apiKey: e.target.value } })}
-                    placeholder="sk-…（仅保存在本机）"
+                    placeholder={activePreset?.keyHint ?? "sk-…（仅保存在本机）"}
+                  />
+                </Labeled>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="secondary" loading={modelsBusy} onClick={pullModels}>
+                  <RefreshCw className="size-3.5" /> 拉取模型列表
+                </Button>
+                <Button size="sm" variant="secondary" loading={probe.busy} onClick={runProbe}>
+                  <Wifi className="size-3.5" /> 测连接（1 token 探针）
+                </Button>
+                {activePreset?.createKeyUrl ? (
+                  <a
+                    href={activePreset.createKeyUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="t-label-12 inline-flex items-center gap-1 text-blue-900 hover:underline"
+                  >
+                    获取 Key <ExternalLink className="size-3" />
+                  </a>
+                ) : null}
+                {!probe.busy && probe.text ? (
+                  <span className={cx("t-label-12", probe.ok ? "text-green-900" : "text-red-900")}>
+                    {probe.ok ? "✓ " : "✗ "}
+                    {probe.text}
+                  </span>
+                ) : null}
+              </div>
+              {activePreset?.note ? <p className="t-label-12 text-gray-700">{activePreset.note}</p> : null}
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <Labeled label="视觉模型（可选，图片 / 扫描件导入用）">
+                  <Input
+                    value={source.config.visionModel ?? ""}
+                    onChange={(e) => updateSource(source.id, { config: { visionModel: e.target.value } })}
+                    placeholder={activePreset?.models.vision ?? "如 glm-4v-flash"}
+                    className="t-mono-13"
                   />
                 </Labeled>
                 <Labeled label="释义语言">

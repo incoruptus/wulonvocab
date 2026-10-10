@@ -80,8 +80,8 @@ export const DEFAULT_LOOKUP_SOURCES: LookupSourceConfig[] = [
   {
     id: "freedict",
     kind: "freedict",
-    label: "Free Dictionary API",
-    enabled: true,
+    label: "Free Dictionary API（上游长期故障，不推荐）",
+    enabled: false,
     config: {},
   },
   {

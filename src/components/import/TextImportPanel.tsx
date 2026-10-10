@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { CheckCircle2, ClipboardPaste, Loader2, Sparkles, Wand2, XCircle } from "lucide-react";
 import type { Entry, Wordbook } from "@/lib/types";
 import { draftToValues } from "@/lib/importer";
-import { runLookup } from "@/lib/lookup";
+import { runBatchLookup } from "@/lib/lookup/batch";
 import { createEmptyBook, defaultSchema, makeEntry } from "@/lib/presets";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
@@ -22,8 +22,6 @@ interface WordMatch {
   phonetic?: string;
   gloss?: string;
 }
-
-const MATCH_CONCURRENCY = 3;
 
 function previewOf(values: Record<string, unknown>): { phonetic: string; gloss: string } {
   const ph = values["phonetic"] as { uk?: string; us?: string } | undefined;
@@ -91,7 +89,7 @@ export function TextImportPanel({ onImported }: { onImported: (bookId: string) =
     setProgress({ done: 0, total: 0 });
   };
 
-  /** 逐词匹配：3 路并发，可中止 */
+  /** 逐词匹配：并发池 + 可中止（引擎与「补全空缺 / 批量导入」共用） */
   const startMatch = async () => {
     if (!parsed.valid.length) {
       toast.error("还没有可识别的单词");
@@ -100,46 +98,37 @@ export function TextImportPanel({ onImported }: { onImported: (bookId: string) =
     const controller = new AbortController();
     abortRef.current = controller;
     const schema = currentSchema();
-    const list: WordMatch[] = parsed.valid.map((w) => ({ word: w, status: "missing" }));
-    setMatches(list);
+    setMatches(parsed.valid.map((w) => ({ word: w, status: "missing" })));
     setRunning(true);
-    setProgress({ done: 0, total: list.length });
-    let done = 0;
-    let cursor = 0;
-    const worker = async () => {
-      while (!controller.signal.aborted) {
-        const i = cursor;
-        cursor += 1;
-        if (i >= list.length) return;
-        const word = list[i].word;
-        try {
-          const res = await runLookup(word, lookupSources, schema, {
-            localDictIds: dictionaries.map((d) => d.id),
-            signal: controller.signal,
-          });
-          const best = res.find((r) => r.ok && r.draft);
-          if (best?.draft) {
-            const { values } = draftToValues(best.draft.values, schema, {}, {});
-            const { phonetic, gloss } = previewOf(values);
-            list[i] = {
-              word,
-              status: "found",
-              values,
-              tags: best.draft.suggestedTags ?? [],
-              source: best.sourceLabel,
-              phonetic,
-              gloss,
-            };
-          }
-        } catch {
-          /* 保持 missing */
+    setProgress({ done: 0, total: parsed.valid.length });
+    const items = await runBatchLookup(
+      parsed.valid.map((w) => ({ key: w, word: w })),
+      {
+        sources: lookupSources,
+        schema,
+        localDictIds: dictionaries.map((d) => d.id),
+        signal: controller.signal,
+        onProgress: (done, total) => setProgress({ done, total }),
+      },
+    );
+    setMatches(
+      items.map((it) => {
+        if (it.best?.draft) {
+          const { values } = draftToValues(it.best.draft.values, schema, {}, {});
+          const { phonetic, gloss } = previewOf(values);
+          return {
+            word: it.word,
+            status: "found",
+            values,
+            tags: it.best.draft.suggestedTags ?? [],
+            source: it.best.sourceLabel,
+            phonetic,
+            gloss,
+          };
         }
-        done += 1;
-        setProgress({ done, total: list.length });
-        setMatches([...list]);
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(MATCH_CONCURRENCY, list.length) }, worker));
+        return { word: it.word, status: "missing" };
+      }),
+    );
     setRunning(false);
     abortRef.current = null;
   };
@@ -184,8 +173,8 @@ export function TextImportPanel({ onImported }: { onImported: (bookId: string) =
         <div className="min-w-0">
           <div className="t-h-16">粘贴单词列表</div>
           <p className="t-label-13 mt-0.5 text-gray-800">
-            只认单词：用<span className="mx-0.5 rounded bg-gray-100 px-1 font-mono text-[12px]">,</span>小写英文逗号分隔（换行也行）。
-            建议先在备忘录 / 记事本里把文本整理好，再整段粘贴到这里。
+            用英文逗号<span className="mx-0.5 rounded bg-gray-100 px-1 font-mono text-[12px]">,</span>把小写单词串起来（换行也认）。
+            在备忘录里整理成行，再整段粘过来就好。
           </p>
         </div>
       </div>
@@ -219,7 +208,7 @@ export function TextImportPanel({ onImported }: { onImported: (bookId: string) =
             ) : null}
           </>
         ) : (
-          <span className="t-label-12 text-gray-700">粘贴后自动统计与去重；支持中英文逗号、分号与换行混排</span>
+          <span className="t-label-12 text-gray-700">粘贴后自动统计与去重；中英文逗号、分号、换行都能混着来</span>
         )}
       </div>
 

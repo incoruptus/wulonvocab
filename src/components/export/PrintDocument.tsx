@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { Entry, Wordbook } from "@/lib/types";
 import { TONES } from "@/lib/paper";
 import { accentCssVar, FlashcardCell, fontStackFor, SectionBlock, EntryHeaderBlock } from "@/components/export/blocks";
+import { themeCssVars } from "@/lib/export/themes";
 import type { ExportDocument } from "@/components/export/useExportDocument";
 import type { PlannedPage } from "@/lib/export/paginate";
 import { cx } from "@/lib/utils";
@@ -44,6 +45,7 @@ export function PrintDocument({ book, doc }: PrintDocumentProps) {
       style={{
         // 强调色 / 行高 / 字体栈在文档根上生效，封面、索引、页脚与所有卡片统一继承
         ...accentCssVar(ctx),
+        ...themeCssVars(s.cardStyle),
         ["--wv-lh" as string]: s.lineHeight,
         fontFamily: fontStackFor(s.fontFamily),
         display: "flex",
@@ -99,6 +101,7 @@ export function PrintDocument({ book, doc }: PrintDocumentProps) {
             footerText={s.footer.text || undefined}
             bookName={s.footer.bookName ? book.name : undefined}
             enabledFooter={s.footer.pageNumbers}
+            ruling={s.cardStyle === "notebook"}
           >
             {page.kind === "flow" ? (
               <div className="flex h-full w-full" style={{ gap: geometry.columnGapPx }}>
@@ -136,11 +139,17 @@ export function PrintDocument({ book, doc }: PrintDocumentProps) {
                 style={{
                   gridTemplateColumns: `repeat(${s.grid.columns}, 1fr)`,
                   gridTemplateRows: `repeat(${s.grid.rows}, minmax(0, 1fr))`,
-                  gap: "8px",
+                  gap: `${s.grid.gapMm ?? 4}mm`,
                 }}
               >
                 {page.items.map((entry, ei) => (
-                  <FlashcardCell key={entry.id} entry={entry} ctx={ctx} index={i * gridPerPage + ei} />
+                  <FlashcardCell
+                    key={entry.id}
+                    entry={entry}
+                    ctx={ctx}
+                    index={i * gridPerPage + ei}
+                    cropMarks={s.cardStyle === "flashcard"}
+                  />
                 ))}
                 {Array.from({ length: gridPerPage - page.items.length }).map((_, bi) => (
                   <div key={`blank-${bi}`} />
@@ -166,6 +175,7 @@ function PageShell({
   bookName,
   enabledFooter = true,
   showFooter = true,
+  ruling = false,
   children,
 }: {
   geometry: ExportDocument["geometry"];
@@ -177,6 +187,8 @@ function PageShell({
   bookName?: string;
   enabledFooter?: boolean;
   showFooter?: boolean;
+  /** 手账主题：内容区垫横线纸底（不参与测量） */
+  ruling?: boolean;
   children: React.ReactNode;
 }) {
   const m = geometry.marginPx;
@@ -210,11 +222,29 @@ function PageShell({
         paddingLeft: left,
         fontSize: geometry.pageFontCss,
         position: "relative",
+        // 建立层叠上下文：手账的负 z 底纹层才能落在「页面背景之上、内容之下」
+        isolation: "isolate",
         ["--wv-fg" as string]: tone.fg,
         ["--wv-line" as string]: tone.line,
         ["--wv-soft" as string]: tone.soft,
       }}
     >
+      {ruling ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute"
+          style={{
+            top: m.top,
+            bottom: m.bottom,
+            left,
+            right,
+            zIndex: -1,
+            opacity: 0.5,
+            background:
+              "repeating-linear-gradient(to bottom, transparent 0, transparent calc(1.7em - 1px), color-mix(in srgb, var(--wv-line,#e9dfc8) 68%, #6b5c3a 32%) calc(1.7em - 1px), color-mix(in srgb, var(--wv-line,#e9dfc8) 68%, #6b5c3a 32%) 1.7em)",
+          }}
+        />
+      ) : null}
       <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>{children}</div>
       {showFooterRow ? (
         <div

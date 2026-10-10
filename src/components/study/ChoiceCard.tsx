@@ -7,6 +7,7 @@ import { CHOICE_OPTION_KEYS } from "@/lib/study/keymap";
 import type { QuizQuestion } from "@/lib/study/quiz";
 import { Kbd } from "@/components/ui/misc";
 import { CardActionButton } from "@/components/study/CardActionButton";
+import { useResolvedTheme } from "@/components/app/Providers";
 import { cx } from "@/lib/utils";
 
 /**
@@ -33,10 +34,26 @@ export function ChoiceCard({
   onChoose: (i: number) => void;
   onSkip: () => void;
 }) {
+  const isDark = useResolvedTheme() === "dark";
   const pron = (entry.values["phonetic"] ?? {}) as { uk?: string; us?: string };
+  // 深色纸面：与 StudyCard 同一套适配（卡片底色 + 内部排版变量）
+  const themeStyle: React.CSSProperties = isDark
+    ? {
+        color: "var(--ds-gray-1000)",
+        ["--wv-fg" as string]: "var(--ds-gray-1000)",
+        ["--wv-soft" as string]: "var(--ds-gray-900)",
+        ["--wv-line" as string]: "var(--ds-gray-400)",
+      }
+    : { color: "#1b1b1b" };
 
   return (
-    <div className="wv-card w-full max-w-xl rounded-2xl bg-white p-5 shadow-geist-md sm:p-7" style={{ fontSize: "12pt", lineHeight: 1.65, color: "#1b1b1b" }}>
+    <div
+      className={cx(
+        "wv-card w-full max-w-xl rounded-2xl p-5 shadow-geist-md touch-manipulation sm:p-7",
+        isDark ? "bg-gray-100" : "bg-white",
+      )}
+      style={{ fontSize: "12pt", lineHeight: 1.65, ...themeStyle }}
+    >
       {/* 词头：长词放不下时操作按钮整行落到词下（右对齐），避免单词被挤断行 */}
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
         <div className="min-w-0">

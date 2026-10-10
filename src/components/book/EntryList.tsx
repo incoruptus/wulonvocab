@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { CheckSquare, Copy, Download, Plus, Search, Star, StarOff, Tag, Trash2, X } from "lucide-react";
+import { CheckSquare, Copy, Download, Plus, Search, Sparkles, Star, StarOff, Tag, Trash2, X } from "lucide-react";
 import type { Entry, Wordbook } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
 import { Input, Select, Checkbox } from "@/components/ui/field";
@@ -33,6 +33,8 @@ export interface EntryListProps {
   /** 单条：删除（带撤销）/ 星标 */
   onQuickDelete: (entry: Entry) => void;
   onStar: (entry: Entry) => void;
+  /** 批量：检索选中的词条并补全空缺字段 */
+  onRequestBatchLookup: () => void;
 }
 
 export function EntryList(props: EntryListProps) {
@@ -231,6 +233,7 @@ export function EntryList(props: EntryListProps) {
           onUnstar={() => props.onRequestBatchStar(false)}
           onDelete={props.onRequestBatchDelete}
           onExport={props.onRequestExportSelected}
+          onLookup={props.onRequestBatchLookup}
           filteredCount={filteredIds.length}
         />
       ) : (
@@ -261,6 +264,7 @@ function BatchBar({
   onUnstar,
   onDelete,
   onExport,
+  onLookup,
 }: {
   count: number;
   hiddenCount: number;
@@ -273,6 +277,7 @@ function BatchBar({
   onUnstar: () => void;
   onDelete: () => void;
   onExport: () => void;
+  onLookup: () => void;
 }) {
   return (
     <div className="space-y-2 border-t border-gray-300 bg-background-100 p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
@@ -303,6 +308,9 @@ function BatchBar({
         <Button variant="secondary" size="sm" onClick={onTags}>
           <Tag className="size-3.5" /> 标签
         </Button>
+        <IconButton label="批量检索补全" size="sm" onClick={onLookup}>
+          <Sparkles className="size-3.5" />
+        </IconButton>
         <IconButton label="批量星标" size="sm" onClick={onStar}>
           <Star className="size-3.5" />
         </IconButton>
