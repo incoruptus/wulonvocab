@@ -76,9 +76,13 @@
   任何改变词条可见状态的写入（含星标 / 状态）都必须 bump `entry.updatedAt`（否则无法跨端合并）；
   合并结果只经 `store.applySyncState` 落库（`lastBookId` 保持本机值）；加密/配对与传输层解耦，传输可插拔。
   **Gist 自动档**：加密一律走 `sync/crypto.ts`（PBKDF2 60 万 → AES-GCM-256，gzip 能力探测，**上传内容永远是密文**）；
-  `sync/engine.ts` 保持**依赖注入**（不 import store，store 接线只在 UI 层）与单飞；Gist 分片阈值 460KB 不得上调
-  （GitHub API 1MB 截断线以内）；向导（`SyncGuideDialog`）文案结构「是什么 / 为什么 / 怎么做」，
+  `sync/engine.ts` 保持**依赖注入**（不 import store，store 接线只在 UI 层 `components/sync/syncDeps.ts`）与单飞；
+  Gist 分片阈值 460KB 不得上调（GitHub API 1MB 截断线以内）；向导（`SyncGuideDialog`）文案结构「是什么 / 为什么 / 怎么做」，
   改配置 UI 时必须同步走查向导三步不脱节。
+  **自动调度必须全局常驻**：节奏触发器只在根布局的 `SyncAutoProvider`（所有页面）——**禁止把调度或依赖注册放进页面级组件**
+  （三端实测缺陷：曾挂在设置页卡片里，用户不开设置页则永不同步）；设置类变更一律走 `store.setSettings`
+  （自动 bump `settings.updatedAt` 并 `requestSyncSoon()`），`settings.updatedAt` 参与冲突裁决
+  （较新变更胜；双方旧数据平局按 deviceId 确定性裁决——不得绕过它直改 settings）。
 
 ## 控件形态约定（审计结论，新代码必须遵守）
 

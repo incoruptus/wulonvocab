@@ -21,6 +21,7 @@ import { applyGrade, deriveStatusFromSrs, isNewSrs, type GradeValue } from "./st
 import { studyConfigOf } from "./study/queue";
 import { emptyDailyLog, pruneDaily, ymd, type StudyConfig, type StudySrs } from "./study/types";
 import { clearTombstonesFor, recordTombstones } from "./sync/meta";
+import { requestSyncSoon } from "./sync/auto";
 import type { SyncState } from "./sync/types";
 import { uid } from "./utils";
 
@@ -167,6 +168,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   uiScale: 1,
   sidebarCollapsed: false,
   lastBookId: null,
+  updatedAt: 0,
 };
 
 /* ============================================================
@@ -781,7 +783,10 @@ export const useAppStore = create<AppStore>()(
 
       removeDictionary: (id) => set((s) => ({ dictionaries: s.dictionaries.filter((d) => d.id !== id) })),
 
-      setSettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
+      setSettings: (patch) => {
+        set((s) => ({ settings: { ...s.settings, ...patch, updatedAt: Date.now() } }));
+        requestSyncSoon(); // 设置变更（主题色/模式等）30s 后补推，让其他设备尽快跟上
+      },
 
       exportBackupJson: () => {
         const { books, settings, lookupSources, dictionaries } = get();

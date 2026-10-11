@@ -1,14 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { BookOpen, Cloud, Copy, KeyRound, RefreshCw } from "lucide-react";
-import { useAppStore } from "@/lib/store";
 import { loadSyncMeta, saveSyncMeta } from "@/lib/sync/meta";
 import { generatePairCode, isPairCodeWellFormed, normalizePairCode } from "@/lib/sync/crypto";
 import { markSyncIdle, markSyncOff, runGistSync, subscribeSyncStatus, type SyncStatus } from "@/lib/sync/engine";
-import { registerSyncDeps } from "@/lib/sync/auto";
-import type { SyncDeps } from "@/lib/sync/engine";
+import { syncDeps } from "@/components/sync/syncDeps";
 import type { SyncMeta } from "@/lib/sync/types";
 import { Button, IconButton } from "@/components/ui/button";
 import { Input, SwitchRow } from "@/components/ui/field";
@@ -25,19 +23,10 @@ const PHASE_META: Record<SyncStatus["phase"], { label: string; variant: "gray" |
   error: { label: "需要处理", variant: "amber" },
 };
 
-/** store 只在这里接线（引擎与协调器保持依赖注入，见 AGENTS #12） */
-const syncDeps: SyncDeps = {
-  getState: () => {
-    const s = useAppStore.getState();
-    return { books: s.books, settings: s.settings, lookupSources: s.lookupSources, dictionaries: s.dictionaries };
-  },
-  applyState: (next) => useAppStore.getState().applySyncState(next),
-};
-
 /**
- * 自动同步（GitHub Gist 档 · P1）：
- * 配对码 + Token 一次配置 → 打开 / 切回前台 / 联网 / 每 30 分钟自动对账；
- * 内容在客户端用配对码加密后才上传，中转站只见密文。
+ * 自动同步（GitHub Gist 档 · P1）配置卡：
+ * 配对码 + Token 一次配置；实际调度由根布局的 SyncAutoProvider 全局常驻执行
+ * （打开应用 / 切回前台 / 联网 / 每 30 分钟），本卡只负责配置、状态展示与手动触发。
  */
 export function GistSyncBlock() {
   const [meta, setMeta] = useState<SyncMeta | null>(null);
@@ -47,7 +36,6 @@ export function GistSyncBlock() {
   const [guideOpen, setGuideOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<null | { kind: "regen" | "newgist" }>(null);
-  const lastSyncAtRef = useRef<number>(0);
 
   const refresh = useCallback(async () => {
     const m = await loadSyncMeta();
@@ -68,30 +56,31 @@ export function GistSyncBlock() {
     const unsub = subscribeSyncStatus((s) => {
       setStatus(s);
       if (s.phase === "ok") {
-        lastSyncAtRef.current = Date.now();
         void loadSyncMeta().then((m) => {
           if (alive) setMeta(m);
         });
       }
     });
-    const unregister = registerSyncDeps(syncDeps);
     return () => {
       alive = false;
       unsub();
-      unregister();
     };
   }, []);
 
   const gist = meta?.gist ?? null;
   const configured = Boolean(gist?.token && gist.pairCode && isPairCodeWellFormed(gist.pairCode));
-  const autoOn = Boolean(configured && gist?.enabled);
   const hasGistConfig = Boolean(gist);
+
+  // 徽标语义：已配置 → 待同步；配置过但关掉 → 未开启
+  useEffect(() => {
+    if (configured) markSyncIdle();
+    else if (hasGistConfig) markSyncOff();
+  }, [configured, hasGistConfig]);
 
   const kick = useCallback(async (manual: boolean) => {
     if (manual) setBusy(true);
     try {
       const out = await runGistSync(syncDeps, { manual });
-      lastSyncAtRef.current = Date.now();
       if (manual) {
         const parts: string[] = [];
         const a = out.applied;
@@ -109,33 +98,6 @@ export function GistSyncBlock() {
       if (manual) setBusy(false);
     }
   }, []);
-
-  // 自动节奏：启动 +5s / 切回前台（≥10min）/ 恢复联网 / 常驻每 30min
-  useEffect(() => {
-    if (!autoOn) {
-      if (hasGistConfig) markSyncOff();
-      return;
-    }
-    markSyncIdle();
-    const initial = setTimeout(() => void kick(false), 5000);
-    const onVisible = () => {
-      if (document.visibilityState === "visible" && Date.now() - lastSyncAtRef.current > 10 * 60 * 1000) {
-        void kick(false);
-      }
-    };
-    const onOnline = () => void kick(false);
-    const interval = setInterval(() => {
-      if (document.visibilityState === "visible") void kick(false);
-    }, 30 * 60 * 1000);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("online", onOnline);
-    return () => {
-      clearTimeout(initial);
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("online", onOnline);
-    };
-  }, [autoOn, hasGistConfig, kick]);
 
   const patchGist = async (patch: Partial<NonNullable<SyncMeta["gist"]>>) => {
     const m = await loadSyncMeta();

@@ -363,6 +363,8 @@ export interface AppSettings {
   uiScale: number;
   sidebarCollapsed: boolean;
   lastBookId: string | null;
+  /** 最近一次本地修改时间（同步冲突按「较新变更胜」；0 / 缺省 = 从未改过） */
+  updatedAt?: number;
 }
 
 // ============================================================

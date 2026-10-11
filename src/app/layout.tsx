@@ -7,6 +7,7 @@ import "@fontsource/noto-serif-sc/400.css";
 import "@fontsource/noto-serif-sc/600.css";
 import { assetPath } from "@/lib/paths";
 import { Providers } from "@/components/app/Providers";
+import { SyncAutoProvider } from "@/components/sync/SyncAutoProvider";
 
 export const metadata: Metadata = {
   title: {
@@ -41,7 +42,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="stylesheet" href={assetPath("/fonts/harmony/Semibold.css")} />
       </head>
       <body className="min-h-dvh bg-background-100 text-gray-1000 antialiased">
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+          {/* 全局自动同步调度：不依赖任何页面是否打开（见 SyncAutoProvider 注释） */}
+          <SyncAutoProvider />
+        </Providers>
       </body>
     </html>
   );

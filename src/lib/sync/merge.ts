@@ -349,7 +349,12 @@ export function mergeSync(input: MergeInput): MergeResult {
     let side: "local" | "remote" = verdict === "remote" ? "remote" : "local";
     if (verdict === "conflict") {
       const forced = resolutions["settings"];
-      side = forced ?? "remote";
+      // 按「较新变更胜」；平局（如双方都是升级前的旧数据，均无时间戳）按设备号确定性裁决——
+      // 同一对设备在双方视角下必然收敛到同一侧，不会来回翻转
+      const lu = local.settings.updatedAt ?? 0;
+      const ru = (remote.settings as AppSettings).updatedAt ?? 0;
+      const byTime = lu !== ru ? (lu > ru ? "local" : "remote") : meta.localDeviceId >= meta.remoteDeviceId ? "local" : "remote";
+      side = forced ?? byTime;
       conflicts.push({ entityKey: "settings", kind: "settings", label: "应用设置", chosen: side, canFlip: forced === undefined });
     }
     if (side === "remote") settings = { ...(remote.settings as AppSettings), lastBookId: local.settings.lastBookId };
