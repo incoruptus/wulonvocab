@@ -119,6 +119,19 @@
   ⑤ 导入：批量导入后 `requestSyncSoon()`（30s）；手动合并同步包后 `requestSyncSoon(10_000)`；
   ⑥ 手动：「立即同步」按钮（手动路径绕过失败退避）。
 
+## 换机迁移（开发机更换时）
+
+1. **旧机收尾**：`git status` 必须干净 → `git push`。一切以 GitHub 仓库为准，**不拷贝目录**。
+2. **新机前置**：Node ≥ 20.9、Git；安卓线另需 JDK 17 + Android SDK + Android Studio（本仓库当前开发机之外的机器）。
+3. `git clone https://github.com/incoruptus/wulonvocab.git`
+   （GitHub 不通时用新机自己的代理：`git config --global http.proxy http://127.0.0.1:<新机端口>`，
+   并同步更新本文档「部署约束」中的代理端口）。
+4. `npm install`（慢则 `npm config set registry https://registry.npmmirror.com`）。
+5. **验证**：`npm run typecheck && npm test`（应 157 全绿）→ `npm run dev` 打开 localhost:3000。
+6. **不要拷贝**：`node_modules/`、`.next/`、`out/`、`public/fonts/`、`public/pdfjs/`（首次 dev/build 自动生成）。
+7. 无仓库外的私密文件需要搬运（无 .env / keystore；API Key 只存在各自浏览器里）。
+8. **到岗体检**：`git log --oneline -5` + `npm test`；安卓线从 `docs/PLAN-2026-10.md` §7（Capacitor 路线）与本文件约定继续。
+
 ## 控件形态约定（审计结论，新代码必须遵守）
 
 - **高度体系**：`xs` 24px / `sm` 32px / `md` 36px / `lg` 40px；同一行的控件必须同高对齐；
