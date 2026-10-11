@@ -131,6 +131,8 @@
 6. **不要拷贝**：`node_modules/`、`.next/`、`out/`、`public/fonts/`、`public/pdfjs/`（首次 dev/build 自动生成）。
 7. 无仓库外的私密文件需要搬运（无 .env / keystore；API Key 只存在各自浏览器里）。
 8. **到岗体检**：`git log --oneline -5` + `npm test`；安卓线从 `docs/PLAN-2026-10.md` §7（Capacitor 路线）与本文件约定继续。
+9. **双机分工**：开发机 A（本机）专注**网页端**；安卓工程在**开发机 B**（有 JDK/SDK/Studio），以 Git 仓库为唯一交接面。
+   安卓**实施定稿**见 `docs/ANDROID.md`（含五格 IA、顶栏双层、纵向预算、CI APK、自托管 OTA、keystore 流程）——B 机 Agent 拉库即按其执行。
 
 ## 控件形态约定（审计结论，新代码必须遵守）
 
