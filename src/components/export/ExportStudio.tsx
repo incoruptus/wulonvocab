@@ -596,13 +596,13 @@ function PanelsCards({ settings, patch, book }: PanelGroupProps) {
                     }
                   }}
                   className={cx(
-                    "rounded-lg border p-2 text-left transition-colors",
+                    "rounded-lg border p-3 text-left transition-colors",
                     active ? "border-blue-600/60 bg-blue-100" : "border-gray-300 bg-background-100 hover:bg-gray-100",
                   )}
                 >
                   <ThemeThumb id={t.id} />
-                  <div className="t-label-13 mt-1.5 font-medium text-gray-1000">{t.name}</div>
-                  <div className="t-label-12 text-gray-700">{t.signature}</div>
+                  <div className="t-label-13 mt-2 font-medium text-gray-1000">{t.name}</div>
+                  <div className="t-label-12 mt-0.5 text-gray-700">{t.signature}</div>
                 </button>
               );
             })}

@@ -122,6 +122,8 @@ export function StudySession({ book }: { book: Wordbook }) {
   const sessionGradesRef = useRef<
     { entryId: string; before?: StudySrs; rating: GradeValue; elapsedMs: number; dayKey?: string }[]
   >([]);
+  /** 本场已回炉过的词（研究反模式 #2：每词每 session 回炉上限 1 次，禁止无上限打转） */
+  const sessionRequeuedRef = useRef<Set<string>>(new Set());
   /** 放弃进度的二次确认（对话框内两段式） */
   const [abandonArmed, setAbandonArmed] = useState(false);
   /** 快捷键帮助弹窗 */
@@ -228,6 +230,7 @@ export function StudySession({ book }: { book: Wordbook }) {
       setPendingConfidence(false);
       skippedRef.current = [];
       sessionGradesRef.current = [];
+      sessionRequeuedRef.current = new Set();
       cardStartRef.current = Date.now();
       setPhase("session");
       const first = entryById(book, items[0].entryId);
@@ -276,7 +279,8 @@ export function StudySession({ book }: { book: Wordbook }) {
     // 已评分的词不再参与 F 返回
     skippedRef.current = skippedRef.current.filter((x) => x.entryId !== graded.entryId);
     const rest = queue.slice(1);
-    if (needsSessionRequeue(graded.next, Date.now())) {
+    if (needsSessionRequeue(graded.next, Date.now()) && !sessionRequeuedRef.current.has(graded.entryId)) {
+      sessionRequeuedRef.current.add(graded.entryId);
       const insertAt =
         cfg.similarityAvoid && !allowSimilar
           ? requeueInsertIndex(book.entries, rest, graded.entryId)
@@ -1092,12 +1096,12 @@ function SummaryView({
     requestSyncNow({ silent: true });
   }, []);
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-background-200 px-4">
-      <Card className="w-full max-w-md space-y-5 p-6">
+    <div className="flex min-h-dvh items-center justify-center bg-background-200 px-4 py-8">
+      <Card className="w-full max-w-md space-y-6 p-7">
         <div className="text-center">
-          <div className="text-[34px]">🎉</div>
-          <div className="t-h-20 mt-1">本轮学习完成</div>
-          <div className="t-label-13 mt-1 text-gray-800">
+          <div className="text-[40px] leading-none">🎉</div>
+          <div className="t-h-20 mt-3">本轮学习完成</div>
+          <div className="t-label-13 mt-1.5 text-gray-800">
             {book.name} · 用时 {minutes > 0 ? `${minutes} 分 ` : ""}
             {seconds} 秒
           </div>
@@ -1108,7 +1112,7 @@ function SummaryView({
           <SummaryRow label="记得 / 轻松" value={`${stats.good} / ${stats.easy}`} />
           <SummaryRow label="模糊 / 忘记" value={`${stats.hard} / ${stats.again}`} />
         </div>
-        <div className="grid grid-cols-1 gap-2.5">
+        <div className="grid grid-cols-1 gap-2.5 border-t border-gray-300 pt-5">
           <Button onClick={onRestart}>
             <RotateCcw className="size-4" /> 再来一轮
           </Button>
