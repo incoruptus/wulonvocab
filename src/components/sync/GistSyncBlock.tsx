@@ -113,7 +113,7 @@ export function GistSyncBlock() {
     if (!codeDraft) return;
     try {
       await navigator.clipboard.writeText(codeDraft);
-      toast.success("配对码已复制——发给要同步的设备（有几台发几台）");
+      toast.success("配对码已复制，发给要同步的设备就行（有几台发几台）");
     } catch {
       toast.info("复制失败，请手动选中复制");
     }
@@ -168,7 +168,7 @@ export function GistSyncBlock() {
       {/* 未配置提示 */}
       {!configured ? (
         <div className="rounded-lg bg-amber-700/10 p-2.5 t-label-12 text-amber-900">
-          还没配置——点上方「配对码 / Token / 仓库」展开填好，或打开「同步向导」手把手走一遍。内容先用配对码加密再上传，中转站看到的只是密文。
+          还没配置：点开上方「配对码 / Token / 仓库」填好，或打开「同步向导」手把手走一遍。上传前会先用配对码加密，中转站看到的只是密文。
         </div>
       ) : null}
 
@@ -281,7 +281,7 @@ export function GistSyncBlock() {
               setConfirm(null);
               if (kind === "regen") {
                 const code = generatePairCode();
-                void patchGist({ pairCode: code, lastPushHash: null }).then(() => toast.success("新配对码已生成——记得复制给每一台设备"));
+                void patchGist({ pairCode: code, lastPushHash: null }).then(() => toast.success("新配对码已生成，记得复制给每一台设备"));
               } else {
                 const excludes = [...(gist?.excludeGistIds ?? []), ...(gist?.gistId ? [gist.gistId] : [])];
                 void patchGist({ gistId: null, lastPushHash: null, excludeGistIds: excludes }).then(() =>

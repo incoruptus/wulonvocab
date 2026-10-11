@@ -49,17 +49,17 @@ export function joinGistParts(mainText: string, parts: (string | undefined)[]): 
   const m = JSON.parse(mainText) as { format: string; version: number; parts: number; checksum: string };
   if (m.format !== "wulonvocab-sync-chunks" || m.version !== 1) throw new Error("同步分片清单格式异常");
   const missing = [...Array(m.parts).keys()].filter((i) => typeof parts[i] !== "string");
-  if (missing.length) throw new Error(`同步分片不完整（缺 ${missing.length} 片）——另一端可能还没上传完`);
+  if (missing.length) throw new Error(`同步分片不完整（缺 ${missing.length} 片），另一端可能还没上传完`);
   const text = parts.slice(0, m.parts).join("");
-  if (quickHash(text) !== m.checksum) throw new Error("同步分片校验和不一致——另一端可能还在上传中，稍后再同步一次");
+  if (quickHash(text) !== m.checksum) throw new Error("同步分片校验和不一致，另一端可能还在上传中，稍后再同步一次");
   return text;
 }
 
 /* ---------------- fetch 封装与错误分诊 ---------------- */
 
 function mapStatus(status: number): string {
-  if (status === 401) return "GitHub Token 无效或已过期——去 GitHub 重新生成后粘贴";
-  if (status === 404) return "找不到同步仓库（可能已被删除）——删除 Token 旁的仓库号可重新创建";
+  if (status === 401) return "GitHub Token 无效或已过期，去 GitHub 重新生成后粘贴";
+  if (status === 404) return "找不到同步仓库（可能已被删除），删掉 Token 旁的仓库号即可重新创建";
   if (status === 403 || status === 429) return "GitHub 接口限流了，休息几分钟再试";
   if (status === 422) return "GitHub 拒绝了这次写入（内容可能超限）";
   return `GitHub 返回了 ${status}`;
@@ -83,7 +83,7 @@ async function request(cfg: SyncGistConfig, path: string, init: RequestInit = {}
   } catch (e) {
     const msg = (e as Error).message ?? "";
     if (/超时|abort/i.test(msg)) throw new Error("连接 GitHub 超时，稍后再试");
-    throw new Error("连不上 GitHub——检查网络或代理设置");
+    throw new Error("连不上 GitHub，检查网络或代理设置");
   } finally {
     done();
   }

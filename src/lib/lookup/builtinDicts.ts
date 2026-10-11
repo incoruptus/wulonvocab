@@ -51,7 +51,7 @@ export async function downloadBuiltinDict(
     res = await fetch(assetPath(dict.file), { signal: ctrl.signal });
   } catch (e) {
     clearTimeout(timer);
-    if ((e as Error).message === "超时") throw new Error("下载超时（60s）——检查网络后重试");
+    if ((e as Error).message === "超时") throw new Error("下载超时（60s），检查网络后重试");
     throw e;
   }
   if (!res.ok) {

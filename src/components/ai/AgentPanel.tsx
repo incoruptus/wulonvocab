@@ -224,7 +224,7 @@ export function AgentPanel({
       <DialogBody className="flex h-[62vh] flex-col gap-3">
         {!configured ? (
           <div className="rounded-lg bg-amber-700/10 p-3 text-[13px] text-amber-900">
-            还没有接上 AI——到「设置 → 词典数据源 → AI」选一家服务商、贴上 Key（只保存在本机）。
+                还没有接上 AI。到「设置 → 词典数据源 → AI」选一家服务商、贴上 Key（只保存在本机）。
           </div>
         ) : null}
 

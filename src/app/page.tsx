@@ -7,7 +7,7 @@ import { Badge, Card } from "@/components/ui/misc";
 
 export const metadata: Metadata = {
   title: "WulonVocab · 乌龙单词",
-  description: "你攒下的词，值得被认真对待——本地优先的词库：动态字段、间隔重复、打印级排版。",
+  description: "你攒下的词，值得被认真对待。字段自由组合，复习自有节奏，排版打印成书。",
 };
 
 const FEATURES = [
@@ -28,7 +28,7 @@ const FEATURES = [
   {
     icon: FileDown,
     title: "落成纸上的样子",
-    desc: "从 A4 到 32 开；双栏词典版式、封面与索引、镜像装订边距；矢量 PDF 文字可搜，PNG 最高 384 DPI——像一本真的书。",
+    desc: "从 A4 到 32 开；双栏词典版式、封面与索引、镜像装订边距；矢量 PDF 文字可搜，PNG 最高 384 DPI，像一本真的书。",
     href: "/books",
     link: "挑一本去排版",
   },
@@ -59,13 +59,12 @@ export default function LandingPage() {
             <span className="t-h-24 tracking-[-0.02em]">WulonVocab</span>
             <span className="t-label-14 text-gray-700">乌龙单词</span>
             <Badge variant="blue" size="sm">
-              本地优先 · 打印级排版
+              词库 · 复习 · 成书
             </Badge>
           </div>
           <h1 className="t-h-32 mt-6 max-w-2xl text-gray-1000">把单词，做成一本真正精美的书。</h1>
           <p className="t-copy-14 mt-4 max-w-xl text-gray-900">
-            你攒下的词，值得被认真对待——字段自己定，词表随时导入；间隔重复把它们刻进长期记忆；
-            排好版、打印装订，就是一本属于自己的书。数据只住在这台设备里。
+            把散落的词收进一个地方：字段随你组合，复习自有节奏；排好版打印装订，就是一本属于自己的书。
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link
@@ -110,7 +109,7 @@ export default function LandingPage() {
           <div className="t-h-20">两种学习模式，随你切换</div>
           <p className="t-label-13 mt-1 max-w-2xl text-gray-800">
             「翻卡自评」先回忆，再翻面对照；「看词选义」从四个释义里认出对的那一个。
-            忘记的词稍后还会来敲一次门——何时再见面，交给它安排。
+            忘记的词稍后还会再敲一次门，何时见面由它安排。
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <span className="rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">翻卡自评</span>
@@ -134,7 +133,7 @@ export default function LandingPage() {
 
         {/* Footer */}
         <footer className="mt-12 flex flex-wrap items-center justify-between gap-3 border-t border-gray-300 pt-6">
-          <span className="t-label-12 text-gray-700">词库与学习进度只住在你的设备里 · 没有账号，也没有云端</span>
+          <span className="t-label-12 text-gray-700">来自 Caddy Wulon · 乌龙罐</span>
           <div className="flex items-center gap-4">
             <a
               href="https://incoruptus.github.io/wulonvocab/"

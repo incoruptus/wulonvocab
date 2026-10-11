@@ -47,7 +47,7 @@ export default function BooksPage() {
         <section className="flex flex-wrap items-center gap-3">
           <div className="min-w-0">
             <h1 className="t-h-24">我的词库</h1>
-            <p className="t-label-13 mt-1 text-gray-800">每个词库都有自己的字段与进度——接着写，接着背，或者排成一本可以打印的书。</p>
+            <p className="t-label-13 mt-1 text-gray-800">每个词库都有自己的字段与进度，接着写、接着背，也可以把它排成一本能打印的书。</p>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <Button onClick={() => setNewOpen(true)}>
@@ -94,7 +94,7 @@ export default function BooksPage() {
               <EmptyState
                 icon={<BookOpen className="size-4" />}
                 title="书架还是空的"
-                desc="新建一本开始写，或导入现成词表；想先看效果，就点「创建示例（3 词）」——完整词卡长什么样，一眼就知道。"
+                desc="新建一本开始写，或导入现成词表；想先看效果，就点「创建示例（3 词）」，完整词卡一眼就能看到。"
                 action={
                   <div className="flex gap-2">
                     <Button size="sm" onClick={() => setNewOpen(true)}>
@@ -133,7 +133,7 @@ export default function BooksPage() {
         </main>
 
       <footer className="border-t border-gray-300 py-5 text-center">
-        <span className="t-label-12 text-gray-700">词库与配置只住在你的设备里 · 随时导出 JSON 带走</span>
+        <span className="t-label-12 text-gray-700">词库随时可以导出 JSON 备份；开启跨端同步后，多台设备之间会自动对齐</span>
       </footer>
 
       {/* 新建词库 */}
@@ -196,7 +196,7 @@ export default function BooksPage() {
       <Dialog open={deleting !== null} onOpenChange={(v) => !v && setDeleting(null)}>
         <DialogHeader
           title="删除词库"
-          desc={deleting ? `「${deleting.name}」里的 ${deleting.entries.length} 个词条会一起消失，且无法找回——先导出 JSON 备份更稳妥。` : ""}
+          desc={deleting ? `「${deleting.name}」里的 ${deleting.entries.length} 个词条会一起消失，且无法找回。先导出 JSON 备份更稳妥。` : ""}
         />
         <DialogFooter>
           <Button variant="secondary" onClick={() => setDeleting(null)}>

@@ -104,7 +104,7 @@ export function makeAgentExecutor(bookId: string): ToolExecutor {
             .join("、");
           return {
             needsConfirm: true,
-            confirmSummary: `覆盖 ${updates.length} 个词条的非空字段（${words}${updates.length > 5 ? "…" : ""}）——会替换已有内容`,
+            confirmSummary: `覆盖 ${updates.length} 个词条的非空字段（${words}${updates.length > 5 ? "…" : ""}），会替换已有内容`,
             result: null,
             apply: () => run(),
           };

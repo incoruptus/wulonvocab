@@ -67,7 +67,7 @@ export function DocImportPanel({ onSeeded }: { onSeeded: (seed: { name: string; 
         signal,
         onProgress: (p) => setBusy(`${label}：本机识别中… ${Math.round((p.progress ?? 0) * 100)}%`),
       });
-      if (!words.length) throw new Error("本机识别没找到单词——换更清晰的照片，或关掉本机 OCR 改用 AI 转写");
+      if (!words.length) throw new Error("本机识别没找到单词。换更清晰的照片，或关掉本机 OCR 改用 AI 转写");
       return JSON.stringify({ format: "wulonvocab", version: 1, entries: words.map((w) => ({ headword: w })) });
     }
     const cfg = requireVision();
@@ -238,7 +238,7 @@ export function DocImportPanel({ onSeeded }: { onSeeded: (seed: { name: string; 
         <div className="min-w-0">
           <div className="t-h-16">从文档 / 图片导入</div>
           <p className="t-label-13 mt-0.5 text-gray-800">
-            Word 与 PDF 的文本在本机直读、零成本；扫描件和照片交给视觉模型转写——都会先预览再入库。
+            Word 与 PDF 的文本在本机直读、零成本；扫描件和照片可以交给视觉模型转写，都会先预览再入库。
           </p>
         </div>
       </div>
@@ -280,7 +280,7 @@ export function DocImportPanel({ onSeeded }: { onSeeded: (seed: { name: string; 
       {scanRetry ? (
         <div className="space-y-2 rounded-lg bg-amber-700/10 p-3">
           <div className="t-label-13 text-amber-900">
-            {scanRetry.failed.length} 页转写失败（该文档共 {scanRetry.outcome.images.length} 页扫描件）——可重试，或跳过失败页继续。
+            {scanRetry.failed.length} 页转写失败（该文档共 {scanRetry.outcome.images.length} 页扫描件）。可重试，或跳过失败页继续。
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" loading={Boolean(busy)} onClick={() => void retryFailed()}>

@@ -166,7 +166,7 @@ function parseEnvelopeBase(text: string): SyncEnvelopeV1 {
 export function parseEnvelope(text: string): { envelope: SyncEnvelopeV1; payload: SyncPayloadV1 } {
   const env = parseEnvelopeBase(text);
   if (env.crypto?.alg === "AES-GCM") {
-    throw new Error("这个同步包已加密——请到「跨端同步」输入配对码后走自动同步");
+    throw new Error("这个同步包已加密，请到「跨端同步」输入配对码后走自动同步");
   }
   let payloadRaw: unknown;
   try {

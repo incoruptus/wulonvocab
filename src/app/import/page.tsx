@@ -36,7 +36,7 @@ export default function ImportPage() {
         <div>
           <h1 className="t-h-24">导入词表</h1>
           <p className="t-copy-14 mt-2 text-gray-900">
-            把你攒下的词交给我——你有的字段一个不少，缺的结构替你补齐。
+            把你攒下的词交给我：有的字段一个不少，缺的结构替你补齐。
           </p>
         </div>
 
@@ -59,7 +59,7 @@ export default function ImportPage() {
             </span>
             <div className="t-h-16 mt-3">WulonVocab JSON</div>
             <p className="t-label-13 mt-1.5 flex-1 text-gray-800">
-              标准格式 {"{ wordbook, schema, entries }"}；schema 可以省略——结构会自动推断。词条数组、NDJSON、「单词 → 内容」字典也认。
+              标准格式 {"{ wordbook, schema, entries }"}；schema 可以省略，结构会自动推断。词条数组、NDJSON、「单词 → 内容」字典也认。
             </p>
             <Button variant="secondary" size="sm" className="mt-3 self-start" onClick={() => setOpen(true)}>
               <Upload className="size-3.5" /> 选择文件
@@ -71,7 +71,7 @@ export default function ImportPage() {
             </span>
             <div className="t-h-16 mt-3">ECDICT / OALD / 通用 CSV</div>
             <p className="t-label-13 mt-1.5 flex-1 text-gray-800">
-              音标、释义、词形变化、考纲标签，自动对上号——从 ECDICT 到随手整理的表格都行。
+              音标、释义、词形变化、考纲标签都能自动对上号，从 ECDICT 到随手整理的表格都行。
             </p>
             <Button variant="secondary" size="sm" className="mt-3 self-start" onClick={() => setOpen(true)}>
               <Upload className="size-3.5" /> 选择文件

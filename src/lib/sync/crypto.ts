@@ -87,7 +87,7 @@ const KDF_SALT = "wulonvocab-sync-v1";
 async function deriveKey(pairCode: string, iterations: number): Promise<CryptoKey> {
   // WebCrypto 只在 HTTPS / localhost 可用：局域网 http（如手机访问 192.168.x.x）会走到这里
   if (!globalThis.crypto?.subtle) {
-    throw new Error("当前环境不支持加密——请用 https 或 localhost 打开（浏览器限制）");
+    throw new Error("当前环境不支持加密，请用 https 或 localhost 打开（浏览器限制）");
   }
   const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(normalizePairCode(pairCode)), "PBKDF2", false, [
     "deriveKey",

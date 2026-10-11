@@ -80,7 +80,7 @@ export function PeerSyncDialog({
     if (!canvas) return;
     void import("qrcode")
       .then((m) => m.toCanvas(canvas, JSON.stringify({ v: 1, k: code }), { width: 240, margin: 1 }))
-      .catch(() => setError("二维码生成失败——可直接复制下方的会话码"));
+      .catch(() => setError("二维码生成失败，可以直接复制下方的会话码"));
   }, [mode, code]);
 
   /** 本端信封：与 Gist 档同格式，用「会话码」作加密钥匙（临时配对，独立于长期配对码） */
@@ -103,7 +103,7 @@ export function PeerSyncDialog({
     async (text: string, sessionCode: string) => {
       try {
         const { payload } = await parseEnvelopeWithCode(text, sessionCode);
-        setStatus("收到对方数据——请在合并预览里确认");
+        setStatus("收到对方数据，请在合并预览里确认");
         onOpenChange(false);
         onPayload(payload);
       } catch (e) {
@@ -117,7 +117,7 @@ export function PeerSyncDialog({
     (sessionCode: string) => {
       if (sentRef.current) return;
       sentRef.current = true;
-      setStatus("已直连——正在互传数据…");
+      setStatus("已直连，正在互传数据…");
       void buildOwnEnvelope(sessionCode)
         .then((text) => transferRef.current?.sendEnvelope(text))
         .catch((e) => setError((e as Error).message));
@@ -156,7 +156,7 @@ export function PeerSyncDialog({
   const joinWithCode = async (raw: string) => {
     const sessionCode = normalizePairCode(raw);
     if (!isPairCodeWellFormed(sessionCode)) {
-      setError("会话码格式不对——应为 20 位（形如 XXXX-XXXX-XXXX-XXXX-XXXX）");
+      setError("会话码格式不对，应为 20 位（形如 XXXX-XXXX-XXXX-XXXX-XXXX）");
       return;
     }
     setError(null);
@@ -227,7 +227,7 @@ export function PeerSyncDialog({
       };
       void tick();
     } catch (e) {
-      setError(`相机不可用：${(e as Error).message}——可以改用手动输入会话码`);
+      setError(`相机不可用：${(e as Error).message}。也可以手动输入会话码`);
     }
   };
 
@@ -252,7 +252,7 @@ export function PeerSyncDialog({
     <Dialog open={open} onOpenChange={handleOpen}>
       <DialogHeader
         title="扫码直传"
-        desc="两台设备面对面：一台出码、一台扫码，WebRTC 直连互换并合并——不经过 GitHub，也不经过任何服务器。"
+        desc="两台设备面对面：一台出码、一台扫码，直连互换并合并，不经过 GitHub，也不经过任何服务器。"
       />
       <DialogBody className="space-y-4">
         {mode === null ? (

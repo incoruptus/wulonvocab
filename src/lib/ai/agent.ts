@@ -289,5 +289,5 @@ export async function runAgentTurn(opts: {
     if (!r.content) onEvent?.({ type: "stop", reason: "模型没有返回内容" });
     return;
   }
-  onEvent?.({ type: "stop", reason: `达到步数上限（${AGENT_MAX_STEPS} 步），先停在这里——可以继续追问` });
+      onEvent?.({ type: "stop", reason: `达到步数上限（${AGENT_MAX_STEPS} 步），先停在这里，可以继续追问` });
 }

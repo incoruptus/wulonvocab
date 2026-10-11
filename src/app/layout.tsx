@@ -14,8 +14,8 @@ export const metadata: Metadata = {
     default: "WulonVocab · 乌龙单词",
     template: "%s · WulonVocab",
   },
-  description:
-    "你攒下的词，值得被认真对待——本地优先的单词本：字段自由组合、一键导入、A4/B5/A5 打印装订成书。",
+    description:
+      "你攒下的词，值得被认真对待。字段自由组合、一键导入、A4/B5/A5 打印装订成书。",
 };
 
 const themeScript = `

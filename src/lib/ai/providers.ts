@@ -162,7 +162,7 @@ export async function fetchModelList(preset: ProviderPreset, apiKey: string): Pr
       20000,
     );
   } catch (e) {
-    if ((e as Error).message === "超时") throw new Error("拉取超时（20s）——检查网络或改用其他服务商");
+    if ((e as Error).message === "超时") throw new Error("拉取超时（20s），检查网络或改用其他服务商");
     throw e;
   }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

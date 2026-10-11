@@ -97,9 +97,9 @@ export function runGistSync(deps: SyncDeps, opts: { manual?: boolean } = {}): Pr
 async function runOnce(deps: SyncDeps, manual: boolean): Promise<SyncOutcome> {
   const meta = await loadSyncMeta();
   const cfg = meta.gist;
-  if (!cfg?.token) throw new Error("还没配置 GitHub Token——打开「同步向导」看一眼就会");
+  if (!cfg?.token) throw new Error("还没配置 GitHub Token，打开「同步向导」看一眼就会");
   if (!cfg.pairCode || !isPairCodeWellFormed(cfg.pairCode)) {
-    throw new Error("配对码还没就绪——在「自动同步」里生成一个，或粘贴另一台设备的配对码");
+    throw new Error("配对码还没就绪，在「自动同步」里生成一个，或粘贴另一台设备的配对码");
   }
   if (!manual && cfg.backoffUntil && Date.now() < cfg.backoffUntil) {
     return { pulled: false, pushed: false, applied: null, skipped: true };

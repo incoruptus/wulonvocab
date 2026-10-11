@@ -187,7 +187,7 @@ export async function chatCompletionMessage(
         if ((e as Error).name === "AbortError") throw e;
         if (opts.signal?.aborted) throw new LookupError("已取消");
         if ((e as Error).message === "超时") {
-          throw new LookupError(`请求超时（${Math.round((opts.timeoutMs ?? 60000) / 1000)}s）——网络较慢或服务未响应`);
+          throw new LookupError(`请求超时（${Math.round((opts.timeoutMs ?? 60000) / 1000)}s），网络较慢或服务未响应`);
         }
         throw new LookupError(`无法连接 AI 接口（${(e as Error).message}）；请检查 Base URL 与网络/跨域是否可用`);
       }
@@ -352,7 +352,7 @@ export async function streamChatCompletionMessage(
       if ((e as Error).name === "AbortError") throw e;
       if (opts.signal?.aborted) throw new LookupError("已取消");
       if ((e as Error).message === "超时") {
-        throw new LookupError(`请求超时（${Math.round((opts.timeoutMs ?? 180000) / 1000)}s）——网络较慢或服务未响应`);
+        throw new LookupError(`请求超时（${Math.round((opts.timeoutMs ?? 180000) / 1000)}s），网络较慢或服务未响应`);
       }
       throw new LookupError(`无法连接 AI 接口（${(e as Error).message}）；请检查 Base URL 与网络/跨域是否可用`);
     }
@@ -402,7 +402,7 @@ export async function streamChatCompletionMessage(
       parser.flush();
     } catch (e) {
       if (opts.signal?.aborted) throw new LookupError("已取消");
-      if ((e as Error).message === "超时") throw new LookupError("流式响应中断（超时）——网络较慢或服务未响应");
+      if ((e as Error).message === "超时") throw new LookupError("流式响应中断（超时），网络较慢或服务未响应");
       throw new LookupError(`流式连接中断：${(e as Error).message}`);
     }
     const toolCalls: ToolCall[] = [...acc.entries()]

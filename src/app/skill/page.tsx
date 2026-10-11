@@ -145,7 +145,7 @@ export default function SkillPage() {
           <div className="t-h-16">JSON 结构速览</div>
           <p className="t-label-13 text-gray-800">
             顶层 <code className="t-mono-13 rounded bg-gray-100 px-1">entries</code> 为词条数组；每条词条的{" "}
-            <code className="t-mono-13 rounded bg-gray-100 px-1">values</code> 按字段键组织。schema 可选——省略时应用会自动识别字段类型。
+            <code className="t-mono-13 rounded bg-gray-100 px-1">values</code> 按字段键组织。schema 可选，省略时应用会自动识别字段类型。
           </p>
           <pre className="t-mono-13 max-h-96 overflow-auto rounded-lg bg-background-200 p-3 text-gray-900 scroll-thin">{SCHEMA_SNIPPET}</pre>
         </Card>

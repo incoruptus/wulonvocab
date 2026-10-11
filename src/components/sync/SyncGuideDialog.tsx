@@ -26,10 +26,7 @@ export function SyncGuideDialog({ open, onOpenChange }: { open: boolean; onOpenC
       body: (
         <div className="space-y-3">
           <p className="t-label-13 text-gray-800">
-            你的词库、学习进度、删除记录都只在这台设备的浏览器里——没有云端服务器。
-            好处是隐私和离线，代价是手机和电脑默认各记各的。
-          </p>
-          <p className="t-label-13 text-gray-800">
+            词库、学习进度与删除记录默认都保存在这台设备上，所以手机和电脑一开始各记各的。
             跨端同步就是把两边<strong>拼在一起</strong>：学过的记录、删掉的词、改过的设置都会对上，不会「删了又回来」。
           </p>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -66,7 +63,7 @@ export function SyncGuideDialog({ open, onOpenChange }: { open: boolean; onOpenC
       body: (
         <div className="space-y-3">
           <p className="t-label-13 text-gray-800">
-            Gist 存在<strong>你的 GitHub 账号</strong>里——应用要带上一张门禁卡（Token），才有资格把内容放进你自己的柜子。
+            Gist 存在<strong>你的 GitHub 账号</strong>里，所以应用要带上一张门禁卡（Token），才有资格把内容放进你自己的柜子。
             这张卡只能开 Gist 这一个柜子，碰不了你的代码和仓库。
           </p>
           <p className="t-label-12 text-gray-700">
@@ -103,13 +100,13 @@ export function SyncGuideDialog({ open, onOpenChange }: { open: boolean; onOpenC
               <div className="flex items-center gap-1.5 t-label-12 font-medium text-gray-900">
                 <Cloud className="size-3.5" /> GitHub Token · 门禁卡
               </div>
-              <p className="mt-1 t-label-12 text-gray-700">决定「能不能进你的柜子」——没有它，写不进也读不出你的 Gist。</p>
+              <p className="mt-1 t-label-12 text-gray-700">决定「能不能进你的柜子」：没有它，写不进也读不出你的 Gist。</p>
             </div>
             <div className="rounded-lg bg-background-200 p-3">
               <div className="flex items-center gap-1.5 t-label-12 font-medium text-gray-900">
                 <KeyRound className="size-3.5" /> 配对码 · 保险箱密码
               </div>
-              <p className="mt-1 t-label-12 text-gray-700">决定「看得懂看不懂」——内容全程加密，链接泄露也只是一串乱码。</p>
+              <p className="mt-1 t-label-12 text-gray-700">决定「看得懂看不懂」：内容全程加密，链接泄露也只是一串乱码。</p>
             </div>
           </div>
           <p className="t-label-13 text-gray-800">
@@ -121,7 +118,7 @@ export function SyncGuideDialog({ open, onOpenChange }: { open: boolean; onOpenC
             <li>每台都在同样位置粘贴，保存即可。</li>
           </ol>
           <div className="rounded-lg bg-amber-700/10 p-2.5 t-label-12 text-amber-900">
-            配对码就是密码，别发到公开群里。丢了也没关系——重新生成一串、各设备重新配对一次，数据重新同步就会对上。
+            配对码就是密码，别发到公开群里。丢了也没关系，重新生成一串、各设备重新配对一次，数据同步就会对上。
           </div>
         </div>
       ),
@@ -144,7 +141,7 @@ export function SyncGuideDialog({ open, onOpenChange }: { open: boolean; onOpenC
               <li>· 一边改、一边没动 → 取改过的那一边；<strong>两边都改同一处 → 较新的改动胜</strong>，并提示冲突处数，可在预览里翻转</li>
               <li>· 删除会留「墓碑」随数据传播，不会被其他设备把删掉的词「复活」</li>
               <li>· 学习进度：复习记录取最近一次；每日统计取两边较大值（不会重复累计）</li>
-              <li>· <strong>明暗模式与强调色不会同步</strong>——每台设备保留自己的外观；其余设置（数据源、学习参数等）才跨端对齐</li>
+              <li>· <strong>明暗模式与强调色不会同步</strong>，每台设备保留自己的外观；其余设置（数据源、学习参数等）跨端对齐</li>
               <li>· 每次合并前都先留一份<strong>安全快照</strong>；自动同步也是「先拉 → 合并 → 再推回」，不会整包覆盖</li>
             </ul>
           </div>

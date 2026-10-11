@@ -107,7 +107,7 @@ export default function SettingsPage() {
       <main className="mx-auto w-full max-w-4xl flex-1 space-y-6 px-4 pb-24 pt-6 sm:space-y-8 sm:px-6 sm:py-8">
         <div>
           <h1 className="t-h-24">设置</h1>
-          <p className="t-label-13 mt-1 text-gray-800">词库、字段表、检索配置都只存在这台设备的浏览器里（IndexedDB）：断网可用、刷新不丢、随时导出 JSON 带走。</p>
+          <p className="t-label-13 mt-1 text-gray-800">词库与设置默认保存在这台设备上，开启跨端同步后会在多台设备之间自动对齐。</p>
         </div>
 
         {/* 外观 */}
@@ -324,15 +324,43 @@ export default function SettingsPage() {
         <SyncSection />
 
         {/* 关于 */}
-        <Card className="space-y-2">
-          <CardTitle desc="版本 0.1.0 · 界面遵循 Geist 设计系统">关于 WulonVocab</CardTitle>
+        <Card className="space-y-3">
+          <CardTitle desc="版本 0.1.0 · 来自 Caddy Wulon · 乌龙罐">关于 WulonVocab</CardTitle>
           <p className="t-label-13 text-gray-800">
-            WulonVocab（乌龙单词）是一个本地优先的词库工坊：动态字段管理、宽容的 JSON 导入、打印级 PDF/PNG 导出。
-            字段结构与数据格式属于你，随时可以导出 JSON 带走。
+            WulonVocab（乌龙单词）是一个安静的词库工坊：字段由你组合，复习有它的节奏，攒下的词最后能排成一本可以打印的书。
           </p>
-          <p className="t-label-12 text-gray-700">
-            新词库默认使用「牛津词典风」模板的 10 个字段，可在「字段设计」中自由增删、排序与配置。
-          </p>
+          <div className="flex flex-wrap items-center gap-3 border-t border-gray-300 pt-3">
+            {/* eslint-disable-next-line @next/next/no-img-element -- 静态导出 + 外链头像，刻意使用原生 img */}
+            <img
+              src="https://github.com/incoruptus.png"
+              alt="Caddy Wulon 的头像"
+              width={36}
+              height={36}
+              className="size-9 shrink-0 rounded-full bg-gray-100 shadow-geist-border"
+            />
+            <div className="min-w-0">
+              <div className="t-label-13 text-gray-1000">Caddy Wulon</div>
+              <div className="t-label-12 text-gray-700">乌龙罐 · 词库、复习与成书</div>
+            </div>
+            <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1">
+              <a
+                href="https://github.com/incoruptus"
+                target="_blank"
+                rel="noreferrer"
+                className="t-label-12 inline-flex items-center gap-1 text-gray-800 hover:text-gray-1000"
+              >
+                <ExternalLink className="size-3.5" /> 作者的 GitHub
+              </a>
+              <a
+                href="https://github.com/incoruptus/wulonvocab"
+                target="_blank"
+                rel="noreferrer"
+                className="t-label-12 inline-flex items-center gap-1 text-gray-800 hover:text-gray-1000"
+              >
+                <ExternalLink className="size-3.5" /> 项目主页
+              </a>
+            </div>
+          </div>
         </Card>
       </main>
 
@@ -565,12 +593,12 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
                     loading={modelsBusy}
                     placeholder="deepseek-chat / gpt-4o-mini …"
                     searchPlaceholder={models ? "搜索模型…" : "输入模型名（或先拉取列表）"}
-                    emptyText="没有匹配的模型——回车直接使用输入的名字"
+                    emptyText="没有匹配的模型，回车直接使用输入的名字"
                     className="t-mono-13"
                   />
                   {models ? (
                     <div className="t-label-12 mt-1 text-gray-700">
-                      已拉取 {models.length} 个模型——可搜索；标「视觉」的能看图
+                      已拉取 {models.length} 个模型，可搜索；标「视觉」的能看图
                     </div>
                   ) : null}
                 </Labeled>

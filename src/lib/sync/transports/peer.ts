@@ -43,7 +43,7 @@ export function chunkEnvelope(text: string, size = PEER_CHUNK_CHARS): string[] {
 /** 拼回并校验（纯函数 · 单测覆盖） */
 export function joinEnvelopeChunks(parts: string[], checksum: string): string {
   const text = parts.join("");
-  if (quickHash(text) !== checksum) throw new Error("传输校验不一致——连接可能中断了，请重试");
+  if (quickHash(text) !== checksum) throw new Error("传输校验不一致，连接可能中断了，请重试");
   return text;
 }
 
@@ -64,10 +64,10 @@ export interface PeerTransfer {
 
 function mapPeerError(err: Error & { type?: string }): Error {
   const t = err.type ?? "";
-  if (t === "peer-unavailable") return new Error("没找到对方设备——码对不对？对方窗口还开着吗");
-  if (t === "unavailable-id") return new Error("这个会话码正被占用——让对方重新出码");
+  if (t === "peer-unavailable") return new Error("没找到对方设备：码对不对？对方窗口还开着吗");
+  if (t === "unavailable-id") return new Error("这个会话码正被占用，让对方重新出码");
   if (t === "network" || t === "server-error" || t === "socket-error" || t === "socket-closed") {
-    return new Error("连不上配对服务器（PeerJS）——检查网络后重试");
+    return new Error("连不上配对服务器（PeerJS），检查网络后重试");
   }
   return new Error(err.message || "直传连接失败");
 }
@@ -102,7 +102,7 @@ function wireConnection(
       const current = rx;
       rx = null;
       if (current.parts.length !== current.total) {
-        handlers.onStatus("connected", "对方数据不完整——请让对方再发一次");
+        handlers.onStatus("connected", "对方数据不完整，请让对方再发一次");
         return;
       }
       try {
@@ -137,7 +137,7 @@ export async function createPeerTransfer(
   try {
     mod = await import("peerjs");
   } catch {
-    throw new Error("直传组件加载失败——检查网络后重试");
+    throw new Error("直传组件加载失败，检查网络后重试");
   }
   const peerId = derivePeerId(sessionCode);
   return new Promise<PeerTransfer>((resolve, reject) => {
@@ -151,7 +151,7 @@ export async function createPeerTransfer(
       } catch {
         /* ignore */
       }
-      reject(new Error("等待对方超时——确认两台设备都开着这一页，码没有抄错"));
+      reject(new Error("等待对方超时：确认两台设备都开着这一页，码没有抄错"));
     }, PEER_SESSION_TIMEOUT_MS);
     const fail = (err: Error) => {
       if (settled) return;

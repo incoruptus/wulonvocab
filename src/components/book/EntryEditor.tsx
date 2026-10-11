@@ -184,7 +184,7 @@ export function EntryEditor({
                 <Sparkles className="size-3.5 text-amber-800" />
                 <span className="t-h-14">未定义字段</span>
                 <span className="t-label-12 text-gray-800">
-                  这些内容在数据里，但还没进字段表——「提升为字段」后即可出现在排版里。
+                  这些内容已经在数据里，只是还没进字段表；「提升为字段」后就会出现在排版里。
                 </span>
               </div>
               <div className="space-y-1.5">

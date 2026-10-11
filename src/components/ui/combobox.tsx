@@ -172,7 +172,7 @@ export function Combobox({
           ))}
           {filtered.length > 200 ? (
             <div className="t-label-12 px-2.5 py-1.5 text-gray-700">
-              还有 {filtered.length - 200} 项——继续输入以缩小范围
+                还有 {filtered.length - 200} 项，继续输入以缩小范围
             </div>
           ) : null}
         </div>
