@@ -91,6 +91,7 @@ function mkDevice(
       settings: mkSettings({ uiScale, updatedAt: uiScale === 1 ? 0 : T }),
       lookupSources: [],
       dictionaries: [],
+      exportPresets: [],
     },
     base: null,
     lastPushHash: null,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Entry, Wordbook } from "../types";
-import { createEmptyBook } from "../presets";
+import type { Entry, ExportPreset, Wordbook } from "../types";
+import { createEmptyBook, defaultExportSettings } from "../presets";
 import { stableJson } from "./pack";
 import { computeBaseHashes, mergeSync } from "./merge";
 import type { MergeInput, SyncPayloadV1, SyncState, SyncTombstone } from "./types";
@@ -62,6 +62,7 @@ function mkState(books: Wordbook[]): SyncState {
     settings: { theme: "light", accent: "blue", uiScale: 1, sidebarCollapsed: false, lastBookId: "local-book" },
     lookupSources: [],
     dictionaries: [],
+    exportPresets: [],
   };
 }
 
@@ -314,5 +315,72 @@ describe("mergeSync · 设置与收敛", () => {
     });
     expect(rABCA.state.books[0].entries.map((e) => e.id).sort()).toEqual(["e1", "e2", "e3"]);
     expect(rABCA.applied.entriesAdded).toBe(0);
+  });
+});
+
+/* ---------------- 导出预设 ---------------- */
+
+function mkPreset(id: string, name: string, updatedAt: number): ExportPreset {
+  return { id, name, updatedAt, createdAt: 0, settings: defaultExportSettings("预设测试") };
+}
+
+describe("mergeSync · 导出预设（与数据源同规则）", () => {
+  it("远端新增并入；远端缺省该字段（旧版本载荷）时不删本地", () => {
+    const local = mkState([]);
+    local.exportPresets = [mkPreset("p1", "我的版式", 1)];
+    const base = computeBaseHashes(local);
+
+    const input = mkInput(local, [], { base, lastSyncAt: 1 });
+    input.remote.exportPresets = [mkPreset("p2", "打印店", 2)];
+    const r = mergeSync(input);
+    expect(r.state.exportPresets.map((p) => p.id).sort()).toEqual(["p1", "p2"]);
+
+    const old = mkInput(local, [], { base: null, lastSyncAt: null });
+    expect(old.remote.exportPresets).toBeUndefined();
+    const r2 = mergeSync(old);
+    expect(r2.state.exportPresets.map((p) => p.id)).toEqual(["p1"]);
+  });
+
+  it("单边改取改方；双改按三方指纹裁决（默认取远端，可翻转）", () => {
+    const local = mkState([]);
+    local.exportPresets = [mkPreset("p1", "本机名", 1)];
+    const base = computeBaseHashes(local);
+    const remote = [mkPreset("p1", "远端名", 5)];
+
+    const single = mkInput(local, [], { base, lastSyncAt: 1 });
+    single.remote.exportPresets = remote;
+    const r1 = mergeSync(single);
+    expect(r1.state.exportPresets[0].name).toBe("远端名");
+    expect(r1.conflicts).toHaveLength(0);
+
+    const both = mkInput(local, [], { base: null, lastSyncAt: 1 });
+    both.remote.exportPresets = remote;
+    const r2 = mergeSync(both);
+    expect(r2.state.exportPresets[0].name).toBe("远端名");
+    expect(r2.conflicts.some((c) => c.kind === "exportPreset")).toBe(true);
+
+    const flipped = mkInput(local, [], { base: null, lastSyncAt: 1 });
+    flipped.remote.exportPresets = remote;
+    flipped.resolutions = { "exportPreset:p1": "local" };
+    const r3 = mergeSync(flipped);
+    expect(r3.state.exportPresets[0].name).toBe("本机名");
+  });
+
+  it("墓碑：远端墓碑删除本地同 id 预设；本地墓碑防对方复活", () => {
+    const local = mkState([]);
+    local.exportPresets = [mkPreset("p1", "旧的", 1)];
+
+    const input = mkInput(local, [], { lastSyncAt: 1 });
+    input.remote.tombstones = [tomb({ kind: "exportPreset", id: "p1", deletedAt: 10 })];
+    input.remote.exportPresets = [mkPreset("p1", "旧的", 1)];
+    const r = mergeSync(input);
+    expect(r.state.exportPresets).toHaveLength(0);
+
+    const localTomb = mkState([]);
+    localTomb.exportPresets = [mkPreset("p1", "旧的", 1)];
+    const input2 = mkInput(localTomb, [], { lastSyncAt: 1, tombstones: [tomb({ kind: "exportPreset", id: "p1", deletedAt: 10 })] });
+    input2.remote.exportPresets = [mkPreset("p1", "旧的", 1)];
+    const r2 = mergeSync(input2);
+    expect(r2.state.exportPresets).toHaveLength(0);
   });
 });

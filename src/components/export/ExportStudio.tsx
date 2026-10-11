@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  BookMarked,
   ChevronDown,
   ChevronLeft,
   Download,
@@ -25,6 +26,7 @@ import { Select } from "@/components/ui/select";
 import { AccentPicker, SegmentedControl } from "@/components/ui/misc";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/overlay";
 import { PrintDocument } from "@/components/export/PrintDocument";
+import { ExportPresetDialog } from "@/components/export/ExportPresetDialog";
 import { MeasureLayer, useExportDocument } from "@/components/export/useExportDocument";
 import { capturePagesAsPng, exportBaseName, exportRasterPdf, printPages, zipFiles, dpiLabel } from "@/lib/export/print";
 import { cx, downloadBlob } from "@/lib/utils";
@@ -302,10 +304,20 @@ interface PanelGroupProps {
   onReset: () => void;
 }
 
-/** 版面：纸张与方向 · 页边距与装订 · 版式 */
-function PanelsLayout({ settings, patch }: PanelGroupProps) {
+/** 版面：导出预设 · 纸张与方向 · 页边距与装订 · 版式 */
+function PanelsLayout({ settings, patch, book }: PanelGroupProps) {
+  const [presetOpen, setPresetOpen] = useState(false);
   return (
     <>
+      <div className="flex items-center justify-between gap-2 rounded-lg bg-background-200 px-3 py-2.5">
+        <div className="min-w-0">
+          <div className="t-label-13 font-medium text-gray-900">导出预设</div>
+          <div className="t-label-12 text-gray-700">调好这版就存下来，换词库时一键套用</div>
+        </div>
+        <Button size="sm" variant="secondary" className="shrink-0" onClick={() => setPresetOpen(true)}>
+          <BookMarked className="size-3.5" /> 管理
+        </Button>
+      </div>
       <Panel title="纸张与方向" defaultOpen>
         <Field label="纸张尺寸">
           <Select
@@ -457,6 +469,7 @@ function PanelsLayout({ settings, patch }: PanelGroupProps) {
           </>
         )}
       </Panel>
+      <ExportPresetDialog book={book} open={presetOpen} onOpenChange={setPresetOpen} />
     </>
   );
 }

@@ -522,9 +522,20 @@
   font-weight: 600;
 }
 
+/* sonner 定位归位：桌面端距底 40px（曾实测整条叠在视口下缘外 32px，操作按钮点不到） */
+[data-sonner-toaster][data-y-position="bottom"] {
+  bottom: 40px !important;
+}
+
 /* 移动端：toast 抬到主导航之上，避免遮挡底部 Tab 栏（沉浸式路由页更高些也无妨） */
 @media (max-width: 639px) {
   [data-sonner-toaster][data-y-position="bottom"] {
     bottom: calc(3.5rem + env(safe-area-inset-bottom) + 12px) !important;
   }
+}
+
+/* 撤销等操作按钮必须可点：sonner 默认整树 pointer-events:none（靠悬停激活），
+   在弹窗遮罩共存或自动化/触屏场景下会点不到——把 toast 本体恢复为可交互 */
+[data-sonner-toast] {
+  pointer-events: auto !important;
 }

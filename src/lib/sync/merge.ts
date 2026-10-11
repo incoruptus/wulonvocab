@@ -1,4 +1,4 @@
-import type { AppSettings, Entry, LocalDictMeta, LookupSourceConfig, Wordbook } from "../types";
+import type { AppSettings, Entry, ExportPreset, LocalDictMeta, LookupSourceConfig, Wordbook } from "../types";
 import { deriveStatusFromSrs } from "../study/engine";
 import { emptyDailyLog, type StudyDailyLog } from "../study/types";
 import { pickLocalSettings } from "./types";
@@ -55,7 +55,9 @@ export function computeBaseHashes(state: SyncState): BaseHashes {
   for (const s of state.lookupSources) lookupSources[s.id] = quickHash(s);
   const dictionaries: Record<string, string> = {};
   for (const d of state.dictionaries) dictionaries[d.id] = quickHash(d);
-  return { settings: syncedSettingsHash(state.settings), books, lookupSources, dictionaries };
+  const exportPresets: Record<string, string> = {};
+  for (const p of state.exportPresets ?? []) exportPresets[p.id] = quickHash(p);
+  return { settings: syncedSettingsHash(state.settings), books, lookupSources, dictionaries, exportPresets };
 }
 
 /* ---------------- 通用裁决 ---------------- */
@@ -411,6 +413,38 @@ export function mergeSync(input: MergeInput): MergeResult {
   // 本地墓碑对本地源的即刻删除（来自 meta.tombstones，不在 remote 里出现）
   const outSrcFiltered = outSrc.filter((s) => !tombByKey.has(`lookupSource::${s.id}`));
 
+  // ---- exportPresets（与 lookupSources 同规则：按 id 三方指纹 + 墓碑；远端缺省视为未提供，不删本地） ----
+  const outPresets: ExportPreset[] = [...(local.exportPresets ?? [])];
+  for (const rp of remote.exportPresets ?? []) {
+    if (tombByKey.has(`exportPreset::${rp.id}`)) {
+      const idx = outPresets.findIndex((p) => p.id === rp.id);
+      if (idx >= 0) outPresets.splice(idx, 1);
+      continue;
+    }
+    const lp = outPresets.find((p) => p.id === rp.id);
+    if (!lp) {
+      outPresets.push(rp);
+      continue;
+    }
+    const verdict = trioVerdict({
+      baseHash: meta.base?.exportPresets?.[rp.id],
+      localHash: quickHash(lp),
+      remoteHash: quickHash(rp),
+    });
+    if (verdict === "remote" || verdict === "conflict") {
+      if (verdict === "conflict") {
+        const key = `exportPreset:${rp.id}`;
+        const forced = resolutions[key];
+        const chosen: "local" | "remote" = forced ?? "remote";
+        conflicts.push({ entityKey: key, kind: "exportPreset", label: rp.name, chosen, canFlip: forced === undefined });
+        if (chosen === "local") continue;
+      }
+      const idx = outPresets.findIndex((p) => p.id === rp.id);
+      if (idx >= 0) outPresets[idx] = rp;
+    }
+  }
+  const outPresetsFiltered = outPresets.filter((p) => !tombByKey.has(`exportPreset::${p.id}`));
+
   // ---- dictionaries（importedAt 新者胜；删除墓碑同理） ----
   const localDict = new Map<string, LocalDictMeta>(local.dictionaries.map((d) => [d.id, d]));
   const outDict: LocalDictMeta[] = [...local.dictionaries];
@@ -434,6 +468,7 @@ export function mergeSync(input: MergeInput): MergeResult {
     settings,
     lookupSources: outSrcFiltered,
     dictionaries: outDict,
+    exportPresets: outPresetsFiltered,
   };
 
   conflicts.sort((a, b) => (a.entityKey < b.entityKey ? -1 : a.entityKey > b.entityKey ? 1 : 0));

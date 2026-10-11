@@ -8,7 +8,13 @@ import type { SyncDeps } from "@/lib/sync/engine";
 export const syncDeps: SyncDeps = {
   getState: () => {
     const s = useAppStore.getState();
-    return { books: s.books, settings: s.settings, lookupSources: s.lookupSources, dictionaries: s.dictionaries };
+    return {
+      books: s.books,
+      settings: s.settings,
+      lookupSources: s.lookupSources,
+      dictionaries: s.dictionaries,
+      exportPresets: s.exportPresets,
+    };
   },
   applyState: (next) => useAppStore.getState().applySyncState(next),
 };

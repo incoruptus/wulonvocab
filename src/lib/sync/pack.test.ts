@@ -7,6 +7,7 @@ const state: SyncState = {
   settings: { theme: "dark", accent: "violet", uiScale: 1, sidebarCollapsed: false, lastBookId: "x" },
   lookupSources: [],
   dictionaries: [],
+  exportPresets: [],
 };
 
 describe("同步包封包/解析", () => {
@@ -16,6 +17,7 @@ describe("同步包封包/解析", () => {
     const round = parseEnvelope(JSON.stringify(env));
     expect(round.payload.settings).toBeTruthy();
     expect(round.payload.settings && "lastBookId" in round.payload.settings).toBe(false);
+    expect(round.payload.exportPresets).toEqual([]);
     expect(stableJson(round.payload)).toBe(stableJson(payload));
   });
 

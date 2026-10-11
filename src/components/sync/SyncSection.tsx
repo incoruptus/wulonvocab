@@ -51,7 +51,7 @@ export function SyncSection() {
 
   const syncState = () => {
     const s = useAppStore.getState();
-    return { books: s.books, settings: s.settings, lookupSources: s.lookupSources, dictionaries: s.dictionaries };
+    return { books: s.books, settings: s.settings, lookupSources: s.lookupSources, dictionaries: s.dictionaries, exportPresets: s.exportPresets };
   };
 
   const buildFile = () => {

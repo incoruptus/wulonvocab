@@ -77,6 +77,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <Toaster
           position="bottom-right"
           theme={resolvedTheme}
+          style={{ zIndex: 200 }}
           toastOptions={{
             style: {
               borderRadius: "12px",

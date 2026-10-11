@@ -357,6 +357,15 @@ export interface ExportSettings {
 // 应用设置
 // ============================================================
 
+/** 导出预设：命名的整套导出设置方案（全局共享，可跨词库套用；随跨端同步） */
+export interface ExportPreset {
+  id: string;
+  name: string;
+  settings: ExportSettings;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface AppSettings {
   theme: "light" | "dark" | "system";
   accent: AccentId;

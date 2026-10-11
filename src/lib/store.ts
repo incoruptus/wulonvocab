@@ -5,6 +5,7 @@ import type {
   AppSettings,
   Entry,
   EntryStatus,
+  ExportPreset,
   ExportSettings,
   LocalDictMeta,
   LookupSourceConfig,
@@ -13,6 +14,7 @@ import type {
   SectionType,
   Wordbook,
 } from "./types";
+import { normalizeExportSettings } from "./export/themes";
 import type { MakeSectionInput } from "./sections";
 import { makeSection, sortSections, uniqueKey } from "./sections";
 import { createEmptyBook, createSampleBook as buildSampleBook, defaultExportSettings, getPreset } from "./presets";
@@ -254,6 +256,14 @@ export interface AppStore {
   updateExportSettings: (bookId: string, patch: DeepPartial<ExportSettings>) => void;
   resetExportSettings: (bookId: string) => void;
 
+  // 导出预设（全局命名方案；随跨端同步）
+  exportPresets: ExportPreset[];
+  saveExportPreset: (name: string, settings: ExportSettings) => string;
+  updateExportPreset: (id: string, patch: { name?: string; settings?: ExportSettings }) => void;
+  removeExportPreset: (id: string) => void;
+  /** 撤销删除：按原 id 恢复并清墓碑 */
+  restoreExportPreset: (preset: ExportPreset) => void;
+
   // 检索源
   addLookupSource: (source: Omit<LookupSourceConfig, "id">) => Promise<boolean> | null;
   updateLookupSource: (id: string, patch: Partial<Omit<LookupSourceConfig, "config">> & { config?: Record<string, string> }) => Promise<boolean> | null;
@@ -279,6 +289,12 @@ function patchBook(books: Wordbook[], id: string, fn: (book: Wordbook) => Wordbo
   return books.map((b) => (b.id === id ? { ...fn(b), updatedAt: Date.now() } : b));
 }
 
+/** 预设落库前的净化：规范化设置并剥掉「书籍专属」的封面题名（套用到别的词库时自动回退为词库名） */
+function sanitizePresetSettings(s: ExportSettings): ExportSettings {
+  const n = normalizeExportSettings(s);
+  return { ...n, cover: { ...n.cover, title: "" } };
+}
+
 function mergeExportSettings(prev: ExportSettings, patch: DeepPartial<ExportSettings>): ExportSettings {  return {
     ...prev,
     ...(patch as Partial<ExportSettings>),
@@ -299,6 +315,7 @@ export const useAppStore = create<AppStore>()(
       settings: DEFAULT_SETTINGS,
       lookupSources: DEFAULT_LOOKUP_SOURCES,
       dictionaries: [],
+      exportPresets: [],
 
       setHydrated: (v) => set({ hydrated: v }),
 
@@ -749,6 +766,49 @@ export const useAppStore = create<AppStore>()(
           })),
         })),
 
+      saveExportPreset: (name, settings) => {
+        const id = uid();
+        const now = Date.now();
+        set((s) => ({
+          exportPresets: [
+            ...s.exportPresets,
+            { id, name: name.trim() || "未命名预设", settings: sanitizePresetSettings(settings), createdAt: now, updatedAt: now },
+          ],
+        }));
+        requestSyncSoon(10_000); // 预设变更并入同步节奏（10s 防抖，连续调整只推一轮）
+        return id;
+      },
+
+      updateExportPreset: (id, patch) => {
+        set((s) => ({
+          exportPresets: s.exportPresets.map((p) =>
+            p.id === id
+              ? {
+                  ...p,
+                  ...(patch.name !== undefined ? { name: patch.name.trim() || p.name } : {}),
+                  ...(patch.settings ? { settings: sanitizePresetSettings(patch.settings) } : {}),
+                  updatedAt: Date.now(),
+                }
+              : p,
+          ),
+        }));
+        requestSyncSoon(10_000);
+      },
+
+      removeExportPreset: (id) => {
+        set((s) => ({ exportPresets: s.exportPresets.filter((p) => p.id !== id) }));
+        void recordTombstones([{ kind: "exportPreset", id, deletedAt: Date.now() }]);
+        requestSyncSoon(10_000); // 删除立即安排上云（配合墓碑传播）
+      },
+
+      restoreExportPreset: (preset) => {
+        set((s) => ({
+          exportPresets: s.exportPresets.some((p) => p.id === preset.id) ? s.exportPresets : [...s.exportPresets, preset],
+        }));
+        void clearTombstonesFor([{ kind: "exportPreset", id: preset.id }]);
+        requestSyncSoon(10_000);
+      },
+
       addLookupSource: (source) => {
         set((s) => ({ lookupSources: [...s.lookupSources, { ...source, id: uid() }] }));
         return requestSyncNow(); // 数据源增删是离散设置改动：立即上云
@@ -781,6 +841,7 @@ export const useAppStore = create<AppStore>()(
           settings: { ...next.settings, ...pickLocalSettings(s.settings), lastBookId: s.settings.lastBookId },
           lookupSources: next.lookupSources,
           dictionaries: next.dictionaries,
+          exportPresets: next.exportPresets ?? [],
         })),
 
       ensureLookupSources: () =>
@@ -806,7 +867,7 @@ export const useAppStore = create<AppStore>()(
       },
 
       exportBackupJson: () => {
-        const { books, settings, lookupSources, dictionaries } = get();
+        const { books, settings, lookupSources, dictionaries, exportPresets } = get();
         return JSON.stringify(
           {
             format: "wulonvocab-backup",
@@ -816,6 +877,7 @@ export const useAppStore = create<AppStore>()(
             settings,
             lookupSources,
             dictionaries,
+            exportPresets,
           },
           null,
           2,
@@ -881,6 +943,19 @@ export const useAppStore = create<AppStore>()(
             (d): d is LocalDictMeta =>
               Boolean(d) && typeof d === "object" && typeof (d as LocalDictMeta).id === "string",
           );
+          const rawPresets = Array.isArray(data.exportPresets) ? (data.exportPresets as unknown[]) : [];
+          const exportPresets: ExportPreset[] = [];
+          for (const raw of rawPresets) {
+            const p = raw as Partial<ExportPreset>;
+            if (!p || typeof p !== "object" || typeof p.id !== "string" || typeof p.name !== "string" || !p.settings) continue;
+            exportPresets.push({
+              id: p.id,
+              name: p.name,
+              settings: sanitizePresetSettings(mergeExportSettings(defaultExportSettings(""), p.settings as DeepPartial<ExportSettings>)),
+              createdAt: typeof p.createdAt === "number" ? p.createdAt : Date.now(),
+              updatedAt: typeof p.updatedAt === "number" ? p.updatedAt : Date.now(),
+            });
+          }
           set({
             books,
             settings: {
@@ -889,6 +964,7 @@ export const useAppStore = create<AppStore>()(
             },
             lookupSources: lookupSources.length ? lookupSources : DEFAULT_LOOKUP_SOURCES,
             dictionaries,
+            exportPresets,
           });
           flushSoon();
           return {
@@ -911,6 +987,7 @@ export const useAppStore = create<AppStore>()(
         settings: s.settings,
         lookupSources: s.lookupSources,
         dictionaries: s.dictionaries,
+        exportPresets: s.exportPresets,
       }),
     },
   ),

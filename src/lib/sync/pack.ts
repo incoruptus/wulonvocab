@@ -88,6 +88,7 @@ export function buildSyncPayload(
     settings,
     lookupSources: state.lookupSources,
     dictionaries: state.dictionaries,
+    exportPresets: state.exportPresets ?? [],
     stats: { books: books.length, entries: books.reduce((n, b) => n + (b.entries?.length ?? 0), 0) },
   };
 }

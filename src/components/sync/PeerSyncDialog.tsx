@@ -88,7 +88,7 @@ export function PeerSyncDialog({
     const meta = await loadSyncMeta();
     const s = useAppStore.getState();
     const payload = buildSyncPayload(
-      { books: s.books, settings: s.settings, lookupSources: s.lookupSources, dictionaries: s.dictionaries },
+      { books: s.books, settings: s.settings, lookupSources: s.lookupSources, dictionaries: s.dictionaries, exportPresets: s.exportPresets },
       { mode: "snapshot", deviceId: meta.device.id, tombstones: meta.tombstones },
     );
     const envelope = await buildEncryptedEnvelope(payload, {

@@ -116,7 +116,7 @@
   （控件经 `useSyncCommit` 显示加载态、云端确认前禁止再改；数据源文本编辑用 `requestSyncSoon()` 防抖）；
   ③ 学习：进入学习中心与学习会话前 `requestSyncNow({silent})`（拉最新）；会话结束 `requestSyncNow({silent})`（推结果）；
   ④ 编辑：进入词条编辑器 `requestSyncNow({silent})`（拉最新）；离开编辑器 `requestSyncSoon(5000)`（推改动）；
-  ⑤ 导入：批量导入后 `requestSyncSoon()`（30s）；手动合并同步包后 `requestSyncSoon(10_000)`；
+  ⑤ 导入：批量导入后 `requestSyncSoon()`（30s）；手动合并同步包后 `requestSyncSoon(10_000)`；导出预设增改删 `requestSyncSoon(10_000)`；
   ⑥ 手动：「立即同步」按钮（手动路径绕过失败退避）。
 
 ## 换机迁移（开发机更换时）

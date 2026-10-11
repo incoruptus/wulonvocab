@@ -1,4 +1,4 @@
-import type { AppSettings, Entry, LocalDictMeta, LookupSourceConfig, Wordbook } from "../types";
+import type { AppSettings, Entry, ExportPreset, LocalDictMeta, LookupSourceConfig, Wordbook } from "../types";
 
 /**
  * 跨端同步 · 类型 v1（P0）
@@ -45,7 +45,7 @@ export interface SyncDeviceInfo {
 
 /** 删除墓碑：防「删了又回来」。kind=entry 时必须带 bookId */
 export interface SyncTombstone {
-  kind: "book" | "entry" | "lookupSource";
+  kind: "book" | "entry" | "lookupSource" | "exportPreset";
   id: string;
   bookId?: string;
   deletedAt: number;
@@ -61,6 +61,7 @@ export interface BaseHashes {
   >;
   lookupSources: Record<string, string>;
   dictionaries: Record<string, string>;
+  exportPresets: Record<string, string>;
 }
 
 /** Gist 自动同步配置（存独立 IDB 的 SyncMeta，不进主库、不随同步载荷传播） */
@@ -102,6 +103,7 @@ export interface SyncState {
   settings: AppSettings;
   lookupSources: LookupSourceConfig[];
   dictionaries: LocalDictMeta[];
+  exportPresets: ExportPreset[];
 }
 
 /** 同步载荷（合并引擎的唯一远端输入；文件/加密容器在其外层） */
@@ -115,6 +117,8 @@ export interface SyncPayloadV1 {
   settings?: SyncSettings;
   lookupSources?: LookupSourceConfig[];
   dictionaries?: LocalDictMeta[];
+  /** 导出预设（旧版本载荷缺省 ⇒ 视为「未提供」，infer 不删本地） */
+  exportPresets?: ExportPreset[];
   stats: { books: number; entries: number };
 }
 
@@ -139,7 +143,7 @@ export interface SyncEnvelopeV1 {
 
 export interface MergeConflict {
   entityKey: string;
-  kind: "entry" | "schema" | "exportSettings" | "studyConfig" | "settings" | "bookMeta" | "lookupSource";
+  kind: "entry" | "schema" | "exportSettings" | "studyConfig" | "settings" | "bookMeta" | "lookupSource" | "exportPreset";
   label: string;
   chosen: "local" | "remote";
   canFlip: boolean;
