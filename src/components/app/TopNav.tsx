@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Coffee, Moon, Sun } from "lucide-react";
+import { Coffee, Moon, Search, Sun } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useResolvedTheme } from "@/components/app/Providers";
 import { cx } from "@/lib/utils";
 import { IconButton } from "@/components/ui/button";
+import { KbdGroup } from "@/components/ui/misc";
 import { MobileTabBar } from "@/components/app/MobileTabBar";
 
 const NAV = [
@@ -54,6 +55,16 @@ export function TopNav({ right }: { right?: React.ReactNode }) {
         </nav>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {right}
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent("wv:open-command-palette"))}
+            title="Ctrl+K / ⌘K"
+            className="hidden items-center gap-2 rounded-md bg-background-100 px-2.5 py-1.5 t-label-12 text-gray-800 shadow-geist-border transition-colors hover:text-gray-1000 sm:inline-flex"
+          >
+            <Search className="size-3.5" />
+            命令
+            <KbdGroup keys={["⌘", "K"]} />
+          </button>
           <IconButton
             label={isDark ? "切换浅色" : "切换深色"}
             onClick={() => setSettings({ theme: isDark ? "light" : "dark" })}

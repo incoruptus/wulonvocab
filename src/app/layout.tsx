@@ -7,6 +7,7 @@ import "@fontsource/noto-serif-sc/400.css";
 import "@fontsource/noto-serif-sc/600.css";
 import { assetPath } from "@/lib/paths";
 import { Providers } from "@/components/app/Providers";
+import { CommandPalette } from "@/components/app/CommandPalette";
 import { SyncAutoProvider } from "@/components/sync/SyncAutoProvider";
 
 export const metadata: Metadata = {
@@ -44,6 +45,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-dvh bg-background-100 text-gray-1000 antialiased">
         <Providers>
           {children}
+          {/* 全局命令面板（Ctrl/⌘+K）：导航 / 最近词库 / 动作 / 主题 */}
+          <CommandPalette />
           {/* 全局自动同步调度：不依赖任何页面是否打开（见 SyncAutoProvider 注释） */}
           <SyncAutoProvider />
         </Providers>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -31,6 +31,14 @@ export default function BooksPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [name, setName] = useState("");
   const [presetId, setPresetId] = useState("oxford");
+
+  // 命令面板等入口深链：/books?new=1 直接打开新建弹窗（rAF 回调内 setState，规避同步 effect setState）
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      if (window.location.search.includes("new=1")) setNewOpen(true);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, []);
   const [deleting, setDeleting] = useState<Wordbook | null>(null);
 
   const stats = useMemo(() => {
