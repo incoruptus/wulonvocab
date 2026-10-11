@@ -119,6 +119,10 @@
 
 ## 部署约束（GitHub Pages 静态导出）
 
+- **网络：GitHub 一律走本机代理 `http://127.0.0.1:7890`**（用户环境直连 github.com 会被重置；仓库级 git config 已持久化）。
+  `gh` / `curl` / `Invoke-WebRequest` 等访问 github.com、github.io、api.github.com 时，务必先设
+  `$env:HTTP_PROXY=$env:HTTPS_PROXY="http://127.0.0.1:7890"`；npm 走官方源可直连、无需代理。**compact 后也不要忘**。
+
 - 路由参数一律走**查询串**（`/book?id=…`、`/book/export?id=…`）：静态导出不支持动态段；
 - 公开目录资源引用必须用 `assetPath()`（`src/lib/paths.ts`）带 `NEXT_PUBLIC_BASE_PATH` 前缀；
 - 导出构建 `npm run build:pages`（= `WV_EXPORT=1` + basePath `/wulonvocab`，输出 `out/`）；
