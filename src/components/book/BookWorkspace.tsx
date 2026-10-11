@@ -62,6 +62,7 @@ export function BookWorkspace() {
   const [tagOpen, setTagOpen] = useState(false);
   const [tagMode, setTagMode] = useState<"add" | "remove">("add");
   const [tagInput, setTagInput] = useState("");
+  const [mergeOpen, setMergeOpen] = useState(false);
   const anchorRef = useRef<string | null>(null);
 
   /** 打开检索面板（可带页签与补全范围意图；批量栏用 fill 页签 + 选中集） */
@@ -164,6 +165,28 @@ export function BookWorkspace() {
     if (!ids.length) return;
     useAppStore.getState().setEntriesStarred(book.id, ids, starred);
     toast.success(starred ? `已星标 ${ids.length} 个词条` : `已取消星标 ${ids.length} 个词条`);
+  };
+
+  /** 合并：目标 = 列表顺序中最靠前的一个选中项；字段与标签取并集（可 Ctrl+Z 撤销） */
+  const selectedInOrder = useMemo(
+    () => (book ? book.entries.filter((e) => selection.has(e.id)) : []),
+    [book, selection],
+  );
+  const requestBatchMerge = () => {
+    if (selectedInOrder.length < 2) return;
+    setMergeOpen(true);
+  };
+  const doBatchMerge = () => {
+    if (!book || selectedInOrder.length < 2) return;
+    const target = selectedInOrder[0];
+    const srcs = selectedInOrder.slice(1).map((e) => e.id);
+    useAppStore.getState().mergeEntries(book.id, target.id, srcs);
+    setMergeOpen(false);
+    setSelectedId(target.id);
+    exitSelect();
+    toast.success(`已合并 ${selectedInOrder.length} 个词条到「${target.headword}」`, {
+      description: "字段与标签取并集；按 Ctrl+Z 可撤销",
+    });
   };
 
   const exportSelected = () => {
@@ -361,6 +384,7 @@ export function BookWorkspace() {
               onRequestBatchTags={() => setTagOpen(true)}
               onRequestBatchStar={batchStar}
               onRequestBatchDelete={requestBatchDelete}
+              onRequestBatchMerge={requestBatchMerge}
               onRequestExportSelected={exportSelected}
               onRequestBatchLookup={() => openLookup({ tab: "fill", ids: [...selection] })}
               onQuickDelete={quickDelete}
@@ -603,6 +627,24 @@ export function BookWorkspace() {
             取消
           </Button>
           <Button onClick={applyTags}>应用</Button>
+        </DialogFooter>
+      </Dialog>
+
+      {/* 批量合并确认 */}
+      <Dialog open={mergeOpen} onOpenChange={setMergeOpen}>
+        <DialogHeader
+          title={`合并 ${selectedInOrder.length} 个词条？`}
+          desc={
+            selectedInOrder.length
+              ? `字段与标签取并集，合并到列表中靠前的「${selectedInOrder[0].headword}」；其余 ${selectedInOrder.length - 1} 个会被删除。合并可 Ctrl+Z 撤销。`
+              : ""
+          }
+        />
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => setMergeOpen(false)}>
+            取消
+          </Button>
+          <Button onClick={doBatchMerge}>合并</Button>
         </DialogFooter>
       </Dialog>
     </div>

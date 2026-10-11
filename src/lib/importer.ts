@@ -502,6 +502,21 @@ function mapValuesWithSchema(rawValues: Record<string, unknown>, schema: Schema)
   return out;
 }
 
+/**
+ * 把 incoming 合并进 target（保留 target 的 id / headword / createdAt / srs）：
+ * 标签并集、星标取或、数组字段去重拼接、对象浅并、字符串不同则以换行相连。
+ * 纯函数（导出供「批量合并词条」与导入去重复用）。
+ */
+export function mergeEntryBodies(target: Entry, incoming: Entry, now = Date.now()): Entry {
+  return {
+    ...target,
+    tags: [...new Set([...target.tags, ...incoming.tags])],
+    starred: target.starred || incoming.starred,
+    updatedAt: now,
+    values: mergeValues(target.values, incoming.values),
+  };
+}
+
 /** 合并同名单词（大小写不敏感）；数组字段去重拼接 */
 export function mergeDuplicateEntries(entries: Entry[]): Entry[] {
   const map = new Map<string, Entry>();
@@ -512,14 +527,7 @@ export function mergeDuplicateEntries(entries: Entry[]): Entry[] {
       map.set(key, entry);
       continue;
     }
-    const merged: Entry = {
-      ...prev,
-      tags: [...new Set([...prev.tags, ...entry.tags])],
-      starred: prev.starred || entry.starred,
-      updatedAt: Date.now(),
-      values: mergeValues(prev.values, entry.values),
-    };
-    map.set(key, merged);
+    map.set(key, mergeEntryBodies(prev, entry));
   }
   return [...map.values()];
 }

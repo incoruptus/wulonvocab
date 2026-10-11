@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { CheckSquare, Copy, Download, Plus, Search, Sparkles, Star, StarOff, Tag, Trash2, X } from "lucide-react";
+import { CheckSquare, Copy, Download, Merge, Plus, Search, Sparkles, Star, StarOff, Tag, Trash2, X } from "lucide-react";
 import type { Entry, Wordbook } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
 import { Input, Checkbox } from "@/components/ui/field";
@@ -30,6 +30,8 @@ export interface EntryListProps {
   onRequestBatchTags: () => void;
   onRequestBatchStar: (starred: boolean) => void;
   onRequestBatchDelete: () => void;
+  /** 批量：把所选合并为一个（≥2 项；字段取并集） */
+  onRequestBatchMerge: () => void;
   onRequestExportSelected: () => void;
   /** 单条：删除（带撤销）/ 星标 */
   onQuickDelete: (entry: Entry) => void;
@@ -238,6 +240,7 @@ export function EntryList(props: EntryListProps) {
           onStar={() => props.onRequestBatchStar(true)}
           onUnstar={() => props.onRequestBatchStar(false)}
           onDelete={props.onRequestBatchDelete}
+          onMerge={props.onRequestBatchMerge}
           onExport={props.onRequestExportSelected}
           onLookup={props.onRequestBatchLookup}
           filteredCount={filteredIds.length}
@@ -269,6 +272,7 @@ function BatchBar({
   onStar,
   onUnstar,
   onDelete,
+  onMerge,
   onExport,
   onLookup,
 }: {
@@ -282,6 +286,7 @@ function BatchBar({
   onStar: () => void;
   onUnstar: () => void;
   onDelete: () => void;
+  onMerge: () => void;
   onExport: () => void;
   onLookup: () => void;
 }) {
@@ -325,6 +330,9 @@ function BatchBar({
         </IconButton>
         <IconButton label="导出所选 JSON" size="sm" onClick={onExport}>
           <Download className="size-3.5" />
+        </IconButton>
+        <IconButton label="合并所选词条" size="sm" onClick={onMerge} disabled={count < 2}>
+          <Merge className="size-3.5" />
         </IconButton>
         <IconButton label="批量删除" size="sm" className="text-red-900 hover:bg-red-700/10" onClick={onDelete}>
           <Trash2 className="size-3.5" />

@@ -6,11 +6,66 @@ import {
   ecDictRowToValues,
   isEcDictRow,
   mergeDuplicateEntries,
+  mergeEntryBodies,
   parseImportCsv,
   parseImportJson,
 } from "@/lib/importer";
 import { defaultSchema } from "@/lib/presets";
 import { makeEntry } from "@/lib/presets";
+
+describe("mergeEntryBodies（批量合并内核）", () => {
+  it("保留 target 的 id/headword/createdAt/srs；标签并集、星标取或", () => {
+    const target = makeEntry({
+      id: "t1",
+      headword: "abandon",
+      createdAt: 100,
+      updatedAt: 200,
+      tags: ["cet4"],
+      starred: false,
+    });
+    target.srs = { ...makeEntry({ headword: "x" }).srs, reps: 3 } as typeof target.srs;
+    const incoming = makeEntry({ id: "t2", headword: "abandon", tags: ["考研", "cet4"], starred: true });
+    const merged = mergeEntryBodies(target, incoming, 999);
+    expect(merged.id).toBe("t1");
+    expect(merged.headword).toBe("abandon");
+    expect(merged.createdAt).toBe(100);
+    expect(merged.updatedAt).toBe(999);
+    expect(merged.tags.sort()).toEqual(["cet4", "考研"]);
+    expect(merged.starred).toBe(true);
+    expect(merged.srs?.reps).toBe(3); // 学习进度不被覆盖
+  });
+
+  it("值合并：数组去重拼接 / 对象浅并 / 不同字符串换行相连 / 空值被填充", () => {
+    const target = makeEntry({
+      headword: "m",
+      values: {
+        tags: ["a", "b"],
+        phonetic: { uk: "/m/" },
+        senses: [{ id: "s1", pos: "n.", translation: "甲" }],
+        origin: "",
+        summary: "甲概述",
+      },
+    });
+    const incoming = makeEntry({
+      headword: "m",
+      values: {
+        tags: ["b", "c"],
+        phonetic: { us: "/em/" },
+        senses: [{ id: "s1", pos: "n.", translation: "乙" }],
+        origin: "来自拉丁语",
+        summary: "乙概述",
+      },
+    });
+    const merged = mergeEntryBodies(target, incoming, 1);
+    expect(merged.values.tags).toEqual(["a", "b", "c"]);
+    expect(merged.values.phonetic).toEqual({ uk: "/m/", us: "/em/" });
+    expect(merged.values.origin).toBe("来自拉丁语");
+    expect(merged.values.summary).toBe("甲概述\n乙概述"); // 不同字符串换行相连
+    // senses 为数组：去重拼接（同 id 但内容不同 → 作为两项保留，不丢内容）
+    const senses = merged.values.senses as Array<{ translation?: string }>;
+    expect(senses.map((s) => s.translation)).toEqual(["甲", "乙"]);
+  });
+});
 
 describe("classifyJson", () => {
   it("识别完整文档", () => {

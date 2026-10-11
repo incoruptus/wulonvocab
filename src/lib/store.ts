@@ -18,7 +18,7 @@ import { normalizeExportSettings } from "./export/themes";
 import type { MakeSectionInput } from "./sections";
 import { makeSection, sortSections, uniqueKey } from "./sections";
 import { createEmptyBook, createSampleBook as buildSampleBook, defaultExportSettings, getPreset } from "./presets";
-import { mergeDuplicateEntries } from "./importer";
+import { mergeDuplicateEntries, mergeEntryBodies } from "./importer";
 import { applyGrade, deriveStatusFromSrs, isNewSrs, type GradeValue } from "./study/engine";
 import { studyConfigOf } from "./study/queue";
 import { emptyDailyLog, pruneDaily, ymd, type StudyConfig, type StudySrs } from "./study/types";
@@ -218,6 +218,8 @@ export interface AppStore {
   updateEntry: (bookId: string, entryId: string, patch: Partial<Entry>) => void;
   setEntryValue: (bookId: string, entryId: string, key: string, value: unknown) => void;
   removeEntries: (bookId: string, ids: string[]) => void;
+  /** 批量：把 sourceIds 合并进 targetId（值/标签并集，源词条删除并记墓碑；可撤销） */
+  mergeEntries: (bookId: string, targetId: string, sourceIds: string[]) => void;
   duplicateEntry: (bookId: string, entryId: string) => void;
   toggleStar: (bookId: string, entryId: string) => void;
   setEntryStatus: (bookId: string, entryId: string, status: EntryStatus) => void;
@@ -595,6 +597,29 @@ export const useAppStore = create<AppStore>()(
         }));
         const deletedAt = Date.now();
         void recordTombstones(ids.map((id) => ({ kind: "entry" as const, id, bookId, deletedAt })));
+      },
+
+      mergeEntries: (bookId, targetId, sourceIds) => {
+        const srcs = sourceIds.filter((id) => id !== targetId);
+        if (!srcs.length) return;
+        set((s) => ({
+          books: patchBook(s.books, bookId, (b) => {
+            const target = b.entries.find((e) => e.id === targetId);
+            if (!target) return b;
+            let merged = target;
+            for (const sid of srcs) {
+              const src = b.entries.find((e) => e.id === sid);
+              if (src) merged = mergeEntryBodies(merged, src);
+            }
+            return {
+              ...b,
+              entries: b.entries.map((e) => (e.id === targetId ? merged : e)).filter((e) => !srcs.includes(e.id)),
+            };
+          }),
+        }));
+        const deletedAt = Date.now();
+        void recordTombstones(srcs.map((id) => ({ kind: "entry" as const, id, bookId, deletedAt })));
+        flushSoon();
       },
 
       duplicateEntry: (bookId, entryId) =>
