@@ -105,40 +105,51 @@ async function runOnce(deps: SyncDeps, manual: boolean): Promise<SyncOutcome> {
     let remoteFiles: string[] | undefined;
     let remoteRevision: string | null = null;
 
-    let remote = cfg.gistId ? await gistPull(cfg) : null;
+    let remote = null as Awaited<ReturnType<typeof gistPull>> | null;
+    if (cfg.gistId) {
+      try {
+        remote = await gistPull(cfg);
+      } catch (e) {
+        // 自家中转站被删也不致命：走发现逻辑另寻/新建（其余错误照常上抛）
+        if (!/找不到同步仓库/.test((e as Error).message)) throw e;
+      }
+    }
     let parsed = remote ? await parseEnvelopeWithCode(remote.text, cfg.pairCode) : null;
 
-    // 中转站发现 / 迁移：账号内同一配对可能已有 Gist（另一台设备先建）
-    // ——三端实测缺陷：此前各端首同步都 POST 新建自己的 Gist（gistId 从不共享），
-    //   每台设备都在和自己的私有中转站对话。现在先"找"、找到就认领共用。
+    // 中转站发现 / 认领：账号内同一配对共用同一个 Gist。
+    // 三端实测缺陷：旧版各端首同步都 POST 新建自己的 Gist、gistId 从不共享，
+    // 每台设备都在和自己的私有中转站对话（配对也永不相遇）。认领一律经「拉取 + 配对码解密验证」。
     const candidates = await gistFind(cfg).catch((): GistCandidate[] => []);
-    if (!cfg.gistId) {
-      for (const cand of candidates) {
-        try {
-          const r = await gistPull({ ...cfg, gistId: cand.id });
-          if (!r) continue;
-          const p = await parseEnvelopeWithCode(r.text, cfg.pairCode); // 解不开 = 不是本配对的中转站
-          remote = r;
-          parsed = p;
-          await saveSyncMeta({ gist: { ...cfg, gistId: cand.id } });
-          break;
-        } catch {
-          /* 试下一个候选 */
-        }
+    const adopt = async (id: string): Promise<boolean> => {
+      try {
+        const r = await gistPull({ ...cfg, gistId: id });
+        if (!r) return false;
+        const p = await parseEnvelopeWithCode(r.text, cfg.pairCode); // 解不开 = 不是本配对的中转站
+        remote = r;
+        parsed = p;
+        await saveSyncMeta({ gist: { ...cfg, gistId: id } });
+        return true;
+      } catch {
+        return false;
       }
-    } else if (remote) {
-      // 迁移/收敛：发现同为「本配对」且比自己更新的中转站 → 认领切换（旧版本的遗留 Gist 描述也可能未带标识，仅 exact 参与切换）
-      const better = candidates.find((c) => c.exact && c.id !== cfg.gistId && c.updatedAt > remote!.revision);
-      if (better) {
-        try {
-          const r = await gistPull({ ...cfg, gistId: better.id });
-          if (r) {
-            parsed = await parseEnvelopeWithCode(r.text, cfg.pairCode);
-            remote = r;
-            await saveSyncMeta({ gist: { ...cfg, gistId: better.id } });
-          }
-        } catch {
-          /* 保持原中转站 */
+    };
+    if (!remote) {
+      // 无本地站（新设备）或自家站已失效：认领任一「能解密」的候选（候选按最新优先）
+      for (const cand of candidates) {
+        if (cand.id === cfg.gistId) continue;
+        if (await adopt(cand.id)) break;
+      }
+    } else {
+      const ownTagged = candidates.find((c) => c.id === cfg.gistId)?.exact ?? false;
+      // 常规收敛：切换到「同为本配对标识、且比自己更新」的中转站
+      const exactBetter = candidates.find((c) => c.exact && c.id !== cfg.gistId && c.updatedAt > remote!.revision);
+      if (exactBetter) {
+        await adopt(exactBetter.id);
+      } else if (!ownTagged) {
+        // 迁移窗口：自己的站还是旧描述（升级后尚未推送过）→ 认领首批「能解密」的他站（含同样是旧描述的站）
+        for (const cand of candidates) {
+          if (cand.id === cfg.gistId) continue;
+          if (await adopt(cand.id)) break;
         }
       }
     }

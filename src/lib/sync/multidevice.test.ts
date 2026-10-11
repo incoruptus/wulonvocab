@@ -115,18 +115,31 @@ function findCandidates(world: World): WorldGist[] {
 /** 一轮同步：发现/认领 → 拉 → 合并 → 推（与 engine.ts 同语义） */
 function sync(dev: Device, world: World): void {
   const candidates = findCandidates(world);
-  let target = dev.gistId ? (world.gists.get(dev.gistId) ?? null) : null;
-  if (!dev.gistId) {
+  const own = dev.gistId ? (world.gists.get(dev.gistId) ?? null) : null;
+  let target = own;
+  const tagged = (g: WorldGist) => g.description.includes(TAG);
+
+  if (!target) {
+    // 无本地站（新设备）或自家站已失效：认领任一候选（候选按最新优先；真实实现另有解密验证，单配对场景等价）
     for (const cand of candidates) {
+      if (cand.id === dev.gistId) continue;
       target = cand;
-      dev.gistId = cand.id; // 认领（真实实现还会先试解密；单配对场景下描述已足够）
+      dev.gistId = cand.id;
       break;
     }
-  } else if (target) {
-    const better = candidates.find((c) => c.description.includes(TAG) && c.id !== dev.gistId && c.updatedAt > target!.updatedAt);
-    if (better) {
-      target = better;
-      dev.gistId = better.id; // 迁移/收敛：认领同为「本配对」且更新的中转站
+  } else {
+    const exactBetter = candidates.find((c) => tagged(c) && c.id !== dev.gistId && c.updatedAt > target!.updatedAt);
+    if (exactBetter) {
+      target = exactBetter;
+      dev.gistId = exactBetter.id;
+    } else if (!tagged(target)) {
+      // 迁移窗口：自己的站还是旧描述 → 认领首批「能解密」的他站（含同样是旧描述的站）
+      for (const cand of candidates) {
+        if (cand.id === dev.gistId) continue;
+        target = cand;
+        dev.gistId = cand.id;
+        break;
+      }
     }
   }
 
@@ -221,6 +234,30 @@ describe("三端仿真（World 模型：发现 → 拉 → 合并 → 推）", (
     expect(laptop.gistId).toBe("g_legacy");
     expect(laptop.state.settings.accent, "笔记本应跟随手机的琥珀").toBe("amber");
     expect(world.gists.size).toBe(1);
+  });
+
+  it("迁移窗口：两边各抱升级前的旧站（描述无标识）——先升级的一方认领对方旧站，数据合并收敛", () => {
+    const world = mkWorld();
+    const phone = mkDevice("phone", "amber", { noBooks: true });
+    const desktop = mkDevice("desktop", "blue", { noBooks: true });
+
+    // 旧版本创建的两个私有站（描述不带配对标识）
+    world.clock += 1;
+    world.gists.set("g_p", { id: "g_p", description: "WulonVocab 跨端同步（密文）", deviceId: "phone", text: stableJson(payloadOf(phone)), updatedAt: world.clock });
+    world.clock += 1;
+    world.gists.set("g_d", { id: "g_d", description: "WulonVocab 跨端同步（密文）", deviceId: "desktop", text: stableJson(payloadOf(desktop)), updatedAt: world.clock });
+    phone.gistId = "g_p";
+    desktop.gistId = "g_d";
+
+    sync(phone, world); // 手机先升级：认领更新的他站（候选按更新时间排序）
+    expect(phone.gistId).toBe("g_d");
+    expect(phone.state.settings.accent, "合并后仍是手机的新设置").toBe("amber");
+    expect(world.gists.get("g_d")!.deviceId, "回推到共享站").toBe("phone");
+
+    sync(desktop, world); // 桌面升级后：共享站已带标识 → 拉取合并
+    expect(desktop.gistId).toBe("g_d");
+    expect(desktop.state.settings.accent, "桌面应拿到手机的琥珀").toBe("amber");
+    expect(world.gists.get("g_p")!.deviceId, "废弃的旧站不再被使用").toBe("phone");
   });
 
   it("双方都是旧数据（均无时间戳）时按设备号确定性裁决——双方收敛到同一侧", () => {
