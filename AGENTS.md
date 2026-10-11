@@ -165,6 +165,15 @@
   触屏/窄屏改用 `wv-touch-only` 点按说明；移动端评级栏用 2×2 网格（`grid-cols-2 sm:grid-cols-4`）；底部操作区必须**原位切换**（揭示按钮 ↔ 评级栏），
   不得叠加新行造成布局位移；忽略 `event.repeat` 与修饰键，答题后 180ms 输入锁防连发；
   window 级键监听先跳过 `ev.defaultPrevented`（Radix 弹窗处理的 Esc 等不再透传）；
+- **学习题型与调度规则（docs/research/learning-science-2026-10.md）**：
+  题型三种（`QuizKind`）：`word2zh` 看词选义 / `zh2word` 看义选词 / `def2word` 看释义选词（英英）；
+  按 `quizStageOf` 自动挑题（学习期识别优先，Review 稳定后产出线索优先），缺数据沿顺序降级，全不可用回退翻卡；
+  **隐藏词头题型（zh2word/def2word）作答前不显示词头、不出现朗读按钮、选择题一律改为「判定后朗读」**（防泄底）；
+  **选择题答对最高记 Good，永不 Easy**；开启「稳 / 猜」确认（`choiceConfidence`）时，答对先确认再记分（猜 → Hard），
+  确认期间自动推进暂停（空格 = 稳）；**错题必停留并展示答案**（硬规则，防假知识）；
+  **相似词避让（`similarityAvoid` 默认开）**：词形编辑距离 ≤2 或首义项 bigram Jaccard ≥0.6 视为易混，
+  队列内至少隔 3 张卡（`avoidSimilarNeighbors` 软约束，绝不阻塞/丢项），回炉插位用 `requeueInsertIndex`；
+  「本场允许相似词」为会话级开关（不落库，练易混组用）；
 - **移动端导航**：窄屏（<sm）主导航为底部 Tab 栏（`app/MobileTabBar.tsx`，5 项、safe-area、当前路由高亮）；
   沉浸式路由（`/study`、`/book/export`）自动隐藏；顶栏窄屏只保留品牌（logo + 名称，可截断）、页面操作与主题；
   页面主容器在移动端必须预留底部空间（普通页 `pb-24`；满屏布局如工作区

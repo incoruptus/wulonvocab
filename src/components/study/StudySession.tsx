@@ -16,8 +16,8 @@ import {
   type GradePreview,
   type GradeValue,
 } from "@/lib/study/engine";
-import { buildQueue, entryById, studyConfigOf, studyOverview, type QueueItem, type StudyMode, type StudyOverview } from "@/lib/study/queue";
-import { buildQuizOptions, type QuizQuestion } from "@/lib/study/quiz";
+import { buildQueue, entryById, requeueInsertIndex, studyConfigOf, studyOverview, type QueueItem, type StudyMode, type StudyOverview } from "@/lib/study/queue";
+import { buildQuizQuestion, type QuizQuestion } from "@/lib/study/quiz";
 import { CHOICE_OPTION_KEYS, KEYMAP_CHOICE, KEYMAP_COMMON, KEYMAP_FLIP, type KeyBinding } from "@/lib/study/keymap";
 import type { StudyConfig, StudySrs } from "@/lib/study/types";
 import { speakWord } from "@/lib/study/tts";
@@ -107,6 +107,10 @@ export function StudySession({ book }: { book: Wordbook }) {
   const posBagRef = useRef<number[]>([0, 1, 2, 3]);
   /** 当前卡片的题目（卡片切换时重建；作答后冻结，防止选项重排） */
   const [question, setQuestion] = useState<QuizQuestion | null>(null);
+  /** 答对后待确认「稳 / 猜」（开启 choiceConfidence 时） */
+  const [pendingConfidence, setPendingConfidence] = useState(false);
+  /** 本场临时允许相似词（不落库；专门练易混组时用） */
+  const [allowSimilar, setAllowSimilar] = useState(false);
 
   const cfg = studyConfigOf(book);
   const current = useMemo(() => (queue.length ? entryById(book, queue[0].entryId) : undefined), [book, queue]);
@@ -121,11 +125,16 @@ export function StudySession({ book }: { book: Wordbook }) {
         return;
       }
       const entries = useAppStore.getState().books.find((b) => b.id === book.id)?.entries ?? book.entries;
-      setQuestion(buildQuizOptions(current, entries, { forceCorrectIndex: posBagRef.current[0] }));
+      setQuestion(
+        buildQuizQuestion(current, entries, {
+          forceCorrectIndex: posBagRef.current[0],
+          kinds: cfg.choiceTypes,
+        }),
+      );
     });
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg.quizMode, current?.id, book.id]);
+  }, [cfg.quizMode, cfg.choiceTypes, current?.id, book.id]);
   const effectiveMode: "flip" | "choice" = cfg.quizMode === "choice" && question ? "choice" : "flip";
 
   const clearAutoTimer = useCallback(() => {
@@ -172,7 +181,9 @@ export function StudySession({ book }: { book: Wordbook }) {
 
   const startSession = useCallback(
     (mode: StudyMode) => {
-      const items = buildQueue(useAppStore.getState().books.find((b) => b.id === book.id) ?? book, mode, Date.now());
+      const items = buildQueue(useAppStore.getState().books.find((b) => b.id === book.id) ?? book, mode, Date.now(), {
+        allowSimilar,
+      });
       if (!items.length) {
         toast.info(mode === "new" ? "今日新词已学完" : "今天没有要复习的词");
         return;
@@ -187,13 +198,15 @@ export function StudySession({ book }: { book: Wordbook }) {
       setPreviews([]);
       setChosen(null);
       setJudged(false);
+      setPendingConfidence(false);
       skippedRef.current = [];
       cardStartRef.current = Date.now();
       setPhase("session");
       const first = entryById(book, items[0].entryId);
-      if (cfg.autoSpeak && first) speakWord(first.headword, pronLang(first));
+      // 选择题在选定题型前无法判断是否隐藏词头（朗读会泄底），统一改为「作答后朗读」
+      if (cfg.autoSpeak && cfg.quizMode !== "choice" && first) speakWord(first.headword, pronLang(first));
     },
-    [book, cfg.autoSpeak, clearAutoTimer],
+    [book, cfg.autoSpeak, cfg.quizMode, allowSimilar, clearAutoTimer],
   );
 
   /** 提交评分（写库 + 统计 + 记撤销快照），不含队列推进 */
@@ -230,11 +243,16 @@ export function StudySession({ book }: { book: Wordbook }) {
     if (!graded) return;
     gradedRef.current = null;
     clearAutoTimer();
+    setPendingConfidence(false);
     // 已评分的词不再参与 F 返回
     skippedRef.current = skippedRef.current.filter((x) => x.entryId !== graded.entryId);
     const rest = queue.slice(1);
     if (needsSessionRequeue(graded.next, Date.now())) {
-      rest.splice(Math.min(rest.length, 4), 0, { entryId: graded.entryId, isNew: false });
+      const insertAt =
+        cfg.similarityAvoid && !allowSimilar
+          ? requeueInsertIndex(book.entries, rest, graded.entryId)
+          : Math.min(rest.length, 4);
+      rest.splice(Math.min(insertAt, rest.length), 0, { entryId: graded.entryId, isNew: false });
     }
     setQueue(rest);
     setRevealed(false);
@@ -246,10 +264,10 @@ export function StudySession({ book }: { book: Wordbook }) {
       setPhase("summary");
     } else {
       const next = entryById(book, rest[0].entryId);
-      if (cfg.autoSpeak && next) speakWord(next.headword, pronLang(next));
+      if (cfg.autoSpeak && cfg.quizMode !== "choice" && next) speakWord(next.headword, pronLang(next));
       cardStartRef.current = Date.now();
     }
-  }, [queue, book, cfg.autoSpeak, clearAutoTimer]);
+  }, [queue, book, cfg.autoSpeak, cfg.quizMode, cfg.similarityAvoid, allowSimilar, clearAutoTimer]);
 
   /**
    * 选择题词间导航（可不作答自由浏览）：
@@ -280,15 +298,16 @@ export function StudySession({ book }: { book: Wordbook }) {
         nextEntryId = item.entryId;
       }
       clearAutoTimer();
+      setPendingConfidence(false);
       setRevealed(false);
       setPreviews([]);
       setChosen(null);
       setJudged(false);
       const next = entryById(book, nextEntryId);
-      if (cfg.autoSpeak && next) speakWord(next.headword, pronLang(next));
+      if (cfg.autoSpeak && cfg.quizMode !== "choice" && next) speakWord(next.headword, pronLang(next));
       cardStartRef.current = Date.now();
     },
-    [queue, book, cfg.autoSpeak, clearAutoTimer],
+    [queue, book, cfg.autoSpeak, cfg.quizMode, clearAutoTimer],
   );
 
   /** 翻卡模式评级 */
@@ -300,28 +319,59 @@ export function StudySession({ book }: { book: Wordbook }) {
     [current, revealed, commitGrade, advanceCard],
   );
 
+  /** 作答后朗读（选择题统一在判定/确认后朗读，隐藏词头题型也不会泄底） */
+  const speakAnswer = useCallback(() => {
+    if (cfg.autoSpeak && current) speakWord(current.headword, pronLang(current));
+  }, [cfg.autoSpeak, current]);
+
+  /** 「稳 / 猜」确认：稳 → Good；猜 → Hard（更贴近真实记忆） */
+  const resolveConfidence = useCallback(
+    (guessed: boolean) => {
+      if (!pendingConfidence) return;
+      setPendingConfidence(false);
+      if (!commitGrade(guessed ? 2 : 3)) return;
+      speakAnswer();
+      advanceCard();
+    },
+    [pendingConfidence, commitGrade, speakAnswer, advanceCard],
+  );
+
   /** 选择题作答 */
   const onChoose = useCallback(
     (index: number) => {
       if (!current || !question || judged) return;
       const correct = index === question.correctIndex;
-      if (!commitGrade(correct ? 3 : 1)) return;
       setChosen(index);
-      setJudged(true);
       // 洗牌袋轮换（ref 更新，不触发题目重建）
       posBagRef.current = [...posBagRef.current.slice(1), posBagRef.current[0]];
+      if (!correct) {
+        if (!commitGrade(1)) return;
+        setJudged(true);
+        speakAnswer();
+        return;
+      }
+      // 答对：开启「稳 / 猜」时先确认再记分（自动前进暂停等待确认）
+      if (cfg.choiceConfidence) {
+        setJudged(true);
+        setPendingConfidence(true);
+        return;
+      }
+      if (!commitGrade(3)) return;
+      setJudged(true);
+      speakAnswer();
       // 答对且选择「自动」时才自动前进；答错一律停留等用户确认（给纠正编码的时间）
-      if (correct && cfg.choiceAdvance === "auto") {
+      if (cfg.choiceAdvance === "auto") {
         clearAutoTimer();
         autoTimerRef.current = setTimeout(advanceCard, 800);
       }
     },
-    [current, question, judged, commitGrade, cfg.choiceAdvance, advanceCard, clearAutoTimer],
+    [current, question, judged, commitGrade, cfg.choiceAdvance, cfg.choiceConfidence, speakAnswer, advanceCard, clearAutoTimer],
   );
 
   const onUndo = useCallback(() => {
     if (!undo || phase !== "session") return;
     clearAutoTimer();
+    setPendingConfidence(false);
     undoReview(book.id, undo.entryId, undo.before, undo.rating, undo.elapsedMs, undo.dayKey);
     setStats((st) => ({
       ...st,
@@ -436,6 +486,10 @@ export function StudySession({ book }: { book: Wordbook }) {
           }
         } else if (ev.key === " " || ev.key === "Enter") {
           ev.preventDefault();
+          if (pendingConfidence) {
+            resolveConfidence(false); // 空格视为「稳」
+            return;
+          }
           // 与「继续」按钮的显示条件一致：答错必停留，答对时仅「按继续推进」模式需要手动
           const isCorrect = chosen !== null && chosen === question.correctIndex;
           if (!isCorrect || cfg.choiceAdvance === "continue") advanceCard();
@@ -462,7 +516,7 @@ export function StudySession({ book }: { book: Wordbook }) {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [phase, revealed, effectiveMode, question, judged, chosen, current, helpOpen, confirmExit, onReveal, onUndo, onGrade, onChoose, advanceCard, navigateCard, requestExit, cfg.choiceAdvance, toggleStar, book.id]);
+  }, [phase, revealed, effectiveMode, question, judged, chosen, current, helpOpen, confirmExit, onReveal, onUndo, onGrade, onChoose, advanceCard, navigateCard, requestExit, cfg.choiceAdvance, pendingConfidence, resolveConfidence, toggleStar, book.id]);
 
   const doneCount = totalPlanned; // 计划总数（用于未来的进度文案扩展）
   void doneCount;
@@ -477,6 +531,8 @@ export function StudySession({ book }: { book: Wordbook }) {
         overview={overview}
         onStart={startSession}
         onConfig={(patch) => setStudyConfig(book.id, patch)}
+        allowSimilar={allowSimilar}
+        onAllowSimilar={setAllowSimilar}
         onExit={() => router.push(`/book?id=${book.id}`)}
       />
     );
@@ -546,6 +602,8 @@ export function StudySession({ book }: { book: Wordbook }) {
                 onToggleStar={() => toggleStar(book.id, current.id)}
                 onChoose={onChoose}
                 onSkip={() => navigateCard(1)}
+                confidencePending={pendingConfidence}
+                onConfident={resolveConfidence}
               />
             ) : (
               <StudyCard
@@ -666,6 +724,8 @@ function HomeView({
   overview,
   onStart,
   onConfig,
+  allowSimilar,
+  onAllowSimilar,
   onExit,
 }: {
   book: Wordbook;
@@ -673,6 +733,8 @@ function HomeView({
   overview: StudyOverview & { nextDueLabel: string };
   onStart: (mode: StudyMode) => void;
   onConfig: (patch: Partial<StudyConfig>) => Promise<boolean> | null | void;
+  allowSimilar: boolean;
+  onAllowSimilar: (v: boolean) => void;
   onExit: () => void;
 }) {
   const nothingToday = overview.due === 0 && overview.newRemaining === 0;
@@ -753,12 +815,12 @@ function HomeView({
               onValueChange={(v) => runConfig(() => onConfig({ quizMode: v }))}
               options={[
                 { value: "flip", label: "翻卡自评" },
-                { value: "choice", label: "选择题（看词选义）" },
+                { value: "choice", label: "选择题（四选一）" },
               ]}
               grow
             />
             <p className="t-label-12 text-gray-700">
-              翻卡：先回忆，再翻面对照评级；选择题：从四个释义里选出正确的一项（选项凑不够四个的词会回到翻卡）。
+              翻卡：先回忆，再翻面对照评级；选择题：按题型设置出题，选项凑不够的词会回到翻卡。
             </p>
           </div>
           {cfg.quizMode === "choice" ? (
@@ -766,7 +828,7 @@ function HomeView({
               <div className="t-label-13 text-gray-900">选择题推进方式</div>
               <SegmentedControl
                 value={cfg.choiceAdvance}
-                disabled={configPending}
+                disabled={configPending || cfg.choiceConfidence}
                 onValueChange={(v) => runConfig(() => onConfig({ choiceAdvance: v }))}
                 options={[
                   { value: "auto", label: "自动下一题" },
@@ -774,9 +836,61 @@ function HomeView({
                 ]}
                 grow
               />
-              <p className="t-label-12 text-gray-700">自动模式节奏快；「继续」模式会停留展示正误，误触更少。</p>
+              <p className="t-label-12 text-gray-700">
+                {cfg.choiceConfidence
+                  ? "开启「稳 / 猜」确认后，答对会等你确认一次，自动推进暂不可用。"
+                  : "自动模式节奏快；「继续」模式会停留展示正误，误触更少。"}
+              </p>
             </div>
           ) : null}
+          {cfg.quizMode === "choice" ? (
+            <div className="space-y-0.5 border-t border-gray-300 pt-3">
+              <div className="t-label-13 font-medium text-gray-900">选择题题型</div>
+              {(
+                [
+                  { k: "word2zh", label: "看词选义", hint: "显示单词，四选中文释义" },
+                  { k: "zh2word", label: "看义选词", hint: "显示中文释义，四选单词（正面不显示词，作答后朗读）" },
+                  { k: "def2word", label: "看释义选词", hint: "显示英英释义，四选单词（词条需带英文释义，缺了自动跳过）" },
+                ] as const
+              ).map(({ k, label, hint }) => (
+                <SwitchRow
+                  key={k}
+                  label={label}
+                  hint={hint}
+                  checked={cfg.choiceTypes.includes(k)}
+                  loading={configPending}
+                  disabled={configPending || (cfg.choiceTypes.length === 1 && cfg.choiceTypes.includes(k))}
+                  onCheckedChange={(v) =>
+                    runConfig(() =>
+                      onConfig({ choiceTypes: v ? [...cfg.choiceTypes, k] : cfg.choiceTypes.filter((x) => x !== k) }),
+                    )
+                  }
+                />
+              ))}
+              <SwitchRow
+                label="答对后询问「稳 / 猜」"
+                hint="选中「猜」记「模糊」，比一律记「记得」更贴近真实记忆"
+                checked={cfg.choiceConfidence}
+                loading={configPending}
+                disabled={configPending}
+                onCheckedChange={(v) => runConfig(() => onConfig({ choiceConfidence: v }))}
+              />
+            </div>
+          ) : null}
+          <SwitchRow
+            label="相似词避让"
+            hint="形近、义近的词分开放，减少互相干扰（依据间隔学习研究）"
+            checked={cfg.similarityAvoid}
+            loading={configPending}
+            disabled={configPending}
+            onCheckedChange={(v) => runConfig(() => onConfig({ similarityAvoid: v }))}
+          />
+          <SwitchRow
+            label="本场允许相似词"
+            hint="只对这次会话生效、不保存；专门练易混词组时打开"
+            checked={allowSimilar}
+            onCheckedChange={onAllowSimilar}
+          />
           <SwitchRow
             label="自动发音"
             hint="卡片出现时用系统语音朗读单词"

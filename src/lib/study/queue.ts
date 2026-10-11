@@ -1,5 +1,6 @@
 import type { Entry, Wordbook } from "../types";
 import { isDue, isMastered, isNewSrs } from "./engine";
+import { bigramJaccard, editDistance, firstTranslation } from "./quiz";
 import { DEFAULT_STUDY_CONFIG, emptyDailyLog, ymd, type BookStudy, type StudyConfig, type StudyDailyLog } from "./types";
 
 /** 取（或补默认）学习配置视图，不写库 */
@@ -58,7 +59,12 @@ export interface QueueItem {
   isNew: boolean;
 }
 
-export function buildQueue(book: Wordbook, mode: StudyMode, now = Date.now()): QueueItem[] {
+export function buildQueue(
+  book: Wordbook,
+  mode: StudyMode,
+  now = Date.now(),
+  opts: { allowSimilar?: boolean } = {},
+): QueueItem[] {
   const cfg = studyConfigOf(book);
   const daily = dailyLogOf(book, now);
   const items: QueueItem[] = [];
@@ -76,7 +82,69 @@ export function buildQueue(book: Wordbook, mode: StudyMode, now = Date.now()): Q
     const newEntries = book.entries.filter((e) => isNewSrs(e.srs)).slice(0, remaining);
     for (const e of newEntries) items.push({ entryId: e.id, isNew: true });
   }
-  return items;
+  if (!cfg.similarityAvoid || opts.allowSimilar) return items;
+  return avoidSimilarNeighbors(book.entries, items);
+}
+
+/* ---------------- 相似词避让（T3 · 依据 docs/research/learning-science-2026-10.md） ---------------- */
+
+const SIMILAR_GAP = 4; // 相似词至少隔 3 张卡（索引差 ≥4）
+
+/** 两词视为「易混」：词形相近（编辑距离 ≤2，长词）或首义项语义高重叠（bigram Jaccard ≥0.6） */
+export function wordsSimilar(a: Entry, b: Entry): boolean {
+  const ha = a.headword.trim().toLowerCase();
+  const hb = b.headword.trim().toLowerCase();
+  if (ha.length >= 4 && hb.length >= 4 && Math.abs(ha.length - hb.length) <= 2 && editDistance(ha, hb, 2) <= 2) {
+    return true;
+  }
+  const ta = firstTranslation(a)?.text;
+  const tb = firstTranslation(b)?.text;
+  if (ta && tb && bigramJaccard(ta, tb) >= 0.6) return true;
+  return false;
+}
+
+/**
+ * 贪心避让：把相似词拉开到至少 SIMILAR_GAP 的间隔；做不到时保持原序（软约束，绝不丢/阻塞）。
+ * 纯函数，不改原数组。
+ */
+export function avoidSimilarNeighbors(entries: Entry[], items: QueueItem[], gap = SIMILAR_GAP): QueueItem[] {
+  if (items.length <= 3) return [...items];
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  const rest = [...items];
+  const out: QueueItem[] = [];
+  const conflicts = (item: QueueItem): boolean => {
+    const e = byId.get(item.entryId);
+    if (!e) return false;
+    const window = out.slice(-(gap - 1));
+    return window.some((prev) => {
+      const pe = byId.get(prev.entryId);
+      return pe ? wordsSimilar(pe, e) : false;
+    });
+  };
+  while (rest.length) {
+    let pickIdx = 0;
+    if (conflicts(rest[0])) {
+      const alt = rest.findIndex((it, idx) => idx > 0 && !conflicts(it));
+      if (alt > 0) pickIdx = alt;
+    }
+    out.push(rest.splice(pickIdx, 1)[0]);
+  }
+  return out;
+}
+
+/** 学习步回炉的插入位置：从最小间隔后找第一个与邻居都不相似的位置；不满足则退回默认位 */
+export function requeueInsertIndex(entries: Entry[], rest: QueueItem[], entryId: string, gap = SIMILAR_GAP): number {
+  const fallback = Math.min(rest.length, SIMILAR_GAP);
+  const e = entries.find((x) => x.id === entryId);
+  if (!e) return fallback;
+  const lo = Math.max(0, Math.min(2, rest.length)); // 至少隔 2 张再回炉（保留既有节奏）
+  for (let i = lo; i <= rest.length; i += 1) {
+    const before = rest.slice(Math.max(0, i - (gap - 1)), i).map((x) => entries.find((en) => en.id === x.entryId));
+    const after = rest.slice(i, i + (gap - 1)).map((x) => entries.find((en) => en.id === x.entryId));
+    const clash = [...before, ...after].some((n) => n && wordsSimilar(n, e));
+    if (!clash) return i;
+  }
+  return fallback;
 }
 
 export function entryById(book: Wordbook, id: string): Entry | undefined {

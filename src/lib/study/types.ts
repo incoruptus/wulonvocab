@@ -22,6 +22,9 @@ export interface StudySrs {
   learningSteps: number;
 }
 
+/** 选择题题型：看词选义 / 看义选词 / 看释义选词（英英线索） */
+export type QuizKind = "word2zh" | "zh2word" | "def2word";
+
 /** 每本书的学习配置 */
 export interface StudyConfig {
   /** 每日新词上限 */
@@ -32,10 +35,16 @@ export interface StudyConfig {
   retention: number;
   /** 卡片正面自动发音 */
   autoSpeak: boolean;
-  /** 学习模式：翻卡自评 / 选择题（看词选义） */
+  /** 学习模式：翻卡自评 / 选择题 */
   quizMode: "flip" | "choice";
   /** 选择题答后推进：自动下一题 / 按「继续」 */
   choiceAdvance: "auto" | "continue";
+  /** 启用的选择题题型（按词的学习阶段自动挑选；缺数据自动降级） */
+  choiceTypes: QuizKind[];
+  /** 选择题答对后询问「稳 / 猜」（猜 → Hard，更贴近真实记忆） */
+  choiceConfidence: boolean;
+  /** 相似词避让：形近或义近的词不紧挨着出现（易混组可用「本场允许」临时放行） */
+  similarityAvoid: boolean;
 }
 
 export const DEFAULT_STUDY_CONFIG: StudyConfig = {
@@ -45,6 +54,9 @@ export const DEFAULT_STUDY_CONFIG: StudyConfig = {
   autoSpeak: true,
   quizMode: "flip",
   choiceAdvance: "auto",
+  choiceTypes: ["word2zh", "zh2word", "def2word"],
+  choiceConfidence: true,
+  similarityAvoid: true,
 };
 
 /** 每日学习记录（用于统计与每日限额） */
