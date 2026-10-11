@@ -25,6 +25,7 @@ import { Input, SwitchRow, Textarea } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Combobox } from "@/components/ui/combobox";
 import { SyncSection } from "@/components/sync/SyncSection";
+import { AcknowledgmentsDialog } from "@/components/app/Acknowledgments";
 import { useSyncCommit } from "@/components/app/useSyncCommit";
 import { AccentPicker, Badge, Card, CardTitle, EmptyState, SegmentedControl } from "@/components/ui/misc";
 import { Dialog, DialogFooter, DialogHeader } from "@/components/ui/overlay";
@@ -44,6 +45,7 @@ export default function SettingsPage() {
   const removeDictionary = useAppStore((s) => s.removeDictionary);
 
   const [clearOpen, setClearOpen] = useState(false);
+  const [ackOpen, setAckOpen] = useState(false);
   const [dictBusy, setDictBusy] = useState(false);
   const [builtinBusy, setBuiltinBusy] = useState<string | null>(null);
   const [builtinProgress, setBuiltinProgress] = useState(0);
@@ -339,10 +341,17 @@ export default function SettingsPage() {
               className="size-9 shrink-0 rounded-full bg-gray-100 shadow-geist-border"
             />
             <div className="min-w-0">
-              <div className="t-label-13 text-gray-1000">Caddy Wulon</div>
-              <div className="t-label-12 text-gray-700">乌龙罐 · 词库、复习与成书</div>
+              <div className="t-label-13 text-gray-1000">@incoruptus</div>
+              <div className="t-label-12 text-gray-700">因为相信，所以看见。</div>
             </div>
             <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1">
+              <button
+                type="button"
+                onClick={() => setAckOpen(true)}
+                className="t-label-12 text-gray-800 underline-offset-2 hover:text-gray-1000 hover:underline"
+              >
+                鸣谢与技术栈
+              </button>
               <a
                 href="https://github.com/incoruptus"
                 target="_blank"
@@ -363,6 +372,8 @@ export default function SettingsPage() {
           </div>
         </Card>
       </main>
+
+      <AcknowledgmentsDialog open={ackOpen} onOpenChange={setAckOpen} />
 
       <Dialog open={clearOpen} onOpenChange={setClearOpen}>
         <DialogHeader title="清空所有数据" desc="将删除全部词库、设置与本地词库缓存，且不可恢复。建议先导出备份。" />

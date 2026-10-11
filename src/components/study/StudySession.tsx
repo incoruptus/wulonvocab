@@ -652,7 +652,7 @@ export function StudySession({ book }: { book: Wordbook }) {
         </DialogFooter>
       </Dialog>
 
-      {/* 快捷键帮助（扇贝式：功能 | 键位） */}
+        {/* 快捷键帮助（功能 | 键位 两列） */}
       <ShortcutHelp open={helpOpen} onOpenChange={setHelpOpen} mode={effectiveMode} />
     </div>
   );

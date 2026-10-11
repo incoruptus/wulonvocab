@@ -4,6 +4,7 @@ import {
   dedupe,
   isValueEmpty,
   normalizeExamples,
+  normalizeEntryValues,
   normalizeKeyValue,
   normalizePos,
   normalizePronunciation,
@@ -222,6 +223,14 @@ describe("normalizeValue / isValueEmpty 防御（审计盲区）", () => {
         expect(() => normalizeValue(t, raw)).not.toThrow();
       }
     }
+  });
+
+  it("危险字段键一律丢弃（__proto__ / constructor / prototype）", () => {
+    const values = JSON.parse('{"text":"ok","__proto__":{"polluted":true},"constructor":"x","prototype":"y"}') as Record<string, unknown>;
+    const out = normalizeEntryValues(values, [{ key: "text", label: "t", type: "text", order: 0, visible: true } as never]);
+    expect(out.text).toBe("ok");
+    expect(Object.keys(out)).toEqual(["text"]);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 
   it("isValueEmpty 矩阵：空形态为 true、有内容为 false", () => {

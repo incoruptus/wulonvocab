@@ -5,6 +5,9 @@
   "allowScripts": {
     "unrs-resolver": true
   },
+  "overrides": {
+    "sprintf-js": "^1.1.3"
+  },
   "scripts": {
     "predev": "node scripts/sync-fonts.mjs && node scripts/sync-pdfjs.mjs",
     "dev": "next dev",

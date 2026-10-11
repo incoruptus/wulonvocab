@@ -5,6 +5,7 @@ import { makeEntry } from "./presets";
 import { inferSchema, keepExtras, labelForKey, mapRowToSchema, rowTags } from "./infer";
 import {
   canonicalKey,
+  isSafeFieldKey,
   isValueEmpty,
   normalizeEntryValues,
   normalizePronunciation,
@@ -463,6 +464,7 @@ export function rowsToEntries(parsed: ParsedImport, schema?: Schema): RowsToEntr
     // 通用行
     const extras: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(row)) {
+      if (!isSafeFieldKey(k)) continue; // 不可信 JSON 键护栏（__proto__ 等）
       if (META_KEYS.has(canonicalKey(k))) continue;
       if (k === "values" || v == null || v === "") continue;
       extras[k] = v;
@@ -483,12 +485,16 @@ export function rowsToEntries(parsed: ParsedImport, schema?: Schema): RowsToEntr
 
 function mapValuesWithSchema(rawValues: Record<string, unknown>, schema: Schema): Record<string, unknown> {
   const row: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(rawValues)) row[k] = v;
+  for (const [k, v] of Object.entries(rawValues)) {
+    if (!isSafeFieldKey(k)) continue; // 不可信 JSON 键护栏
+    row[k] = v;
+  }
   const { values, consumed } = mapRowToSchema(row, schema);
   const extras = keepExtras(row, consumed, META_KEYS);
   const out: Record<string, unknown> = { ...extras, ...values };
   if (isPlainObject(rawValues)) {
     for (const [k, v] of Object.entries(rawValues)) {
+      if (!isSafeFieldKey(k)) continue;
       if (Object.prototype.hasOwnProperty.call(out, k)) continue;
       out[k] = v;
     }

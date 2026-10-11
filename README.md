@@ -1,99 +1,102 @@
-# WulonVocab · 单词本工坊
+# WulonVocab · 乌龙单词
 
-> 把单词，做成一本真正精美的书。
+> 来自 Caddy Wulon · 乌龙罐
 
-本地优先（Local-first）的单词本软件：**动态字段管理**、**JSON 一键导入自动排版**、**A4 / B5 / A5 / 16 开打印级导出**。
-界面遵循 **Geist 设计系统**（官方 `geist` 字体 + 按官方规范复刻的组件与令牌）。
+本地优先的词库工坊：把散落的词收进一个地方，字段随你组合，复习自有节奏，排好版打印出来，就是一本属于自己的书。
 
-![仪表盘](docs/screenshots/01-dashboard.png)
+[在线版](https://incoruptus.github.io/wulonvocab/) · [项目主页](https://github.com/incoruptus/wulonvocab) · [作者](https://github.com/incoruptus)
 
-## 功能总览
+---
 
-| 模块 | 能力 |
-| --- | --- |
-| 动态字段管理 | 14 种字段类型（音标 / 词性与释义 / 词族 / 词性变换 / 联想 / 例句 / 情景标签 / 表格 / 图片 / 提示块 / 评分 / 列表 / 长短文本 / 分隔线），任意增删、拖拽排序、逐项配置显示选项；内置 5 套模板（牛津词典风 / 极简记忆卡 / 考试冲刺 / 深度阅读 / 空白）；字段改名自动迁移数据；未知数据可「提升为字段」 |
-| 词条编辑 | 词性 → 释义 → 用法 / 句型 / 例句 / 近反义词 / 搭配 / 备注 的嵌套编辑；标签、状态（未学/在学/已掌握）、星标；桌面右侧**实时预览**导出样式；移动端底部「编辑 / 预览」双 Tab |
-| 学习（SRS） | **FSRS 间隔重复**（ts-fsrs 5.4）：**翻卡自评 / 看词选义选择题双模式**可切换；四档评级（忘记/模糊/记得/轻松）按钮直接显示下次间隔；学习步内回炉、单步撤销、键位 DFJK、系统 TTS、会话小结；每日新词上限与记忆保持率可配置 |
-| 学习中心 | `/learn`：跨词库总览、基于容量负载比的**学习建议**（轻/正常/偏重/积压 + 建议新词量）、未来 7 天到期预排、13 周热力图、正确率与记忆持久度、「继续上次」一键续学 |
-| 词典检索 | 可插拔数据源：**网络综合词典（零配置·中英）**（freedictionaryapi.com + MyMemory，浏览器直连）、Free Dictionary API、**本地词库**（导入 OALD / ECDICT 数据集离线检索）、AI 生成（任何 OpenAI 兼容接口）、**有道词典**（完整中文，可选代理前缀）、自定义 HTTP API；支持单词检索与**批量单词表**；应用时只补空缺、不覆盖已填字段 |
-| 导入 | WulonVocab 文档 / 词条数组 / 「单词→内容」字典 / NDJSON / CSV / TSV；ECDICT 结构自动映射（音标、分行释义、交换码词形、考纲标签）；**无 schema 时自动推断字段类型**；宽容归一化（字符串 / 数组 / 对象多形态） |
-| 导出工作室 | 纸张：A4 / A5 / B5(ISO) / B5(JIS) / 16 开 / 32 开 / 自定义；1–3 栏流式分栏（仿词典）或网格闪卡；**矢量 PDF（打印另存，文字可搜索）**、**一键图片型 PDF**、**PNG（最高 384 DPI，支持 ZIP 打包）**；封面 4 风格、索引页（带页码）、页脚、跨页「续」标、镜像装订边距、米黄护眼纸色、宋体/无衬线、手写横线（可打印成手写词卡） |
-| AI Skill | `skill/wulonvocab-json/`：教任意 AI（Kilo / Claude / Cursor / ChatGPT…）按规范输出可直接导入的 JSON，含字段参考、完整示例与零依赖校验脚本 |
+## 这是什么
 
-![导出工作室](docs/screenshots/04-export-fixed.png)
+你攒下的词，值得被认真对待。WulonVocab 在浏览器里工作：词库、字段、学习进度默认都存在本机，开启跨端同步后可以在手机与电脑之间自动对齐。没有账号体系；只有当你在设置里主动启用在线词典、AI 或跨端同步时，才会发生联网。
 
-学习会话（FSRS 评级带下次间隔预览、一键发音）：
+## 功能一览
 
-![学习会话](docs/screenshots/26-study-card.png)
+**词库与字段**
+- 动态字段：音标、词性释义、词族、词形变换、搭配、例句、情景标签、词源……十几种字段类型随你增删、排序、配置
+- 字段设计器 + 预设模板（牛津词典风 / 极简记忆卡 / 考试冲刺 / 深度阅读）
+- 改字段名，老数据自动跟着走；词条级撤销、批量操作、滑动快捷手势（移动端）
+
+**学习（间隔重复）**
+- 基于 FSRS 的复习调度；每日新词上限、记忆保持率可调
+- 两种模式：翻卡自评、看词选义选择题（键盘 DFJK / WEIO 快捷操作）
+- 学习中心：负载建议、7 天预排、13 周热力图、正确率与连续天数
+
+**导入**
+- JSON / CSV / TSV / NDJSON 与「单词 → 内容」字典；ECDICT、OALD 等词典导出数据自动对字段
+- Word（.docx）与 PDF 文本本机直读；扫描件走视觉模型转写（可取消、可重试/跳过）
+- 本机 OCR（tesseract.js，免 AI）；AI 生成词库（描述需求直接产出）；配套 [AI Skill 规范](https://incoruptus.github.io/wulonvocab/skill/) 可交给任何外部 AI
+
+**导出与印刷**
+- 四种版式：辞书体（宽页自动双栏）、瑞士极简、笔记手账（含自测笔记带）、闪卡网格
+- A4 到 32 开、封面与索引、镜像装订边距、页脚页码；矢量 PDF（文字可搜）与最高 384 DPI 的 PNG
+
+**跨端同步（三种方式，随时切换）**
+
+| 方式 | 适合 | 说明 |
+| --- | --- | --- |
+| 同步包 | 偶尔换机 | 导出 `.wulonsync` 文件，另一台导入前先看合并预览，零配置 |
+| 自动同步 | 日常多端 | 借 GitHub Gist 作中转：配对码加密后再上传，中转站只见密文；打开应用 / 切回前台 / 每 30 分钟自动对账 |
+| 扫码直传 | 面对面对齐 | 一台出码、一台扫码，WebRTC 直连互换，不经过任何服务器（信令除外） |
+
+合并规则：一边改取改方；两边都改同一处按较新改动胜（可在合并预览里翻转）；删除留墓碑传播，不会被旧设备复活；学习进度取最近一次复习与每日较大值；明暗模式与强调色是设备本地偏好，不参与同步。
+
+**AI 词库管家**
+- 对话式管理词库：查词、增改、批量整理；危险操作两段式确认；流式输出；会话按词库保存
+
+**数据**
+- JSON 备份导出 / 恢复；同步前自动留存安全快照；随时一键清空
 
 ## 快速开始
+
+要求 Node ≥ 20.9。
 
 ```bash
 npm install
 npm run dev          # http://localhost:3000
+npm run build        # 生产构建
 ```
 
-打开首页 → 「创建示例（3 词）」即可体验完整流程：编辑 → 实时预览 → 导出工作室 → 打印装订。
+校验与测试：
 
-### 在线版（GitHub Pages）
-
-已配置静态托管：<https://incoruptus.github.io/wulonvocab/>（推送 `main` 后由
-[`deploy-pages.yml`](.github/workflows/deploy-pages.yml) 自动构建部署）。
-
-- 静态托管下采用查询参数路由（`/book?id=…`），无需服务器；
-- 部署产物本地预览：`npm run build:pages && npm run serve:pages` → <http://localhost:4010/wulonvocab/>；
-- 首次部署若 Actions 无权自动开启 Pages，请在仓库 Settings → Pages 把 Source 设为 **GitHub Actions**。
-
-### 常用命令
-
-| 命令 | 说明 |
-| --- | --- |
-| `npm run dev` / `build` / `start` | 开发 / 生产构建 / 生产启动 |
-| `npm run build:pages` / `serve:pages` | 构建 GitHub Pages 静态站点（out/）/ 本地预览产物 |
-| `npm run typecheck` | TypeScript 全量类型检查 |
-| `npm run check:encoding` | 编码守卫（扫描乱码残留，应为 0） |
-| `npm run lint` | ESLint（含 React Hooks 规则） |
-| `npm test` | Vitest 单元测试（归一化 / 分页 / 导入） |
-| `npm run sync:skill` | 将 `skill/` 同步到 `public/downloads/`（应用内下载） |
-| `npm run validate -- <file.json>` | 用 Skill 自带的零依赖脚本校验词表 JSON |
-
-## 项目结构
-
-```
-WulonVocab/
-├─ src/
-│  ├─ app/                  # Next.js App Router 路由（仪表盘/工作区/导出工作室/设置/Skill）
-│  ├─ components/
-│  │  ├─ ui/                # Geist 风格组件原语（按钮/输入/弹层/Tabs…）
-│  │  ├─ book/              # 词条列表、动态编辑器、字段设计器
-│  │  ├─ value/             # 14 种字段类型的渲染器与编辑器
-│  │  ├─ export/            # 测量-分页-排版引擎与导出工作室
-│  │  ├─ lookup/ import/    # 检索面板、导入向导
-│  │  └─ app/               # 应用外壳（顶栏、Providers）
-│  └─ lib/                  # 领域层：类型、字段注册表、归一化、Store、检索、导入、分页、打印
-├─ skill/wulonvocab-json/   # AI Skill（SKILL.md + references + examples + validate.mjs）
-├─ docs/                    # 架构、数据格式、导出指南、调研报告、ADR、路线图
-└─ public/downloads/        # 应用内可下载的 Skill 资源（由 sync:skill 生成）
+```bash
+npm run typecheck    # tsc --noEmit
+npm run lint         # ESLint
+npm test             # Vitest（157+ 单测）
+npm run check:encoding
+npm run e2e:sync     # 双设备同步 E2E（需先起 dev server）
 ```
 
-## 数据与隐私
+GitHub Pages 静态导出（子路径 `/wulonvocab`）：
 
-- 所有数据保存在浏览器 **IndexedDB**（词库、设置、本地词库），不上传任何服务器；
-- 词库可随时导出 JSON（含字段表）备份或迁移；设置页提供全量备份/恢复；
-- 检索仅在你触发时请求所配置的数据源；API Key 仅存本机。
+```bash
+npm run build:pages  # 输出 out/
+npm run serve:pages  # 本地预览 http://localhost:4010/wulonvocab/
+```
 
-## 文档
+## 目录结构
 
-- [架构说明](docs/ARCHITECTURE.md) · [数据格式](docs/DATA-FORMAT.md) · [导出指南](docs/EXPORT-GUIDE.md)
-- [调研报告](docs/RESEARCH.md)（Geist 设计系统 / 打印导出技术 / 词典字段体系）
-- [路线图](docs/ROADMAP.md) · [变更日志](CHANGELOG.md) · 架构决策记录 [docs/adr](docs/adr/)
+```
+src/
+  app/            页面（Next.js App Router，静态导出用查询串传参）
+  components/     UI 组件（app / book / export / import / learn / study / sync / ai / ui）
+  lib/            纯领域层（types / sections / importer / store / study / export / sync / ai / lookup）
+  lib/sync/       跨端同步：合并引擎、加密封装、传输（Gist / PeerJS / 文件）
+skill/            AI Skill 唯一真源（改后跑 npm run sync:skill）
+docs/            规划、研究与架构决策记录
+scripts/         构建、字体/PDF 资源同步、E2E
+```
 
-## 技术栈
+工程约定（必读）：[`AGENTS.md`](./AGENTS.md)（含同步触发点清单、文案风格、控件规范与红线）。
 
-Next.js 16（App Router, Turbopack）· React 19 · TypeScript · Tailwind CSS v4 · Zustand + IndexedDB · Radix Primitives · dnd-kit ·
-html-to-image · jsPDF · JSZip · PapaParse · Vitest。字体：官方 `geist` 包（自托管，无外部字体请求）。
+## 技术栈与鸣谢
 
-## 许可与数据来源说明
+平台 Next.js 16 · React 19 · TypeScript · Tailwind CSS 4 · Geist；组件 Radix UI · lucide · sonner · dnd-kit；状态 Zustand · idb-keyval · zod；学习引擎 ts-fsrs（FSRS）；解析 mammoth · pdf.js · PapaParse · JSZip；导出 jsPDF · html-to-image；图像 heic-to · tesseract.js；同步 PeerJS · GitHub Gist API；字体 Geist（OFL）· 思源宋体（OFL）· HarmonyOS Sans SC（华为免费商用许可）；词典数据 ECDICT（MIT）。
 
-代码供个人学习与使用。示例数据中的词典例句标注了出处（OALD 等），仅用于演示字段结构；
-商业使用请自行核实并替换为有授权的数据。导入的第三方词库（ECDICT / OALD 数据集等）版权归其原作者所有。
+应用内「关于 → 鸣谢与技术栈」有完整列表与许可标注。内置示例与文档内容均为自撰，不含受版权保护的词典原文。
+
+## 许可
+
+仓库暂未声明开源许可（默认保留所有权利）。第三方依赖与资源遵循各自许可，详见鸣谢列表。

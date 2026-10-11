@@ -32,10 +32,10 @@
           {
             "pos": "v.",
             "translation": "抛弃；遗弃（尤指对你有责任的人）",
-            "definition": "to leave somebody, especially somebody you are responsible for, with no intention of returning",
+            "definition": "to leave someone you should take care of, and never come back",
             "examples": [
-              { "en": "The baby had been abandoned by its mother.", "zh": "这个婴儿被母亲遗弃了。", "source": "OALD" },
-              { "en": "People often simply abandon their pets when they go abroad.", "zh": "人们出国时常常就这么遗弃宠物。" }
+              { "en": "He abandoned his family and moved to another city.", "zh": "他抛下家人，搬去了另一座城市。" },
+              { "en": "Some owners abandon their dogs when moving house.", "zh": "有些主人搬家时就把狗遗弃了。" }
             ],
             "usage": "常用被动语态 be abandoned by；过去分词 abandoned 常作形容词「被遗弃的」",
             "patterns": ["abandon sb/sth", "abandon sb to sth"],
@@ -47,10 +47,10 @@
           {
             "pos": "v.",
             "translation": "（因危险或无法停留而）放弃，离开，舍弃",
-            "definition": "to leave a thing or place, especially because it is impossible or dangerous to stay",
+            "definition": "to leave a place or thing because staying is impossible or dangerous",
             "examples": [
-              { "en": "Snow forced many drivers to abandon their vehicles.", "zh": "大雪迫使许多司机弃车而行。", "source": "OALD" },
-              { "en": "He gave the order to abandon ship.", "zh": "他下令弃船。", "source": "OALD" }
+              { "en": "The crew abandoned the burning ship in the storm.", "zh": "暴风雨中，船员们弃下了起火的船。" },
+              { "en": "Thick fog forced the climbers to abandon their route.", "zh": "浓雾迫使登山者放弃了原定路线。" }
             ],
             "usage": "",
             "patterns": ["abandon sth", "abandon ship"],
@@ -62,10 +62,10 @@
           {
             "pos": "v.",
             "translation": "中止，放弃（未完成的事）；放弃（希望）",
-            "definition": "to stop doing something, especially before it is finished; to stop having something",
+            "definition": "to stop doing something before it is finished, or to give up hope",
             "examples": [
-              { "en": "They abandoned the match because of rain.", "zh": "因下雨他们中止了比赛。", "source": "OALD" },
-              { "en": "She abandoned hope of any reconciliation.", "zh": "她放弃了任何和解的希望。" }
+              { "en": "The search was abandoned after night fell.", "zh": "天黑之后，搜寻工作停止了。" },
+              { "en": "He never abandoned hope of finding his brother.", "zh": "他从未放弃找到弟弟的希望。" }
             ],
             "usage": "考点：abandon hope（放弃希望）、abandon oneself to（沉溺于）",
             "patterns": ["abandon sth", "abandon hope of sth", "abandon oneself to sth"],
@@ -92,9 +92,9 @@
         ],
         "contexts": ["考研", "新闻", "文学"],
         "examplesExtra": [
-          { "en": "The plans for reform were quietly abandoned.", "zh": "改革方案被悄然放弃。", "source": "考研真题例句" }
+          { "en": "The plans for reform were quietly abandoned.", "zh": "改革方案被悄然放弃。" }
         ],
-        "notes": "**记忆钩子**：abandon 与 abundant（大量的）只差一个字母——abandon 是「丢掉」，abundant 是「多得丢不完」。",
+        "notes": "**记忆钩子**：abandon 与 abundant（大量的）只差一个字母：abandon 是「丢掉」，abundant 是「多得丢不完」。",
         "etymology": "源自古法语 abandoner，a-（置于）+ bandon（控制），本义「交出控制权」。"
       }
     }

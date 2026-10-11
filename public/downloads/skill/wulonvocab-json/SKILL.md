@@ -65,9 +65,9 @@ description: WulonVocab 词表生成器 — 把用户的词汇需求整理成可
 {
   "pos": "v.",
   "translation": "抛弃；遗弃（尤指对你有责任的人）",
-  "definition": "to leave somebody, especially somebody you are responsible for, with no intention of returning",
+  "definition": "to leave someone you should take care of, and never come back",
   "examples": [
-    { "en": "The baby had been abandoned by its mother.", "zh": "这个婴儿被母亲遗弃了。", "source": "OALD" }
+    { "en": "He abandoned his old plan.", "zh": "他放弃了旧计划。", "source": "自撰示例" }
   ],
   "usage": "常用被动语态 be abandoned by；abandon oneself to 沉溺于",
   "patterns": ["abandon sb/sth", "abandon sb to sth"],

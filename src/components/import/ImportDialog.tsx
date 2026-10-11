@@ -193,7 +193,7 @@ export function ImportDialog({
                 <UploadCloud className="size-7 text-gray-800" />
                 <div className="t-h-14">拖入文件，或点击选择</div>
                 <div className="t-label-12 text-gray-700">
-                  支持 .json / .csv / .tsv / .txt（NDJSON）— 例如 AI 整理出的词表、ECDICT 词库、OALD 数据集
+                  支持 .json / .csv / .tsv / .txt（NDJSON）：例如 AI 整理出的词表、ECDICT 词库、OALD 等词典导出的数据
                 </div>
                 <div className="t-label-12 flex items-center gap-3 pt-1 text-gray-700">
                   <span className="inline-flex items-center gap-1">

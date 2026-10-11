@@ -8,6 +8,11 @@ import { Fragment } from "react";
 
 const INLINE_RE = /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|`[^`\n]+`|==[^=\n]+==|~~[^~\n]+~~|\[[^\]\n]+\]\([^)\s]+\))/g;
 
+/** 链接协议白名单：只放行 http(s) 与 mailto，挡掉 javascript:/data: 等注入面 */
+function safeHref(url: string): string | null {
+  return /^https?:\/\//i.test(url) || /^mailto:/i.test(url) ? url : null;
+}
+
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   const parts = text.split(INLINE_RE).filter((p) => p !== "");
   return parts.map((part, i) => {
@@ -49,8 +54,10 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
     }
     const link = part.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/);
     if (link) {
+      const href = safeHref(link[2]);
+      if (!href) return <Fragment key={key}>{part}</Fragment>; // 不安全协议：原样当文本
       return (
-        <a key={key} href={link[2]} target="_blank" rel="noreferrer" className="text-blue-900 underline decoration-blue-500/50 underline-offset-2">
+        <a key={key} href={href} target="_blank" rel="noreferrer" className="text-blue-900 underline decoration-blue-500/50 underline-offset-2">
           {link[1]}
         </a>
       );

@@ -1208,12 +1208,18 @@ export function sliceValue(type: SectionType, value: unknown, from: number, to: 
   }
 }
 
+/** 危险字段键过滤（来自不可信 JSON 的键）：__proto__/constructor/prototype 一律丢弃，消除原型污染面 */
+export function isSafeFieldKey(key: string): boolean {
+  return key !== "__proto__" && key !== "constructor" && key !== "prototype";
+}
+
 export function normalizeEntryValues(
   values: Record<string, unknown>,
   sections: SectionDef[],
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(values)) {
+    if (!isSafeFieldKey(k)) continue;
     const sec = sections.find((s) => s.key === k);
     if (sec) {
       const nv = normalizeValue(sec.type, v);

@@ -33,7 +33,7 @@ const SCHEMA_SNIPPET = `{
             "translation": "抛弃；遗弃（尤指对你有责任的人）",
             "definition": "to leave sb, especially sb you are responsible for",
             "examples": [
-              { "en": "The baby had been abandoned by its mother.", "zh": "这个婴儿被母亲遗弃了。", "source": "OALD" }
+              { "en": "He abandoned his old plan.", "zh": "他放弃了旧计划。", "source": "自撰示例" }
             ],
             "usage": "常用被动 be abandoned by",
             "patterns": ["abandon sb/sth"],
