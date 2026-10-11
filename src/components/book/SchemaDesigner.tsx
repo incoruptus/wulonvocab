@@ -13,10 +13,12 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import { Copy, GripVertical, Layers, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { AccentId, SectionDef, SectionType, Wordbook } from "@/lib/types";
+import type { AccentId, Entry, SectionDef, SectionType, Wordbook } from "@/lib/types";
 import { ACCENTS } from "@/lib/paper";
 import { isValueEmpty, SECTION_ICON_CHOICES, SECTION_TYPE_LIST, SECTIONS, sortSections } from "@/lib/sections";
 import { SCHEMA_PRESETS } from "@/lib/presets";
+import { normalizeExportSettings, themeCssVars } from "@/lib/export/themes";
+import { SectionBlock, fontStackFor } from "@/components/export/blocks";
 import { useAppStore } from "@/lib/store";
 import { Input, Switch, SwitchRow } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
@@ -25,6 +27,69 @@ import { Badge, Card, EmptyState } from "@/components/ui/misc";
 import { Dialog, DialogBody, DialogFooter, DialogHeader, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/overlay";
 import { SectionIcon } from "@/components/icon";
 import { cx } from "@/lib/utils";
+
+/* ---------------- 导出效果预览（B6） ---------------- */
+
+const PREVIEW_IMG = `data:image/svg+xml;utf8,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><rect width="160" height="90" fill="#e5e5e5"/><text x="80" y="52" font-size="14" text-anchor="middle" fill="#666">示例图</text></svg>',
+)}`;
+
+/** 每种字段类型的示例值（仅供字段设计的导出预览；纯数据，无 uid/时间） */
+function sampleValueFor(section: SectionDef): unknown {
+  switch (section.type) {
+    case "text":
+      return "示例：坚持是最短的路。";
+    case "quote":
+      return "山高路远，脚下先行。";
+    case "tags":
+      return ["核心", "考研"];
+    case "list":
+      return ["第一项", "第二项"];
+    case "senses":
+      return [
+        {
+          id: "demo-s1",
+          pos: "v.",
+          translation: "（示例）坚持；持续",
+          definition: "to keep doing something despite difficulty",
+          examples: [{ en: "Small steps every day.", zh: "每天一小步。" }],
+          usage: "",
+          patterns: [],
+          synonyms: [],
+          antonyms: [],
+          collocations: [],
+          notes: "",
+        },
+      ];
+    case "examples":
+      return [{ en: "Small steps every day.", zh: "每天一小步。" }];
+    case "keyvalue":
+      return [
+        { key: "搭配", value: "take action" },
+        { key: "反义", value: "give up" },
+      ];
+    case "transforms":
+      return [{ label: "过去式", value: "persisted" }];
+    case "table":
+      return {
+        columns: ["人称", "形式"],
+        rows: [
+          ["I", "go"],
+          ["He", "goes"],
+        ],
+      };
+    case "rating":
+      return { value: 4, max: section.options.max ?? 5 };
+    case "pronunciation":
+      return { uk: "/pəˈsɪst/", us: "/pərˈsɪst/" };
+    case "image":
+      return [{ url: PREVIEW_IMG, caption: "图片：来自本机文件或链接" }];
+    case "divider":
+      return "";
+    default:
+      return "示例内容";
+  }
+}
 
 export function SchemaDesigner({ book }: { book: Wordbook }) {
   const addSection = useAppStore((s) => s.addSection);
@@ -210,6 +275,20 @@ function SortableFieldRow({
 /* ---------------- 字段配置面板 ---------------- */
 
 function FieldConfig({ book, section, onDeleted }: { book: Wordbook; section: SectionDef; onDeleted: () => void }) {
+  const previewSettings = useMemo(() => normalizeExportSettings(book.exportSettings), [book.exportSettings]);
+  const demoEntry: Entry = useMemo(
+    () => ({
+      id: "preview",
+      headword: "sample",
+      tags: [],
+      status: "new",
+      starred: false,
+      createdAt: 0,
+      updatedAt: 0,
+      values: { [section.key]: sampleValueFor(section) },
+    }),
+    [section],
+  );
   const updateSection = useAppStore((s) => s.updateSection);
   const removeSection = useAppStore((s) => s.removeSection);
   const renameSectionKey = useAppStore((s) => s.renameSectionKey);
@@ -382,6 +461,33 @@ function FieldConfig({ book, section, onDeleted }: { book: Wordbook; section: Se
           </div>
         </Card>
       ) : null}
+
+      {/* 导出效果预览（B6）：按导出卡片样式实时渲染本字段 */}
+      <Card className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="t-h-14">导出效果预览</div>
+          {!section.visible ? (
+            <Badge variant="amber" size="sm">
+              当前导出中隐藏
+            </Badge>
+          ) : null}
+        </div>
+        <div className={cx(!section.visible && "opacity-45")}>
+          <div
+            className="wv-card rounded-xl bg-white p-4 shadow-geist-md"
+            style={{
+              fontSize: "12pt",
+              ...themeCssVars(previewSettings.cardStyle),
+              fontFamily: fontStackFor(previewSettings.fontFamily),
+            }}
+          >
+            <SectionBlock entry={demoEntry} section={section} ctx={{ settings: previewSettings, schema: book.schema }} />
+          </div>
+        </div>
+        <p className="t-label-12 text-gray-700">
+          按导出卡片样式渲染：整行 / 并排、强调色与显示选项都会直接反映在这里；示例内容不会写进任何词条。
+        </p>
+      </Card>
 
       <div className="t-label-12 text-gray-700">
         已填写 {filled} / {book.entries.length} 个词条

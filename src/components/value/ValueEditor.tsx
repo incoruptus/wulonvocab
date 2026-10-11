@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2, Eye, EyeOff } from "lucide-react";
+import { useRef, useState } from "react";
+import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2, Eye, EyeOff, ImagePlus } from "lucide-react";
 import type {
   ExampleItem,
   ImageValue,
@@ -14,6 +14,8 @@ import type {
   TransformItem,
 } from "@/lib/types";
 import { COMMON_POS } from "@/lib/sections";
+import { blobToDataUrl, compressImageWithMeta } from "@/lib/import/extract";
+import { toast } from "sonner";
 import { Input, Textarea } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Button, IconButton } from "@/components/ui/button";
@@ -504,11 +506,34 @@ function TableEditor({ value, onChange }: { value: TableValue; onChange: (v: Tab
 /* ---------------- 图片编辑器 ---------------- */
 
 function ImagesEditor({ items, onChange }: { items: ImageValue[]; onChange: (v: ImageValue[]) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
   const update = (i: number, patch: Partial<ImageValue>) => {
     const next = [...items];
     next[i] = { ...next[i], ...patch };
     onChange(next);
   };
+
+  /** 本地图片：压缩为 webp dataURL 随词条保存（与同步/备份一起走）；两级压缩 + 体积上限 */
+  const pickLocal = async (file: File) => {
+    setBusy(true);
+    try {
+      let small = await compressImageWithMeta(file, 1200, 0.82);
+      let dataUrl = await blobToDataUrl(small.blob);
+      if (dataUrl.length > 480_000) {
+        small = await compressImageWithMeta(file, 900, 0.7);
+        dataUrl = await blobToDataUrl(small.blob);
+      }
+      if (dataUrl.length > 720_000) throw new Error("压缩后仍超过约 0.5MB，换一张小一点的图片吧");
+      onChange([...items, { url: dataUrl, caption: "" }]);
+      toast.success("图片已加入（随词条保存，也会一起同步与备份）");
+    } catch (e) {
+      toast.error(`加入图片失败：${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-2">
       {items.map((img, i) => (
@@ -534,9 +559,26 @@ function ImagesEditor({ items, onChange }: { items: ImageValue[]; onChange: (v: 
           </IconButton>
         </div>
       ))}
-      <Button variant="tertiary" size="sm" onClick={() => onChange([...items, { url: "" }])}>
-        <Plus className="size-3.5" /> 添加图片
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="tertiary" size="sm" onClick={() => onChange([...items, { url: "" }])}>
+          <Plus className="size-3.5" /> 添加图片链接
+        </Button>
+        <Button variant="secondary" size="sm" loading={busy} onClick={() => fileRef.current?.click()}>
+          <ImagePlus className="size-3.5" /> 选本地图片
+        </Button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void pickLocal(f);
+            e.target.value = "";
+          }}
+        />
+        <span className="t-label-12 text-gray-700">本地图片会压缩后保存，建议单张 ≤ 0.5MB</span>
+      </div>
     </div>
   );
 }

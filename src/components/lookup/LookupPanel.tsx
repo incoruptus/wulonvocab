@@ -7,6 +7,7 @@ import type { Entry, LookupResult, Wordbook } from "@/lib/types";
 import { makeEntry } from "@/lib/presets";
 import { draftToValues } from "@/lib/importer";
 import { isValueEmpty } from "@/lib/sections";
+import { buildValueDiff, summarizeValue, type ValueDiffRow } from "@/lib/lookup/diff";
 import { runLookup } from "@/lib/lookup";
 import { runBatchLookup, type BatchLookupItem } from "@/lib/lookup/batch";
 import { peekLocalSuggestions } from "@/lib/lookup/localdict";
@@ -126,22 +127,54 @@ export function LookupPanel({
     }
   };
 
-  const applyResult = (result: LookupResult, entry: Entry) => {
+  /** 应用前的字段级差异确认（默认勾选「新增」，已有内容需手动勾选才覆盖） */
+  const [diff, setDiff] = useState<{
+    entry: Entry;
+    label: string;
+    tags: string[];
+    full: Record<string, unknown>;
+    rows: ValueDiffRow[];
+    checked: Set<string>;
+  } | null>(null);
+
+  const openDiff = (result: LookupResult, entry: Entry) => {
     if (!result.draft) return;
-    // 只补空缺、不覆盖已填写内容（保护用户数据；需要覆盖时可在编辑器中手动更新）
-    const { values, added, skipped } = draftToValues(result.draft.values, book.schema, entry.values, { overwrite: false });
-    const tags = [...new Set([...entry.tags, ...(result.draft.suggestedTags ?? [])])];
-    useAppStore.getState().updateEntry(book.id, entry.id, {
+    // 归一化后的完整映射（overwrite:true 仅用于取「新值形态」，是否写入由勾选决定）
+    const { values: full } = draftToValues(result.draft.values, book.schema, entry.values, { overwrite: true });
+    const rows = buildValueDiff(entry.values, full, book.schema.sections);
+    if (!rows.length) {
+      toast.info("没有可写入的字段（内容已是最新）");
+      return;
+    }
+    setDiff({
+      entry,
+      label: result.sourceLabel,
+      tags: result.draft.suggestedTags ?? [],
+      full,
+      rows,
+      checked: new Set(rows.filter((r) => r.kind === "new").map((r) => r.key)),
+    });
+  };
+
+  const applyDiff = () => {
+    if (!diff) return;
+    const values = { ...diff.entry.values };
+    for (const row of diff.rows) {
+      if (diff.checked.has(row.key)) values[row.key] = diff.full[row.key];
+    }
+    const tags = [...new Set([...diff.entry.tags, ...diff.tags])];
+    useAppStore.getState().updateEntry(book.id, diff.entry.id, {
       values,
       tags,
-      source: { kind: "lookup", label: result.sourceLabel, at: now() },
+      source: { kind: "lookup", label: diff.label, at: now() },
     });
-    toast.success(`已填充 ${added.length} 个字段`, {
-      description: skipped.length
-        ? `保留 ${skipped.length} 个已填写字段未覆盖 · 来源：${result.sourceLabel}`
-        : `来源：${result.sourceLabel}`,
-    });
-    onApplied(entry.id);
+    toast.success(`已写入 ${diff.checked.size} 个字段`, { description: `词条「${diff.entry.headword}」，来源：${diff.label}` });
+    onApplied(diff.entry.id);
+    setDiff(null);
+  };
+
+  const applyResult = (result: LookupResult, entry: Entry) => {
+    openDiff(result, entry);
   };
 
   const createFromResult = (result: LookupResult) => {
@@ -305,6 +338,59 @@ export function LookupPanel({
             );
           })}
         </div>
+
+        {/* 应用前差异确认（B4）：勾选要写入的字段；已有内容默认不勾 */}
+        {diff ? (
+          <div className="space-y-3 rounded-lg bg-background-200 p-3 shadow-geist-border">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="t-label-13 font-medium text-gray-1000">
+                确认应用：{diff.entry.headword || "当前词条"}
+              </span>
+              <span className="t-label-12 text-gray-700">勾选要写入的字段（已有内容默认不勾，来源：{diff.label}）</span>
+              <Button size="sm" variant="tertiary" className="ml-auto" onClick={() => setDiff(null)}>
+                取消
+              </Button>
+            </div>
+            <ul className="scroll-thin max-h-[38vh] space-y-1.5 overflow-y-auto">
+              {diff.rows.map((row) => (
+                <li key={row.key} className="flex items-start gap-2.5 rounded-md bg-background-100 px-2.5 py-2 shadow-geist-border">
+                  <Checkbox
+                    checked={diff.checked.has(row.key)}
+                    onCheckedChange={(v) =>
+                      setDiff((d) => {
+                        if (!d) return d;
+                        const next = new Set(d.checked);
+                        if (v) next.add(row.key);
+                        else next.delete(row.key);
+                        return { ...d, checked: next };
+                      })
+                    }
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="t-label-13 text-gray-1000">{row.label}</span>
+                      <Badge variant={row.kind === "new" ? "blue" : "amber"} size="sm">
+                        {row.kind === "new" ? "新增" : "覆盖"}
+                      </Badge>
+                    </div>
+                    <div className="t-label-12 min-w-0 text-gray-700">
+                      {row.kind === "conflict" ? (
+                        <>
+                          <span className="line-through opacity-60">{summarizeValue(row.type, row.current)}</span>
+                          {" → "}
+                        </>
+                      ) : null}
+                      <span className="text-gray-900">{summarizeValue(row.type, row.incoming)}</span>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <Button size="sm" disabled={diff.checked.size === 0} onClick={applyDiff}>
+              应用选中 {diff.checked.size} 个字段
+            </Button>
+          </div>
+        ) : null}
 
         <Tabs defaultValue={initialTab ?? "single"}>
           <TabsList>

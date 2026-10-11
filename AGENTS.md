@@ -159,6 +159,10 @@
 - **词条合并单一真源**：`importer.ts` 的 `mergeEntryBodies()` 是唯一合并语义（保留目标 id/词头/createdAt/srs，
   标签并集、星标取或、数组去重拼接、对象浅并、字符串换行相连）；导入去重（`mergeDuplicateEntries`）与
   批量合并（`store.mergeEntries`）必须共用，不得各写一套；批量合并删源必须记墓碑且经 `removeEntries` 同款写法；
+- **本地图片约定**：图片字段的本地文件一律走 `ValueEditor` 的「选本地图片」→ `compressImageWithMeta`
+  （两级压缩：1200/0.82 不足再 900/0.7）→ dataURL 内嵌 `ImageValue.url`（**上限 ~0.5MB**）；
+  值随同步载荷与备份一起走，禁止引入 Blob URL（刷新即失效）；**检索结果的应用必须经差异确认面板**
+  （`lookup/diff.ts`：新增默认勾、已有默认保、覆盖手动勾）——不得在 UI 层绕过它直接整体写入；
 - **学习会话键位**：翻卡模式桌面 D/F/J/K＝忘记/模糊/记得/轻松（1-4 兼容），空格＝揭示答案 /（揭示后）记得；
   选择题 W/E/I/O＝直选四项（点选＝判定）、F/J＝上一个/下一个词（不评分，跳过词本轮稍后重现）、空格＝继续；
   U 撤销、R 重播、`S` 星标、`?` 快捷键帮助、Esc 退出；键位提示一律用 `Kbd`/`KbdGroup`（`ui/misc.tsx`），
