@@ -3,9 +3,7 @@
 import { SkipForward, Star, Volume2 } from "lucide-react";
 import type { Entry } from "@/lib/types";
 import { speakWord } from "@/lib/study/tts";
-import { CHOICE_OPTION_KEYS } from "@/lib/study/keymap";
 import type { QuizQuestion } from "@/lib/study/quiz";
-import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/misc";
 import { CardActionButton } from "@/components/study/CardActionButton";
 import { useResolvedTheme } from "@/components/app/Providers";
@@ -15,8 +13,7 @@ import { cx } from "@/lib/utils";
  * 选择题卡片（四选一）：
  * - word2zh：正面显示单词 + 音标；zh2word / def2word：正面显示线索（隐藏词头，作答后揭晓）
  * - 词头可朗读、星标、跳过（稍后再次出现）；隐藏词头时朗读按钮在作答前不出现（避免泄底）
- * - 开启「稳 / 猜」时：答对后先确认再记分（空格 = 稳）
- * 桌面键位：W/E/I/O 直选（选中即判定），F/J 上一个 / 下一个词。
+ * - 直选键位由会话传入（默认 WEIO，可切 ABCD/自定义）；「稳 / 猜」确认在底部操作区（拇指区）
  */
 export function ChoiceCard({
   entry,
@@ -24,23 +21,21 @@ export function ChoiceCard({
   judged,
   chosen,
   starred,
+  optionKeys,
   onToggleStar,
   onChoose,
   onSkip,
-  confidencePending,
-  onConfident,
 }: {
   entry: Entry;
   question: QuizQuestion;
   judged: boolean;
   chosen: number | null;
   starred: boolean;
+  /** 四个选项的直选键（大写字面，用于键帽提示） */
+  optionKeys: string[];
   onToggleStar: () => void;
   onChoose: (i: number) => void;
   onSkip: () => void;
-  /** 答对后待确认「稳 / 猜」 */
-  confidencePending?: boolean;
-  onConfident?: (guessed: boolean) => void;
 }) {
   const isDark = useResolvedTheme() === "dark";
   const pron = (entry.values["phonetic"] ?? {}) as { uk?: string; us?: string };
@@ -157,27 +152,12 @@ export function ChoiceCard({
               </span>
               <span className="min-w-0 flex-1">{opt.text}</span>
               <span className="wv-desktop-only hidden shrink-0 sm:inline-flex">
-                <Kbd>{CHOICE_OPTION_KEYS[i].toUpperCase()}</Kbd>
+                <Kbd>{optionKeys[i] ?? "ABCD"[i]}</Kbd>
               </span>
             </button>
           );
         })}
       </div>
-
-      {/* 「稳 / 猜」确认（答对后；空格 = 稳） */}
-      {confidencePending ? (
-        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl bg-amber-700/10 px-3.5 py-3">
-          <span className="t-label-13 min-w-0 flex-1 text-amber-900">答对了。刚才是稳稳想起，还是猜中的？</span>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button size="sm" variant="secondary" onClick={() => onConfident?.(false)}>
-              稳 <span className="wv-desktop-only hidden sm:inline">（空格）</span>
-            </Button>
-            <Button size="sm" variant="tertiary" className="text-amber-900" onClick={() => onConfident?.(true)}>
-              猜 · 记「模糊」
-            </Button>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

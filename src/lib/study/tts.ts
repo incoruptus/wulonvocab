@@ -19,3 +19,13 @@ export function speakWord(text: string, lang = "en-US", rate = 0.95): void {
     /* 忽略语音错误 */
   }
 }
+
+/** 停掉当前/排队的语音（退出会话、重新开始等场景） */
+export function cancelSpeech(): void {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  try {
+    window.speechSynthesis?.cancel();
+  } catch {
+    /* ignore */
+  }
+}

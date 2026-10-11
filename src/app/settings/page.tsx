@@ -27,6 +27,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { SyncSection } from "@/components/sync/SyncSection";
 import { AcknowledgmentsDialog } from "@/components/app/Acknowledgments";
 import { useSyncCommit } from "@/components/app/useSyncCommit";
+import { choiceKeyPresetOf, CHOICE_KEY_PRESETS, normalizeChoiceKeys, validateChoiceKeys } from "@/lib/study/keys";
 import { AccentPicker, Badge, Card, CardTitle, EmptyState, SegmentedControl } from "@/components/ui/misc";
 import { Dialog, DialogFooter, DialogHeader } from "@/components/ui/overlay";
 import { cx, downloadText } from "@/lib/utils";
@@ -46,6 +47,14 @@ export default function SettingsPage() {
 
   const [clearOpen, setClearOpen] = useState(false);
   const [ackOpen, setAckOpen] = useState(false);
+
+  // 学习偏好：直选键位（WEIO / ABCD / 自定义；自定义草稿本地校验）
+  const choiceKeys = useMemo(() => normalizeChoiceKeys(settings.choiceKeys), [settings.choiceKeys]);
+  const [customKeysMode, setCustomKeysMode] = useState(false);
+  const [keyDraft, setKeyDraft] = useState<string[]>([]);
+  const keyMode: "weio" | "abcd" | "custom" = customKeysMode ? "custom" : choiceKeyPresetOf(choiceKeys);
+  const keyCheck = customKeysMode ? validateChoiceKeys(keyDraft) : ({ ok: true } as const);
+  const keyError = keyCheck.ok ? null : keyCheck.error;
   const [dictBusy, setDictBusy] = useState(false);
   const [builtinBusy, setBuiltinBusy] = useState<string | null>(null);
   const [builtinProgress, setBuiltinProgress] = useState(0);
@@ -134,6 +143,84 @@ export default function SettingsPage() {
               <AccentPicker value={settings.accent} onChange={(v) => setSettings({ accent: v })} />
               <p className="t-label-12 text-gray-700">用于界面点缀；导出卡片的强调色在导出工作室中单独设置。明暗模式与强调色是本机偏好，不会随跨端同步改动其他设备。</p>
             </div>
+          </div>
+        </Card>
+
+        {/* 学习偏好 */}
+        <Card className="space-y-4">
+          <CardTitle desc="只影响学习会话；会随跨端同步。">学习偏好</CardTitle>
+          <div className="space-y-1.5">
+            <div className="t-label-13 font-medium text-gray-900">关闭学习后去往</div>
+            <Select
+              value={settings.studyExit ?? "book"}
+              onValueChange={(v) => setSettings({ studyExit: v as "book" | "learn" | "back" })}
+              options={[
+                { value: "book", label: "词库页（默认）" },
+                { value: "learn", label: "学习中心" },
+                { value: "back", label: "返回上一页" },
+              ]}
+            />
+            <p className="t-label-12 text-gray-700">「返回上一页」在没有上一页时会回到词库页。退出时仍可选择保留或放弃本轮进度。</p>
+          </div>
+          <div className="space-y-2.5 border-t border-gray-300 pt-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="t-label-13 font-medium text-gray-900">选择题直选键位（网页端）</div>
+                <div className="t-label-12 text-gray-700">键盘直选四个选项；F / J / R / S / U 为会话保留键。</div>
+              </div>
+              <SegmentedControl
+                value={keyMode}
+                onValueChange={(v) => {
+                  if (v === "custom") {
+                    setCustomKeysMode(true);
+                    setKeyDraft(choiceKeys);
+                    return;
+                  }
+                  setCustomKeysMode(false);
+                  setSettings({ choiceKeys: [...CHOICE_KEY_PRESETS[v as "weio" | "abcd"]] });
+                  toast.success(`直选键位已切换为 ${v.toUpperCase()}`);
+                }}
+                options={[
+                  { value: "weio", label: "WEIO" },
+                  { value: "abcd", label: "ABCD" },
+                  { value: "custom", label: "自定义" },
+                ]}
+                size="sm"
+              />
+            </div>
+            {keyMode === "custom" ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  {[0, 1, 2, 3].map((i) => (
+                    <Input
+                      key={i}
+                      value={(keyDraft[i] ?? "").toUpperCase()}
+                      onChange={(e) => {
+                        const next = [...keyDraft];
+                        next[i] = e.target.value.slice(-1).toLowerCase();
+                        setKeyDraft(next);
+                      }}
+                      aria-label={`第 ${i + 1} 个选项的键位`}
+                      className="t-mono-13 h-9 w-12 text-center"
+                    />
+                  ))}
+                  <Button
+                    size="sm"
+                    disabled={Boolean(keyError)}
+                    onClick={() => {
+                      const r = validateChoiceKeys(keyDraft);
+                      if (r.ok) {
+                        setSettings({ choiceKeys: [...r.keys] });
+                        toast.success("键位已保存");
+                      }
+                    }}
+                  >
+                    保存键位
+                  </Button>
+                </div>
+                {keyError ? <p className="t-label-12 text-red-900">{keyError}</p> : null}
+              </div>
+            ) : null}
           </div>
         </Card>
 

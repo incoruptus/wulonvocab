@@ -18,9 +18,10 @@ import {
 } from "@/lib/study/engine";
 import { buildQueue, entryById, requeueInsertIndex, studyConfigOf, studyOverview, type QueueItem, type StudyMode, type StudyOverview } from "@/lib/study/queue";
 import { buildQuizQuestion, type QuizQuestion } from "@/lib/study/quiz";
-import { CHOICE_OPTION_KEYS, KEYMAP_CHOICE, KEYMAP_COMMON, KEYMAP_FLIP, type KeyBinding } from "@/lib/study/keymap";
+import { KEYMAP_CHOICE, KEYMAP_COMMON, KEYMAP_FLIP, type KeyBinding } from "@/lib/study/keymap";
 import type { StudyConfig, StudySrs } from "@/lib/study/types";
-import { speakWord } from "@/lib/study/tts";
+import { speakWord, cancelSpeech } from "@/lib/study/tts";
+import { choiceKeyPresetOf, CHOICE_KEY_PRESETS, normalizeChoiceKeys, type ChoiceKeys } from "@/lib/study/keys";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, Kbd, KbdGroup, SegmentedControl } from "@/components/ui/misc";
 import { Slider, SwitchRow } from "@/components/ui/field";
@@ -65,6 +66,22 @@ export function StudySession({ book }: { book: Wordbook }) {
   const applyReview = useAppStore((s) => s.applyReview);
   const undoReview = useAppStore((s) => s.undoReview);
   const setStudyConfig = useAppStore((s) => s.setStudyConfig);
+  const setAppSettings = useAppStore((s) => s.setSettings);
+
+  /** 选择题直选键位（可切换 WEIO / ABCD / 自定义；读取经容错归一化） */
+  const rawChoiceKeys = useAppStore((s) => s.settings.choiceKeys);
+  const choiceKeys = useMemo(() => normalizeChoiceKeys(rawChoiceKeys), [rawChoiceKeys]);
+
+  /** 关闭学习会话后的去向（设置 → 学习偏好：词库页 / 学习中心 / 返回上一页） */
+  const exitStudy = useCallback(() => {
+    cancelSpeech();
+    const dest = useAppStore.getState().settings.studyExit ?? "book";
+    if (dest === "learn") router.push("/learn");
+    else if (dest === "back") {
+      if (typeof window !== "undefined" && window.history.length > 1) router.back();
+      else router.push(`/book?id=${book.id}`);
+    } else router.push(`/book?id=${book.id}`);
+  }, [router, book.id]);
 
   // 开始学习之前：拉一轮最新进度（静默；未配置自动同步时无感）
   useEffect(() => {
@@ -101,6 +118,12 @@ export function StudySession({ book }: { book: Wordbook }) {
   const [judged, setJudged] = useState(false);
   /** 本次会话跳过的词（未作答，F 返回用；上限 50 条） */
   const skippedRef = useRef<QueueItem[]>([]);
+  /** 本轮已提交评分的快照（「放弃进度并退出」按逆序回滚） */
+  const sessionGradesRef = useRef<
+    { entryId: string; before?: StudySrs; rating: GradeValue; elapsedMs: number; dayKey?: string }[]
+  >([]);
+  /** 放弃进度的二次确认（对话框内两段式） */
+  const [abandonArmed, setAbandonArmed] = useState(false);
   /** 快捷键帮助弹窗 */
   const [helpOpen, setHelpOpen] = useState(false);
   /** 正确项位置洗牌袋（每答一题轮换；用 ref 以免触发题目重建） */
@@ -155,6 +178,9 @@ export function StudySession({ book }: { book: Wordbook }) {
     return () => cancelAnimationFrame(raf);
   }, [book, phase]);
 
+  // 离开会话页面时，停掉还在播的语音
+  useEffect(() => () => cancelSpeech(), []);
+
   // 会话中词条被删除时跳过
   useEffect(() => {
     if (phase === "session" && queue.length > 0 && !current) {
@@ -181,6 +207,7 @@ export function StudySession({ book }: { book: Wordbook }) {
 
   const startSession = useCallback(
     (mode: StudyMode) => {
+      cancelSpeech(); // 清掉上一局可能还在播的语音
       const items = buildQueue(useAppStore.getState().books.find((b) => b.id === book.id) ?? book, mode, Date.now(), {
         allowSimilar,
       });
@@ -200,6 +227,7 @@ export function StudySession({ book }: { book: Wordbook }) {
       setJudged(false);
       setPendingConfidence(false);
       skippedRef.current = [];
+      sessionGradesRef.current = [];
       cardStartRef.current = Date.now();
       setPhase("session");
       const first = entryById(book, items[0].entryId);
@@ -230,6 +258,7 @@ export function StudySession({ book }: { book: Wordbook }) {
         easy: st.easy + (rating === 4 ? 1 : 0),
       }));
       setUndo({ entryId: current.id, before: res.before, rating, elapsedMs: elapsed, isNew: isNewSrs(res.before), dayKey: res.dayKey });
+      sessionGradesRef.current.push({ entryId: current.id, before: res.before, rating, elapsedMs: elapsed, dayKey: res.dayKey });
       gradedRef.current = { entryId: current.id, isNew: isNewSrs(res.before), next: res.next };
       inputLockRef.current = Date.now() + 180;
       return true;
@@ -319,10 +348,13 @@ export function StudySession({ book }: { book: Wordbook }) {
     [current, revealed, commitGrade, advanceCard],
   );
 
-  /** 作答后朗读（选择题统一在判定/确认后朗读，隐藏词头题型也不会泄底） */
-  const speakAnswer = useCallback(() => {
-    if (cfg.autoSpeak && current) speakWord(current.headword, pronLang(current));
-  }, [cfg.autoSpeak, current]);
+  /** 朗读某词条（规则：朗读只发生在「该词可见的那一刻」，绝不在翻页后为上一词发声） */
+  const speakEntry = useCallback(
+    (entry: Entry | null | undefined) => {
+      if (cfg.autoSpeak && entry) speakWord(entry.headword, pronLang(entry));
+    },
+    [cfg.autoSpeak],
+  );
 
   /** 「稳 / 猜」确认：稳 → Good；猜 → Hard（更贴近真实记忆） */
   const resolveConfidence = useCallback(
@@ -330,10 +362,9 @@ export function StudySession({ book }: { book: Wordbook }) {
       if (!pendingConfidence) return;
       setPendingConfidence(false);
       if (!commitGrade(guessed ? 2 : 3)) return;
-      speakAnswer();
       advanceCard();
     },
-    [pendingConfidence, commitGrade, speakAnswer, advanceCard],
+    [pendingConfidence, commitGrade, advanceCard],
   );
 
   /** 选择题作答 */
@@ -347,25 +378,26 @@ export function StudySession({ book }: { book: Wordbook }) {
       if (!correct) {
         if (!commitGrade(1)) return;
         setJudged(true);
-        speakAnswer();
+        speakEntry(current); // 判定即揭晓，此刻朗读（错题停留期间听完）
         return;
       }
       // 答对：开启「稳 / 猜」时先确认再记分（自动前进暂停等待确认）
       if (cfg.choiceConfidence) {
         setJudged(true);
         setPendingConfidence(true);
+        speakEntry(current); // 词已揭晓；确认期间自然播完，翻页时不再补读
         return;
       }
       if (!commitGrade(3)) return;
       setJudged(true);
-      speakAnswer();
+      speakEntry(current);
       // 答对且选择「自动」时才自动前进；答错一律停留等用户确认（给纠正编码的时间）
       if (cfg.choiceAdvance === "auto") {
         clearAutoTimer();
         autoTimerRef.current = setTimeout(advanceCard, 800);
       }
     },
-    [current, question, judged, commitGrade, cfg.choiceAdvance, cfg.choiceConfidence, speakAnswer, advanceCard, clearAutoTimer],
+    [current, question, judged, commitGrade, cfg.choiceAdvance, cfg.choiceConfidence, speakEntry, advanceCard, clearAutoTimer],
   );
 
   const onUndo = useCallback(() => {
@@ -468,7 +500,12 @@ export function StudySession({ book }: { book: Wordbook }) {
         if (!judged) {
           if (Date.now() < inputLockRef.current) return;
           const k = ev.key.toLowerCase();
-          const idx = (CHOICE_OPTION_KEYS as readonly string[]).indexOf(k);
+          if (pendingConfidence && k === "g") {
+            ev.preventDefault();
+            resolveConfidence(true);
+            return;
+          }
+          const idx = (choiceKeys as readonly string[]).indexOf(k);
           if (idx >= 0 && idx < question.options.length) {
             ev.preventDefault();
             onChoose(idx);
@@ -516,7 +553,7 @@ export function StudySession({ book }: { book: Wordbook }) {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [phase, revealed, effectiveMode, question, judged, chosen, current, helpOpen, confirmExit, onReveal, onUndo, onGrade, onChoose, advanceCard, navigateCard, requestExit, cfg.choiceAdvance, pendingConfidence, resolveConfidence, toggleStar, book.id]);
+  }, [phase, revealed, effectiveMode, question, judged, chosen, current, helpOpen, confirmExit, onReveal, onUndo, onGrade, onChoose, advanceCard, navigateCard, requestExit, cfg.choiceAdvance, pendingConfidence, resolveConfidence, toggleStar, book.id, choiceKeys]);
 
   const doneCount = totalPlanned; // 计划总数（用于未来的进度文案扩展）
   void doneCount;
@@ -533,7 +570,9 @@ export function StudySession({ book }: { book: Wordbook }) {
         onConfig={(patch) => setStudyConfig(book.id, patch)}
         allowSimilar={allowSimilar}
         onAllowSimilar={setAllowSimilar}
-        onExit={() => router.push(`/book?id=${book.id}`)}
+        choicePreset={choiceKeyPresetOf(choiceKeys)}
+        onChoicePreset={(p) => setAppSettings({ choiceKeys: [...CHOICE_KEY_PRESETS[p]] })}
+        onExit={exitStudy}
       />
     );
   }
@@ -547,7 +586,7 @@ export function StudySession({ book }: { book: Wordbook }) {
         durationMs={duration}
         onRestart={() => startSession("mixed")}
         onHome={() => setPhase("home")}
-        onExit={() => router.push(`/book?id=${book.id}`)}
+        onExit={exitStudy}
       />
     );
   }
@@ -599,11 +638,10 @@ export function StudySession({ book }: { book: Wordbook }) {
                 judged={judged}
                 chosen={chosen}
                 starred={current.starred}
+                optionKeys={choiceKeys.map((k) => k.toUpperCase())}
                 onToggleStar={() => toggleStar(book.id, current.id)}
                 onChoose={onChoose}
                 onSkip={() => navigateCard(1)}
-                confidencePending={pendingConfidence}
-                onConfident={resolveConfidence}
               />
             ) : (
               <StudyCard
@@ -625,6 +663,32 @@ export function StudySession({ book }: { book: Wordbook }) {
       <footer role="group" aria-label="作答与评级" className="shrink-0 border-t border-gray-300 bg-background-100 px-3 pb-[max(0.6rem,env(safe-area-inset-bottom))] pt-2">
         {effectiveMode === "choice" && question ? (
           judged ? (
+            pendingConfidence ? (
+              <div className="mx-auto grid max-w-xl grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => resolveConfidence(false)}
+                  className="flex h-14 flex-col items-center justify-center gap-0.5 rounded-xl bg-gray-1000 text-background-100 transition-colors hover:bg-gray-900"
+                >
+                  <span className="flex items-center gap-1.5 text-[15px] font-medium">
+                    稳稳想起
+                    <Kbd className="wv-desktop-only hidden border-white/25 bg-white/15 text-white shadow-none sm:inline-flex">空格</Kbd>
+                  </span>
+                  <span className="t-label-12 opacity-75">记为「记得」</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => resolveConfidence(true)}
+                  className="flex h-14 flex-col items-center justify-center gap-0.5 rounded-xl bg-amber-700/20 text-amber-900 transition-colors hover:bg-amber-700/30"
+                >
+                  <span className="flex items-center gap-1.5 text-[15px] font-medium">
+                    猜的
+                    <Kbd className="wv-desktop-only hidden border-amber-700/30 bg-white/50 shadow-none sm:inline-flex">G</Kbd>
+                  </span>
+                  <span className="t-label-12 opacity-80">记为「模糊」</span>
+                </button>
+              </div>
+            ) : (
             <div className="mx-auto flex max-w-xl items-center gap-2">
               <div
                 role="status"
@@ -647,10 +711,11 @@ export function StudySession({ book }: { book: Wordbook }) {
                 </Button>
               ) : null}
             </div>
+            )
           ) : (
             <div className="mx-auto flex h-12 max-w-xl items-center justify-center gap-3 text-[13px] text-gray-700">
               <span className="wv-desktop-only hidden items-center gap-1.5 sm:inline-flex">
-                <KbdGroup keys={["W", "E", "I", "O"]} /> 选答案
+                <KbdGroup keys={choiceKeys.map((k) => k.toUpperCase())} /> 选答案
               </span>
               <span className="wv-desktop-only hidden items-center gap-1.5 sm:inline-flex">
                 <KbdGroup keys={["F", "J"]} /> 上/下一个词
@@ -697,21 +762,61 @@ export function StudySession({ book }: { book: Wordbook }) {
         )}
       </footer>
 
-      {/* 退出确认 */}
-      <Dialog open={confirmExit} onOpenChange={setConfirmExit}>
-        <DialogHeader title="结束本次学习？" desc={`已完成 ${stats.answered} 张卡片，进度已自动保存。`} />
+      {/* 退出确认：保留进度 / 放弃本轮进度（两段式） */}
+      <Dialog
+        open={confirmExit}
+        onOpenChange={(v) => {
+          if (!v) setAbandonArmed(false);
+          setConfirmExit(v);
+        }}
+      >
+        <DialogHeader
+          title="结束本次学习？"
+          desc={`已完成 ${stats.answered} 张卡片；默认保留进度，下次接着学。`}
+        />
+        <DialogBody>
+          <p className="t-label-12 text-gray-700">
+            {stats.answered > 0
+              ? "也可以放弃本轮进度：本次会话里评过的词会回到开始前的状态（每日统计一并回滚）。"
+              : "本轮还没有评分记录。"}
+          </p>
+        </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={() => setConfirmExit(false)}>
             继续学习
           </Button>
-          <Button variant="error" onClick={() => router.push(`/book?id=${book.id}`)}>
-            退出
+          {stats.answered > 0 ? (
+            <Button
+              variant="secondary"
+              className={cx(abandonArmed && "text-red-900")}
+              onClick={() => {
+                if (!abandonArmed) {
+                  setAbandonArmed(true);
+                  return;
+                }
+                const grades = sessionGradesRef.current;
+                for (let i = grades.length - 1; i >= 0; i -= 1) {
+                  const g = grades[i];
+                  undoReview(book.id, g.entryId, g.before, g.rating, g.elapsedMs, g.dayKey);
+                }
+                sessionGradesRef.current = [];
+                setAbandonArmed(false);
+                setConfirmExit(false);
+                toast.success(`已放弃本轮进度（回滚 ${grades.length} 次作答）`);
+                exitStudy();
+              }}
+            >
+              {abandonArmed ? `确认放弃（回滚 ${stats.answered} 次作答）` : "放弃进度并退出"}
+            </Button>
+          ) : null}
+          <Button variant="error" onClick={exitStudy}>
+            保留进度退出
           </Button>
         </DialogFooter>
       </Dialog>
 
         {/* 快捷键帮助（功能 | 键位 两列） */}
-      <ShortcutHelp open={helpOpen} onOpenChange={setHelpOpen} mode={effectiveMode} />
+      <ShortcutHelp open={helpOpen} onOpenChange={setHelpOpen} mode={effectiveMode} choiceKeys={choiceKeys} />
     </div>
   );
 }
@@ -726,6 +831,8 @@ function HomeView({
   onConfig,
   allowSimilar,
   onAllowSimilar,
+  choicePreset,
+  onChoicePreset,
   onExit,
 }: {
   book: Wordbook;
@@ -735,6 +842,8 @@ function HomeView({
   onConfig: (patch: Partial<StudyConfig>) => Promise<boolean> | null | void;
   allowSimilar: boolean;
   onAllowSimilar: (v: boolean) => void;
+  choicePreset: "weio" | "abcd" | "custom";
+  onChoicePreset: (p: "weio" | "abcd") => void;
   onExit: () => void;
 }) {
   const nothingToday = overview.due === 0 && overview.newRemaining === 0;
@@ -875,6 +984,23 @@ function HomeView({
                 disabled={configPending}
                 onCheckedChange={(v) => runConfig(() => onConfig({ choiceConfidence: v }))}
               />
+              <div className="space-y-1.5 border-t border-gray-300 pt-3">
+                <div className="t-label-13 text-gray-900">直选键位（网页端）</div>
+                <SegmentedControl
+                  value={choicePreset === "custom" ? "" : choicePreset}
+                  onValueChange={(v) => onChoicePreset(v as "weio" | "abcd")}
+                  options={[
+                    { value: "weio", label: "WEIO" },
+                    { value: "abcd", label: "ABCD" },
+                  ]}
+                  grow
+                />
+                <p className="t-label-12 text-gray-700">
+                  {choicePreset === "custom"
+                    ? "当前为自定义键位，到「设置 → 学习偏好」里编辑。"
+                    : "想换成别的键位？到「设置 → 学习偏好」自定义，会帮你检查冲突。"}
+                </p>
+              </div>
             </div>
           ) : null}
           <SwitchRow
@@ -1013,16 +1139,23 @@ function ShortcutHelp({
   open,
   onOpenChange,
   mode,
+  choiceKeys,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   mode: "flip" | "choice";
+  choiceKeys: ChoiceKeys;
 }) {
+  const choiceItems: KeyBinding[] = [
+    { label: "选择答案", keys: choiceKeys.map((k) => k.toUpperCase()), desc: "对应四个选项，直接选中即判定" },
+    { label: "答对后确认", keys: ["空格", "G"], desc: "空格＝稳稳想起；G＝猜的（记模糊）" },
+    ...KEYMAP_CHOICE.slice(1),
+  ];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogHeader title="快捷键" desc="桌面端使用；移动端可直接点按操作。" />
       <DialogBody className="space-y-4">
-        <KeySection title={mode === "choice" ? "选择题模式" : "翻卡模式"} items={mode === "choice" ? KEYMAP_CHOICE : KEYMAP_FLIP} />
+        <KeySection title={mode === "choice" ? "选择题模式" : "翻卡模式"} items={mode === "choice" ? choiceItems : KEYMAP_FLIP} />
         <KeySection title="通用" items={KEYMAP_COMMON} />
       </DialogBody>
       <DialogFooter>

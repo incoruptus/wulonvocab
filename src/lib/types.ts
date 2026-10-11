@@ -372,6 +372,10 @@ export interface AppSettings {
   uiScale: number;
   sidebarCollapsed: boolean;
   lastBookId: string | null;
+  /** 选择题直选键位（4 个字母；默认 WEIO，可切换 ABCD 或自定义；读取经 normalizeChoiceKeys） */
+  choiceKeys?: string[];
+  /** 关闭学习会话后的去向（默认词库页） */
+  studyExit?: "book" | "learn" | "back";
   /** 最近一次本地修改时间（同步冲突按「较新变更胜」；0 / 缺省 = 从未改过） */
   updatedAt?: number;
 }

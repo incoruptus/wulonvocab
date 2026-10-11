@@ -172,6 +172,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   uiScale: 1,
   sidebarCollapsed: false,
   lastBookId: null,
+  choiceKeys: ["w", "e", "i", "o"],
+  studyExit: "book",
   updatedAt: 0,
 };
 
