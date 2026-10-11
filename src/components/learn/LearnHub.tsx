@@ -190,9 +190,21 @@ export function LearnHub() {
         {/* 热力图 + 健康指标 */}
         {m ? (
           <Card className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="t-h-14">复习热力图</div>
-              <div className="t-label-12 flex flex-wrap gap-x-4 text-gray-800">
+            <div className="t-h-14">复习热力图</div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-6">
+              <div className="min-w-0">
+                <Heatmap counts={m.heatmap} />
+              </div>
+              <div className="order-first flex flex-wrap gap-x-5 gap-y-1 t-label-12 text-gray-800 sm:order-none sm:ml-auto sm:flex-col sm:items-end sm:gap-y-2 sm:pt-0.5 sm:text-right">
+                {m.streak > 0 ? (
+                  <span>
+                    连续学习：<span className="tabular-nums">{m.streak} 天</span>
+                  </span>
+                ) : null}
+                <span>
+                  近 13 周复习：
+                  <span className="tabular-nums">{Object.values(m.heatmap).reduce((a, b) => a + b, 0)}</span> 次
+                </span>
                 {m.accuracy30 !== null ? (
                   <span>
                     近 30 天正确率 ≈{" "}
@@ -207,7 +219,6 @@ export function LearnHub() {
                 ) : null}
               </div>
             </div>
-            <Heatmap counts={m.heatmap} />
           </Card>
         ) : null}
 

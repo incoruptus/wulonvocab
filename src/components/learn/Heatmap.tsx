@@ -52,14 +52,14 @@ export function Heatmap({ counts, weeks = 13 }: { counts: Record<string, number>
 
   return (
     <div className="overflow-x-auto scroll-thin">
-      <div className="flex gap-[3px]">
+      <div className="flex gap-[3px] sm:gap-1">
         {grid.map((col, ci) => (
-          <div key={ci} className="flex flex-col gap-[3px]">
+          <div key={ci} className="flex flex-col gap-[3px] sm:gap-1">
             {col.map((cell) => (
               <div
                 key={cell.date}
                 title={`${cell.date} · ${cell.count} 次复习`}
-                className={cx("size-3 rounded-[3px]", LEVEL_CLASS[level(cell.count)])}
+                className={cx("size-3 rounded-[3px] sm:size-3.5", LEVEL_CLASS[level(cell.count)])}
               />
             ))}
           </div>
@@ -68,7 +68,7 @@ export function Heatmap({ counts, weeks = 13 }: { counts: Record<string, number>
       <div className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-700">
         <span>少</span>
         {LEVEL_CLASS.map((c, i) => (
-          <span key={i} className={cx("size-3 rounded-[3px]", c)} />
+          <span key={i} className={cx("size-3 rounded-[3px] sm:size-3.5", c)} />
         ))}
         <span>多</span>
         <span className="ml-2">最近 {weeks} 周</span>
