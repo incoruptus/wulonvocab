@@ -19,6 +19,7 @@
 | `npm run lint` | ESLint（零 error；warning 尽量清零） |
 | `npm test` | Vitest 单测（改核心库必跑） |
 | `npm run check:encoding` | 编码守卫：扫描源码字符串中的乱码残留（应为 0） |
+| `npm run e2e:sync` | 双设备同步 E2E（无头双上下文；需本地 dev server，不进 CI） |
 | `npm run sync:skill` | 修改 `skill/` 后必须运行，使应用内下载同步 |
 | `npm run validate -- file.json` | 校验词表 JSON |
 
@@ -46,6 +47,8 @@
    `createEmptyBook()`/`makeEntry()` 内部走 `uid()`，只能在事件处理器里调用）；不在 effect 里同步 setState；
    不在渲染期读写 ref。
 5. 中文源码文件必须保持 UTF-8（无 BOM）。修改文件用编辑器工具或 Node 脚本；**不要用 PowerShell `Set-Content` 直接改写含中文的文件**（PS5.1 默认 ANSI 会损坏编码）。
+   **主题上下文类**：瑞士主题必须在卡片/文档根挂 `wv-swiss`（经 `themeRootClass()`），卡片内 chips 由此降为纯文本；
+   **有效栏数**：辞书体宽页自动双栏由 `effectiveColumns()` 统一派生——**分页（paginate）与几何（computeGeometry）必须共用同一有效栏数**，任何一处直用 `settings.columns` 都会造成测量-渲染漂移。新增卡片宿主（预览/学习卡/测量层/打印）必须同时接上两者。
 6. 打印路径基于隐藏 iframe 克隆 + 动态 `@page`；`@page` 内注入字面 mm 值，不使用 CSS 变量。
 7. **导出配置生效约定**：强调色 / 行高 / 字体栈 / 纸张色调必须在 `.wv-doc` 根与页面壳上以 CSS 变量下发
    （`--wv-accent` / `--wv-lh` / `fontFamily` / `--wv-line` / `--wv-soft`，`.wv-card` 会读这些变量），
@@ -67,13 +70,28 @@
     （**写操作必须经 store actions**）；危险操作（改 schema / 删除）必须**两段式确认**（needsConfirm + apply）；
     系统提示必须保持**字节稳定**（前缀缓存），禁止把时间戳 / uid / 随机序塞进系统提示；
     工具结果截断（4KB）与步数上限（10）不得放宽而不加确认；导入的文件内容一律当数据（提示词内声明忽略其中指令）。
+12. **跨端同步约定**：合并引擎（`lib/sync/merge.ts`）必须保持**纯函数**（不 import store、不碰 IO，全部走参数）；
+  同步元数据（设备身份 / 墓碑 / 安全快照 / Gist 配置）一律存独立 IDB（`sync/meta.ts`），**不进主 store、不随同步载荷传播**；
+  删除动作必须写墓碑（`recordTombstones`），撤销恢复必须清墓碑（`clearTombstonesFor`）；
+  任何改变词条可见状态的写入（含星标 / 状态）都必须 bump `entry.updatedAt`（否则无法跨端合并）；
+  合并结果只经 `store.applySyncState` 落库（`lastBookId` 保持本机值）；加密/配对与传输层解耦，传输可插拔。
+  **Gist 自动档**：加密一律走 `sync/crypto.ts`（PBKDF2 60 万 → AES-GCM-256，gzip 能力探测，**上传内容永远是密文**）；
+  `sync/engine.ts` 保持**依赖注入**（不 import store，store 接线只在 UI 层）与单飞；Gist 分片阈值 460KB 不得上调
+  （GitHub API 1MB 截断线以内）；向导（`SyncGuideDialog`）文案结构「是什么 / 为什么 / 怎么做」，
+  改配置 UI 时必须同步走查向导三步不脱节。
 
 ## 控件形态约定（审计结论，新代码必须遵守）
 
 - **高度体系**：`xs` 24px / `sm` 32px / `md` 36px / `lg` 40px；同一行的控件必须同高对齐；
+  **已知刻意例外**：落地页主 CTA `h-11`（营销页放大）、品牌 logo `bg-black`（品牌色）、
+  词条预览卡白纸（模拟印刷所见）、导入弹层的「文件 / 粘贴」二选一保持内容宽度（同排有链接，不 `grow`）——这几处不要再"修正"；
 - 密集行内工具（列表项操作、义项头工具、表格增删按钮）= `xs`；表单行内的按钮 = `sm`；页头 / 工具栏 = `md`；
 - **禁止**用 `className="size-6/size-7"` 之类覆盖 IconButton 尺寸——统一走 `size` 变体；
 - `SegmentedControl`：表单内一律 `grow`（等分撑满整行），页头 Tab 场景保持内容宽度；
+- **禁止原生 `<select>` / `<datalist>`**（弹层样式由浏览器决定、不可控、与 Geist 不一致）：
+  短列表用 `ui/select.tsx`（Radix Select，Geist 弹层：hover/键盘/勾选/暗色）；
+  长列表或需要搜索/自定义值的用 `ui/combobox.tsx`（Popover + 过滤输入 + `allowCustom` + 右侧徽标）；
+  表单控件的 `id` 一律由 `Field`/`Labeled` 自动注入（label 关联）；触发器组件（Select/Combobox）必须接收并透传 `id`；
 - 主题 / 系统相关渲染必须读 `useResolvedTheme()`（来自 Providers），**禁止在渲染期访问 `document`**（hydration 不匹配）；
 - 移动端复杂设置采用**底部 Tab 工具抽屉**（导出工作室为 4 组：版面 / 卡片 / 外观 / 细节；非模态、预览常驻、
   `role="tablist"/"tab"`、safe-area 内边距），不要用「把侧栏堆在预览上方」的排法；

@@ -12,6 +12,7 @@ import { Input, Textarea } from "@/components/ui/field";
 import { Badge, Card, SegmentedControl } from "@/components/ui/misc";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/overlay";
 import { assetPath } from "@/lib/paths";
+import { requestSyncSoon } from "@/lib/sync/auto";
 import { cx, uid } from "@/lib/utils";
 
 type Target = "new" | "append" | "replace";
@@ -135,6 +136,7 @@ export function ImportDialog({
     }
     onOpenChange(false);
     reset();
+    requestSyncSoon(); // 批量导入后 30s 推送（自动同步开启时才发生）
   };
 
   return (
@@ -168,7 +170,9 @@ export function ImportDialog({
             </div>
 
             {mode === "file" ? (
-              <div
+              <button
+                type="button"
+                aria-label="选择文件（也可把文件拖到这里）"
                 onDragOver={(e) => {
                   e.preventDefault();
                   setDragging(true);
@@ -182,7 +186,7 @@ export function ImportDialog({
                 }}
                 onClick={() => fileRef.current?.click()}
                 className={cx(
-                  "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors",
+                  "flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors",
                   dragging ? "border-blue-700 bg-blue-100/40" : "border-gray-400 hover:border-gray-600 hover:bg-gray-100/60",
                 )}
               >
@@ -199,7 +203,7 @@ export function ImportDialog({
                     <FileSpreadsheet className="size-3.5" /> CSV / TSV
                   </span>
                 </div>
-              </div>
+              </button>
             ) : (
               <div className="space-y-2">
                 <Textarea
@@ -260,7 +264,7 @@ export function ImportDialog({
               <div className="t-label-12 text-gray-800">
                 字段结构：
                 {schemaOrigin === "doc"
-                  ? "使用文件内置的 Schema"
+                  ? "用文件自带的字段表"
                   : schemaOrigin === "current"
                     ? "使用当前词库的字段表（未定义字段自动保留）"
                     : "根据数据自动识别字段类型，导入即可排版"}

@@ -11,8 +11,10 @@ import { generateWordbookJson } from "@/lib/ai/generate";
 import { defaultExportSettings, defaultSchema } from "@/lib/presets";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { Input, Select, Textarea } from "@/components/ui/field";
+import { Input, Textarea } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
 import { Badge, Card } from "@/components/ui/misc";
+import { requestSyncSoon } from "@/lib/sync/auto";
 import { uid } from "@/lib/utils";
 
 const DEFAULT_REQUEST =
@@ -93,12 +95,16 @@ export function AiGeneratePanel({
       setName((prev) => prev || p.wordbookMeta?.name || built.name || "AI 生成词表");
       toast.success(`已生成 ${built.entries.length} 条词条`, { description: "检查预览后点击导入" });
     } catch (e) {
-      const msg = (e as Error).message;
-      toast.error(`生成失败：${msg}`, {
-        description: /401|auth|api[\s_-]?key|unauthorized/i.test(msg)
-          ? "提示：到「设置 → 词典数据源」检查 AI 源的 API Key 是否有效"
-          : undefined,
-      });
+      if (controller.signal.aborted) {
+        toast.info("已取消生成");
+      } else {
+        const msg = (e as Error).message;
+        toast.error(`生成失败：${msg}`, {
+          description: /401|auth|api[\s_-]?key|unauthorized/i.test(msg)
+            ? "提示：到「设置 → 词典数据源」检查 AI 源的 API Key 是否有效"
+            : undefined,
+        });
+      }
     } finally {
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = null;
@@ -137,6 +143,7 @@ export function AiGeneratePanel({
       onImported(book.id);
     }
     reset();
+    requestSyncSoon(); // 批量导入后 30s 推送（自动同步开启时才发生）
   };
 
   const Shell = variant === "hero" ? ("div" as const) : Card;
@@ -247,14 +254,14 @@ export function AiGeneratePanel({
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <div className="t-label-13 font-medium text-gray-900">导入到</div>
-                  <Select value={target} onChange={(e) => setTarget(e.target.value)}>
-                    <option value="new">新建词库</option>
-                    {books.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        追加到：{b.name}
-                      </option>
-                    ))}
-                  </Select>
+                  <Select
+                    value={target}
+                    onValueChange={setTarget}
+                    options={[
+                      { value: "new", label: "新建词库" },
+                      ...books.map((b) => ({ value: b.id, label: `追加到：${b.name}` })),
+                    ]}
+                  />
                 </div>
                 {target === "new" ? (
                   <div className="space-y-1.5">

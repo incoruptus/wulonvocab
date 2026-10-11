@@ -156,8 +156,12 @@ export async function chatCompletionMessage(
           signal: s,
         });
       } catch (e) {
-        // 网络层错误（DNS/代理/CORS）——给出可行动的提示
+        // 网络层错误（DNS/代理/CORS/超时/取消）——给出可行动的提示
         if ((e as Error).name === "AbortError") throw e;
+        if (opts.signal?.aborted) throw new LookupError("已取消");
+        if ((e as Error).message === "超时") {
+          throw new LookupError(`请求超时（${Math.round((opts.timeoutMs ?? 60000) / 1000)}s）——网络较慢或服务未响应`);
+        }
         throw new LookupError(`无法连接 AI 接口（${(e as Error).message}）；请检查 Base URL 与网络/跨域是否可用`);
       }
       const text = await res.text();
@@ -203,7 +207,8 @@ export async function chatCompletionMessage(
   try {
     return await attempt(true);
   } catch (e) {
-    if (e instanceof LookupError && /response_format|json_object|400/i.test(e.message)) {
+    // 仅在确实与 response_format/json 模式相关时降级重试（避免带图 400 等被整包重发、双倍计费）
+    if (e instanceof LookupError && /response_format|json_object/i.test(e.message)) {
       return attempt(false);
     }
     throw e;

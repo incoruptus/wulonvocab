@@ -24,29 +24,35 @@ function djb2(str: string): string {
   return (h >>> 0).toString(36);
 }
 
-function fingerprint(sources: LookupSourceConfig[], schema: Schema): string {
+function fingerprint(sources: LookupSourceConfig[], schema: Schema, localDictIds: string[]): string {
   const sourcesRaw = sources
     .filter((s) => s.enabled)
     .map((s) => `${s.kind}:${JSON.stringify(s.config)}`)
     .join("|");
   const schemaKeys = schema.sections.map((sec) => sec.key).join(",");
-  return `${djb2(sourcesRaw)}-${djb2(schemaKeys)}`;
+  // 本地词典集合参与指纹：换/加/删词典后旧结果立即失效（避免旧释义被补进词条）
+  const dictsRaw = [...localDictIds].sort().join(",");
+  return `${djb2(sourcesRaw)}-${djb2(schemaKeys)}-${djb2(dictsRaw)}`;
 }
 
-function keyFor(word: string, sources: LookupSourceConfig[], schema: Schema): string {
-  return `${word.toLowerCase()}::${fingerprint(sources, schema)}`;
+function keyFor(word: string, sources: LookupSourceConfig[], schema: Schema, localDictIds: string[]): string {
+  return `${word.toLowerCase()}::${fingerprint(sources, schema, localDictIds)}`;
 }
 
 export async function readLookupCache(
   word: string,
   sources: LookupSourceConfig[],
   schema: Schema,
+  localDictIds: string[] = [],
 ): Promise<{ results: LookupResult[]; at: number } | null> {
   try {
-    const res = await get<CacheEntry>(keyFor(word, sources, schema), store);
+    const key = keyFor(word, sources, schema, localDictIds);
+    const res = await get<CacheEntry>(key, store);
     if (!res) return null;
     if (Date.now() - res.at > LOOKUP_CACHE_TTL_MS) {
-      void del(keyFor(word, sources, schema), store);
+      // 条件删除：仅当条目仍是读到的这一份才删，避免误删并发新写入
+      const again = await get<CacheEntry>(key, store);
+      if (again && again.at === res.at) void del(key, store);
       return null;
     }
     return res;
@@ -59,12 +65,13 @@ export async function writeLookupCache(
   word: string,
   sources: LookupSourceConfig[],
   schema: Schema,
+  localDictIds: string[],
   results: LookupResult[],
 ): Promise<void> {
   if (!results.some((r) => r.ok)) return;
   try {
     await set(
-      keyFor(word, sources, schema),
+      keyFor(word, sources, schema, localDictIds),
       { at: Date.now(), results: results.map((r) => ({ ...r, fromCache: true })) } satisfies CacheEntry,
       store,
     );

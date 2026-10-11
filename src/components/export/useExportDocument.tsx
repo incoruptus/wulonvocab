@@ -6,7 +6,7 @@ import { computeGeometry, getPaperBox, mmToPx } from "@/lib/paper";
 import { buildSenseUnits, isValueEmpty, sortSections, valueLength, type SenseCell } from "@/lib/sections";
 import { paginate, type MeasuredBlock, type PaginationResult } from "@/lib/export/paginate";
 import { EntryHeaderBlock, fontStackFor, SectionBlock, type CardCtx } from "@/components/export/blocks";
-import { normalizeExportSettings, themeCssVars } from "@/lib/export/themes";
+import { effectiveColumns, normalizeExportSettings, themeCssVars, themeRootClass } from "@/lib/export/themes";
 
 const SPLITTABLE_TYPES: SectionType[] = ["senses", "examples", "keyvalue", "transforms", "image", "list", "tags", "table"];
 
@@ -85,10 +85,19 @@ export function useExportDocument(book: Wordbook, rawSettings: ExportSettings): 
     [],
   );
 
+  const box = useMemo(
+    () => (settings.paper === "custom" && settings.customPaper ? settings.customPaper : getPaperBox(settings.paper)),
+    [settings.paper, settings.customPaper],
+  );
+
+  // 辞书体宽页自动双栏（≥165mm 且当前 1 栏）：分页与几何共用同一有效栏数，防测量-渲染漂移
+  const columns = useMemo(() => {
+    const first = computeGeometry(box, settings.orientation, settings.margin, settings.columns, settings.columnGap);
+    return effectiveColumns(settings.cardStyle, settings.layout, settings.columns, first.content.width);
+  }, [box, settings.orientation, settings.margin, settings.columns, settings.columnGap, settings.cardStyle, settings.layout]);
+
   const geometry = useMemo<ExportGeometry>(() => {
-    const box =
-      settings.paper === "custom" && settings.customPaper ? settings.customPaper : getPaperBox(settings.paper);
-    const g = computeGeometry(box, settings.orientation, settings.margin, settings.columns, settings.columnGap);
+    const g = computeGeometry(box, settings.orientation, settings.margin, columns, settings.columnGap);
     return {
       paperMm: { width: g.page.width, height: g.page.height },
       pageW: mmToPx(g.page.width),
@@ -106,7 +115,7 @@ export function useExportDocument(book: Wordbook, rawSettings: ExportSettings): 
       },
       pageFontCss: `${(10.5 * settings.fontScale).toFixed(2)}pt`,
     };
-  }, [settings.paper, settings.customPaper, settings.orientation, settings.margin, settings.columns, settings.columnGap, settings.fontScale]);
+  }, [box, settings.orientation, settings.margin, columns, settings.columnGap, settings.fontScale]);
 
   const entries = useMemo(() => {
     const list = [...book.entries];
@@ -205,10 +214,10 @@ export function useExportDocument(book: Wordbook, rawSettings: ExportSettings): 
         settings.hideEmpty,
         settings.writingLines,
         geometry.slotW.toFixed(1),
-        settings.columns,
+        columns,
         settings.layout,
       ].join("|"),
-    [book.id, book.updatedAt, entries.length, sections, settings, geometry.slotW],
+    [book.id, book.updatedAt, entries.length, sections, settings, geometry.slotW, columns],
   );
 
   useEffect(() => {
@@ -276,11 +285,11 @@ export function useExportDocument(book: Wordbook, rawSettings: ExportSettings): 
       }
     }
     return paginate(measured, {
-      columns: settings.columns,
+      columns,
       columnHeight: geometry.contentH,
       mode: settings.paginationMode ?? "align",
     });
-  }, [specs, heights, settings.columns, settings.layout, settings.paginationMode, geometry.contentH]);
+  }, [specs, heights, columns, settings.layout, settings.paginationMode, geometry.contentH]);
 
   const ready = settings.layout === "grid" ? true : plan !== null;
 
@@ -320,6 +329,7 @@ export function MeasureLayer({ doc }: { doc: ExportDocument }) {
       }}
     >
       <div
+        className={themeRootClass(ctx.settings.cardStyle)}
         style={{
           fontSize: geometry.pageFontCss,
           ["--wv-lh" as string]: ctx.settings.lineHeight,

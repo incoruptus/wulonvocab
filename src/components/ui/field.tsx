@@ -1,10 +1,10 @@
 "use client";
 
-import { forwardRef, useId } from "react";
+import { cloneElement, forwardRef, isValidElement, useId } from "react";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
-import { Check, ChevronDown } from "lucide-react";
+import { Check } from "lucide-react";
 import { cx } from "@/lib/utils";
 
 /* ---------------- 输入框 ---------------- */
@@ -42,31 +42,6 @@ export const Textarea = forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttrib
     );
   },
 );
-
-/* ---------------- 选择器 ---------------- */
-
-export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
-  wrapClassName?: string;
-}
-
-export function Select({ className, wrapClassName, children, ...props }: SelectProps) {
-  return (
-    <div className={cx("relative", wrapClassName)}>
-      <select
-        className={cx(
-          "h-9 w-full appearance-none rounded-md bg-background-100 pl-3 pr-8 text-sm text-gray-1000 shadow-geist-border",
-          "disabled:bg-gray-100 disabled:text-gray-700",
-          "focus-visible:outline-none focus-visible:shadow-[0_0_0_1px_var(--ds-focus-color),0_0_0_4px_color-mix(in_srgb,var(--ds-focus-color)_18%,transparent)]",
-          className,
-        )}
-        {...props}
-      >
-        {children}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-gray-800" />
-    </div>
-  );
-}
 
 /* ---------------- 开关 ---------------- */
 
@@ -116,8 +91,8 @@ export const Checkbox = forwardRef<
 
 export const Slider = forwardRef<
   React.ComponentRef<typeof SliderPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root>
->(function Slider({ className, ...props }, ref) {
+  React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root> & { ariaLabel?: string }
+>(function Slider({ className, ariaLabel, ...props }, ref) {
   return (
     <SliderPrimitive.Root
       ref={ref}
@@ -127,7 +102,10 @@ export const Slider = forwardRef<
       <SliderPrimitive.Track className="relative h-1 w-full grow overflow-hidden rounded-full bg-gray-300">
         <SliderPrimitive.Range className="absolute h-full bg-gray-1000" />
       </SliderPrimitive.Track>
-      <SliderPrimitive.Thumb className="block size-3.5 rounded-full bg-background-100 shadow-geist-border outline-none transition-transform hover:scale-110 focus-visible:shadow-[0_0_0_2px_var(--ds-background-100),0_0_0_4px_var(--ds-focus-color)]" />
+      <SliderPrimitive.Thumb
+        aria-label={ariaLabel}
+        className="block size-3.5 rounded-full bg-background-100 shadow-geist-border outline-none transition-transform hover:scale-110 focus-visible:shadow-[0_0_0_2px_var(--ds-background-100),0_0_0_4px_var(--ds-focus-color)]"
+      />
     </SliderPrimitive.Root>
   );
 });
@@ -151,6 +129,11 @@ export function Field({
 }) {
   const autoId = useId();
   const id = htmlFor ?? autoId;
+  // 把 id 注入子控件，保证 <label htmlFor> 真正关联（读屏/点击标签聚焦）
+  const control =
+    isValidElement(children) && !(children.props as { id?: string }).id
+      ? cloneElement(children as React.ReactElement<{ id?: string }>, { id })
+      : children;
   if (inline) {
     return (
       <div className={cx("flex items-center justify-between gap-3", className)}>
@@ -161,7 +144,7 @@ export function Field({
           {hint ? <p className="t-label-12 mt-0.5 text-gray-800">{hint}</p> : null}
         </div>
         <div className="shrink-0" id={`${id}-ctl`}>
-          {children}
+          {control}
         </div>
       </div>
     );
@@ -173,7 +156,7 @@ export function Field({
           {label}
         </label>
       ) : null}
-      {children}
+      {control}
       {hint ? <p className="t-label-12 text-gray-800">{hint}</p> : null}
     </div>
   );
@@ -186,12 +169,15 @@ export function SwitchRow({
   checked,
   onCheckedChange,
   disabled,
+  ariaLabel,
 }: {
   label: string;
   hint?: string;
   checked: boolean;
   onCheckedChange: (v: boolean) => void;
   disabled?: boolean;
+  /** label 为空（如行内仅有开关）时的可访问名称 */
+  ariaLabel?: string;
 }) {
   return (
     <div className="flex items-center justify-between gap-3 py-0.5">
@@ -199,7 +185,7 @@ export function SwitchRow({
         <div className="t-label-14 text-gray-1000">{label}</div>
         {hint ? <div className="t-label-12 text-gray-800">{hint}</div> : null}
       </div>
-      <Switch checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} />
+      <Switch checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} aria-label={ariaLabel ?? (label || undefined)} />
     </div>
   );
 }

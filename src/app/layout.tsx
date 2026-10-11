@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     template: "%s · WulonVocab",
   },
   description:
-    "WulonVocab：可自定义字段的单词本软件。字段自由组合、JSON 一键导入、A4/B5/A5 精美导出，打印装订即可成书。",
+    "你攒下的词，值得被认真对待——本地优先的单词本：字段自由组合、一键导入、A4/B5/A5 打印装订成书。",
 };
 
 const themeScript = `

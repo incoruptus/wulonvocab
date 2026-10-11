@@ -111,8 +111,8 @@ export interface CaptureOptions {
  * 这里改为：只内联「本页实际加载过」的字形分片（通常 5~10 个，几百 KB）——
  * 未加载的分片 = 页面上不存在的字形，不嵌也不影响渲染。
  */
-async function loadedFontEmbedCss(): Promise<string | undefined> {
-  if (typeof document === "undefined") return undefined;
+async function loadedFontEmbedCss(): Promise<string> {
+  if (typeof document === "undefined") return "";
   try {
     await document.fonts.ready;
   } catch {
@@ -122,7 +122,7 @@ async function loadedFontEmbedCss(): Promise<string | undefined> {
   for (const entry of performance.getEntriesByType("resource")) {
     if (/\.woff2?(\?|$)/.test(entry.name)) loaded.add(entry.name.split("?")[0]);
   }
-  if (!loaded.size) return undefined;
+  if (!loaded.size) return "";
 
   const dataCache = new Map<string, Promise<string>>();
   const inline = (url: string): Promise<string> => {
@@ -158,7 +158,13 @@ async function loadedFontEmbedCss(): Promise<string | undefined> {
       if (!src) continue;
       const urls = [...src.matchAll(/url\((?:"|')?([^"')]+)(?:"|')?\)/g)]
         .map((m) => m[1])
-        .filter((u) => loaded.has(new URL(u, base).href.split("?")[0]));
+        .filter((u) => {
+          try {
+            return loaded.has(new URL(u, base).href.split("?")[0]);
+          } catch {
+            return false; // 畸形 url 只跳过该条，不使整次内联降级
+          }
+        });
       if (!urls.length) continue;
       const sources: string[] = [];
       for (const u of urls) {
@@ -180,15 +186,19 @@ async function loadedFontEmbedCss(): Promise<string | undefined> {
       );
     }
   }
-  return rules.length ? rules.join("\n") : undefined;
+  return rules.length ? rules.join("\n") : "";
 }
 
-/** 每次导出重建（已加载分片集合会随页面使用而增长，不做跨导出缓存） */
-async function sharedFontCss(): Promise<string | undefined> {
+/**
+ * 每次导出重建（已加载分片集合会随页面使用而增长，不做跨导出缓存）。
+ * 注意：约定「空」必须返回 "" 而非 undefined —— html-to-image 对 fontEmbedCSS 为 null/undefined
+ * 时会回退到 getFontEmbedCSS() 全量内联（内存爆炸路径，见 AGENTS 硬约束 8）。
+ */
+async function sharedFontCss(): Promise<string> {
   try {
     return await loadedFontEmbedCss();
   } catch {
-    return undefined;
+    return "";
   }
 }
 

@@ -44,8 +44,20 @@ export async function downloadBuiltinDict(
   dict: BuiltinDict,
   onProgress?: (ratio: number) => void,
 ): Promise<string> {
-  const res = await fetch(assetPath(dict.file));
-  if (!res.ok) throw new Error(`下载失败（HTTP ${res.status}）`);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(new Error("超时")), 60000);
+  let res: Response;
+  try {
+    res = await fetch(assetPath(dict.file), { signal: ctrl.signal });
+  } catch (e) {
+    clearTimeout(timer);
+    if ((e as Error).message === "超时") throw new Error("下载超时（60s）——检查网络后重试");
+    throw e;
+  }
+  if (!res.ok) {
+    clearTimeout(timer);
+    throw new Error(`下载失败（HTTP ${res.status}）`);
+  }
   const total = Number(res.headers.get("content-length")) || dict.gzipBytes;
   let received = 0;
   let body: ReadableStream<Uint8Array>;
@@ -70,5 +82,7 @@ export async function downloadBuiltinDict(
   const decompressed = body.pipeThrough(
     new DecompressionStream("gzip") as unknown as TransformStream<Uint8Array, Uint8Array>,
   );
-  return await new Response(decompressed).text();
+  const text = await new Response(decompressed).text();
+  clearTimeout(timer);
+  return text;
 }

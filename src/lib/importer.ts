@@ -1,5 +1,6 @@
 import Papa from "papaparse";
 import type { Entry, Schema, SenseItem, Wordbook, WordbookMetaInfo } from "./types";
+import type { StudySrs } from "./study/types";
 import { makeEntry } from "./presets";
 import { inferSchema, keepExtras, labelForKey, mapRowToSchema, rowTags } from "./infer";
 import {
@@ -14,7 +15,9 @@ import {
   strList,
   normalizeValue,
   SECTIONS,
+  uniqueKey,
 } from "./sections";
+import { ACCENTS } from "./paper";
 import { isPlainObject, uid } from "./utils";
 
 /* ============================================================
@@ -93,7 +96,7 @@ export function classifyJson(data: unknown): ParsedImport {
 
   if (isDoc) {
     const entries = (obj.entries as unknown[]).filter(isPlainObject) as Record<string, unknown>[];
-    const schema = normalizeSchemaInput(obj.schema);
+    const schema = normalizeSchemaInput(obj.schema, warnings);
     const wb = isPlainObject(obj.wordbook) ? (obj.wordbook as Record<string, unknown>) : {};
     return {
       kind: "wulonvocab",
@@ -125,7 +128,7 @@ export function classifyJson(data: unknown): ParsedImport {
           description: typeof obj.description === "string" ? obj.description : undefined,
           tags: Array.isArray(obj.tags) ? obj.tags.map(String) : undefined,
         },
-        schema: normalizeSchemaInput(obj.schema),
+        schema: normalizeSchemaInput(obj.schema, warnings),
         warnings,
       };
     }
@@ -144,34 +147,74 @@ export function classifyJson(data: unknown): ParsedImport {
       return { headword: word, translation: v };
     });
     const kind = rows.length > 8 && rows.every(isEcDictRow) ? "ecdict" : "map";
-    if (kind === "map") warnings.push("按「单词 → 内容」映射的字典对象已自动展开");
+    if (kind === "map") warnings.push("「单词 → 内容」式的字典已自动展开成词条");
     return { kind, headers: collectHeaders(rows), rows, warnings };
   }
 
   return { kind: "unknown", headers: [], rows: [], warnings: ["无法识别的 JSON 结构"] };
 }
 
-function normalizeSchemaInput(input: unknown): Schema | undefined {
+function normalizeSchemaInput(input: unknown, warnings: string[] = []): Schema | undefined {
   if (!isPlainObject(input)) return undefined;
   const sections = (input as Record<string, unknown>).sections;
   if (!Array.isArray(sections)) return undefined;
   const out: Schema["sections"] = [];
+  const seenIds = new Set<string>();
+  const seenKeys = new Set<string>();
   sections.forEach((s, i) => {
-    if (!isPlainObject(s)) return;
+    if (!isPlainObject(s)) {
+      warnings.push("忽略了一个结构异常的字段定义");
+      return;
+    }
     const type = (typeof s.type === "string" ? s.type : "text") as Schema["sections"][number]["type"];
-    if (!SECTIONS[type]) return;
+    if (!SECTIONS[type]) {
+      warnings.push(`忽略了未知字段类型「${String(s.type ?? "")}」`);
+      return;
+    }
+    const def = SECTIONS[type];
+    const id = typeof s.id === "string" && s.id && !seenIds.has(s.id) ? s.id : uid();
+    seenIds.add(id);
+    let key = typeof s.key === "string" && s.key ? s.key : `sec_${i}`;
+    if (seenKeys.has(key)) {
+      const nk = uniqueKey(key, [...seenKeys]);
+      warnings.push(`重复的字段键「${key}」已改为「${nk}」`);
+      key = nk;
+    }
+    seenKeys.add(key);
+    // 选项按注册表加固：数字 clamp、枚举白名单（防 rating.max=百万 渲染爆炸、非法色值）
+    const defaults = def.defaults as Record<string, unknown>;
+    const merged: Record<string, unknown> = { ...defaults, ...(isPlainObject(s.options) ? (s.options as Record<string, unknown>) : {}) };
+    for (const f of def.optionFields) {
+      const v = merged[f.key];
+      if (v === undefined) continue;
+      if (f.kind === "number") {
+        const n = Number(v);
+        const min = f.min ?? 0;
+        const max = f.max ?? Number.MAX_SAFE_INTEGER;
+        merged[f.key] = Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : defaults[f.key];
+        if (Number.isFinite(n) && n > max) warnings.push(`字段「${key}」的数值超出范围，已收敛到 ${max}`);
+      } else if (f.kind === "select" && f.options) {
+        if (!f.options.some((o) => o.value === v)) {
+          merged[f.key] = defaults[f.key];
+          warnings.push(`字段「${key}」的选项值非法，已恢复默认`);
+        }
+      }
+    }
     out.push({
-      id: typeof s.id === "string" ? s.id : uid(),
-      key: typeof s.key === "string" && s.key ? s.key : `sec_${i}`,
+      id,
+      key,
       label: typeof s.label === "string" && s.label ? s.label : labelForKey(String(s.key ?? type)),
       type,
-      icon: typeof s.icon === "string" ? s.icon : SECTIONS[type].icon,
-      color: typeof s.color === "string" ? (s.color as never) : undefined,
+      icon: typeof s.icon === "string" ? s.icon : def.icon,
+      color:
+        typeof s.color === "string" && (Object.keys(ACCENTS) as string[]).includes(s.color)
+          ? (s.color as never)
+          : undefined,
       order: typeof s.order === "number" ? s.order : i,
       visible: s.visible !== false,
       builtin: Boolean(s.builtin),
       description: typeof s.description === "string" ? s.description : undefined,
-      options: { ...SECTIONS[type].defaults, ...(isPlainObject(s.options) ? (s.options as Record<string, unknown>) : {}) },
+      options: merged,
     });
   });
   return { version: 1, presetId: typeof input.presetId === "string" ? input.presetId : "imported", sections: out };
@@ -366,6 +409,18 @@ export interface RowsToEntriesResult {
   warnings: string[];
 }
 
+/** 文档携带的学习进度：只接受形状完好的 srs，其余丢弃（防畸形数据进学习引擎） */
+function sanitizeSrs(raw: unknown): StudySrs | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  // 注意：StudySrs 为 camelCase（elapsedDays/scheduledDays），与 ts-fsrs Card 的蛇形名不同
+  const required = ["due", "stability", "difficulty", "elapsedDays", "scheduledDays", "reps", "lapses", "state"] as const;
+  for (const k of required) {
+    if (typeof r[k] !== "number" || !Number.isFinite(r[k] as number)) return undefined;
+  }
+  return raw as StudySrs;
+}
+
 export function rowsToEntries(parsed: ParsedImport, schema?: Schema): RowsToEntriesResult {
   const warnings = [...parsed.warnings];
   const entries: Entry[] = [];
@@ -388,6 +443,7 @@ export function rowsToEntries(parsed: ParsedImport, schema?: Schema): RowsToEntr
         starred: Boolean(row.starred),
         values: schema ? mapValuesWithSchema(rawValues, schema) : { ...rawValues },
         source: { kind: "import", label: parsed.wordbookMeta?.name, at: now },
+        srs: sanitizeSrs(row.srs),
       });
       entries.push(entry);
       continue;

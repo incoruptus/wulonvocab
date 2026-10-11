@@ -15,11 +15,13 @@ import type {
 } from "./types";
 import type { MakeSectionInput } from "./sections";
 import { makeSection, sortSections, uniqueKey } from "./sections";
-import { createEmptyBook, createSampleBook as buildSampleBook, getPreset } from "./presets";
+import { createEmptyBook, createSampleBook as buildSampleBook, defaultExportSettings, getPreset } from "./presets";
 import { mergeDuplicateEntries } from "./importer";
-import { applyGrade, isMastered, isNewSrs, type GradeValue } from "./study/engine";
+import { applyGrade, deriveStatusFromSrs, isNewSrs, type GradeValue } from "./study/engine";
 import { studyConfigOf } from "./study/queue";
 import { emptyDailyLog, pruneDaily, ymd, type StudyConfig, type StudySrs } from "./study/types";
+import { clearTombstonesFor, recordTombstones } from "./sync/meta";
+import type { SyncState } from "./sync/types";
 import { uid } from "./utils";
 
 /* ============================================================
@@ -28,13 +30,39 @@ import { uid } from "./utils";
 
 const pending = new Map<string, string>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let writeFailureNotified = false;
 
 function flushWrites() {
   flushTimer = null;
+  if (!pending.size) return;
+  const jobs: Promise<boolean>[] = [];
   for (const [name, value] of pending) {
-    void idbSet(name, value).catch(() => {});
+    jobs.push(
+      idbSet(name, value).then(
+        () => true,
+        (e) => {
+          // 配额/隐私模式等写入失败不再静默：控制台 + 事件（UI 可监听提示一次）
+          console.error("[wulonvocab] 本地写入失败：", e);
+          if (!writeFailureNotified) {
+            writeFailureNotified = true;
+            try {
+              window.dispatchEvent(new CustomEvent("wulonvocab:persist-error"));
+            } catch {
+              /* ignore */
+            }
+          }
+          return false;
+        },
+      ),
+    );
   }
   pending.clear();
+  // 多标签页同步：写入成功后广播，其它空闲标签页自行 rehydrate
+  if (typeof window !== "undefined") {
+    void Promise.all(jobs).then((rs) => {
+      if (rs.some(Boolean)) tabChannel?.postMessage({ type: "state-updated" });
+    });
+  }
 }
 
 function scheduleWrite(name: string, value: string) {
@@ -44,10 +72,18 @@ function scheduleWrite(name: string, value: string) {
   flushTimer = setTimeout(flushWrites, 400);
 }
 
+/** 关键写入（学习评分等）即时落盘，不等防抖 */
+function flushSoon() {
+  if (flushTimer) clearTimeout(flushTimer);
+  flushWrites();
+}
+
 if (typeof window !== "undefined") {
   window.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flushWrites();
   });
+  // pagehide 是移动端最可靠的“离开页面”信号（beforeunload 在 iOS 常不触发）
+  window.addEventListener("pagehide", flushWrites);
   window.addEventListener("beforeunload", flushWrites);
 }
 
@@ -198,13 +234,15 @@ export interface AppStore {
     rating: GradeValue,
     elapsedMs: number,
     nowMs?: number,
-  ) => { before: StudySrs | undefined; next: StudySrs } | null;
+  ) => { before: StudySrs | undefined; next: StudySrs; dayKey: string } | null;
   undoReview: (
     bookId: string,
     entryId: string,
     before: StudySrs | undefined,
     rating: GradeValue,
     elapsedMs: number,
+    /** 与 applyReview 返回的 dayKey 一致（跨午夜撤销不错记） */
+    dayKey?: string,
   ) => void;
   resetEntrySrs: (bookId: string, entryId: string) => void;
 
@@ -216,6 +254,8 @@ export interface AppStore {
   addLookupSource: (source: Omit<LookupSourceConfig, "id">) => void;
   updateLookupSource: (id: string, patch: Partial<Omit<LookupSourceConfig, "config">> & { config?: Record<string, string> }) => void;
   removeLookupSource: (id: string) => void;
+  /** 跨端同步：合并结果落库（lastBookId 保持本机值） */
+  applySyncState: (next: SyncState) => void;
   /** 数据迁移：补齐新版本新增的默认数据源（不覆盖用户已有配置） */
   ensureLookupSources: () => void;
 
@@ -228,18 +268,11 @@ export interface AppStore {
 
   // 备份
   exportBackupJson: () => string;
-  importBackupJson: (json: string) => { ok: boolean; error?: string; books?: number };
+  importBackupJson: (json: string) => { ok: boolean; error?: string; books?: number; warnings?: string[] };
 }
 
 function patchBook(books: Wordbook[], id: string, fn: (book: Wordbook) => Wordbook): Wordbook[] {
   return books.map((b) => (b.id === id ? { ...fn(b), updatedAt: Date.now() } : b));
-}
-
-/** 依据调度状态推导词条学习状态（新 / 在学 / 已掌握） */
-function deriveStatusFromSrs(srs: StudySrs): EntryStatus {
-  if (isNewSrs(srs)) return "new";
-  if (isMastered(srs)) return "mastered";
-  return "learning";
 }
 
 function mergeExportSettings(prev: ExportSettings, patch: DeepPartial<ExportSettings>): ExportSettings {  return {
@@ -278,11 +311,13 @@ export const useAppStore = create<AppStore>()(
         return book;
       },
 
-      deleteBook: (id) =>
+      deleteBook: (id) => {
         set((s) => ({
           books: s.books.filter((b) => b.id !== id),
-          settings: { ...s.settings, lastBookId: s.settings.lastBookId === id ? null : s.settings.lastBookId },
-        })),
+        }));
+        // 跨端同步墓碑（fire-and-forget；失败不影响删除本身）
+        void recordTombstones([{ kind: "book", id, deletedAt: Date.now() }]);
+      },
 
       duplicateBook: (id) => {
         const src = get().books.find((b) => b.id === id);
@@ -422,6 +457,13 @@ export const useAppStore = create<AppStore>()(
         if (!section || section.key === newKey) return true;
         if (!newKey.trim()) return false;
         if (book.schema.sections.some((sec) => sec.key === newKey && sec.id !== sectionId)) return false;
+        // 词条里存在同名「未提升」的 extras 键时拒绝：否则重命名会静默覆盖用户数据
+        const extrasConflict = book.entries.some(
+          (e) =>
+            Object.prototype.hasOwnProperty.call(e.values, newKey) &&
+            !book.schema.sections.some((sec) => sec.key === newKey),
+        );
+        if (extrasConflict) return false;
         set((s) => ({
           books: patchBook(s.books, bookId, (b) => ({
             ...b,
@@ -480,10 +522,13 @@ export const useAppStore = create<AppStore>()(
           })),
         })),
 
-      removeEntries: (bookId, ids) =>
+      removeEntries: (bookId, ids) => {
         set((s) => ({
           books: patchBook(s.books, bookId, (b) => ({ ...b, entries: b.entries.filter((e) => !ids.includes(e.id)) })),
-        })),
+        }));
+        const deletedAt = Date.now();
+        void recordTombstones(ids.map((id) => ({ kind: "entry" as const, id, bookId, deletedAt })));
+      },
 
       duplicateEntry: (bookId, entryId) =>
         set((s) => ({
@@ -508,7 +553,7 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({
           books: patchBook(s.books, bookId, (b) => ({
             ...b,
-            entries: b.entries.map((e) => (e.id === entryId ? { ...e, starred: !e.starred } : e)),
+            entries: b.entries.map((e) => (e.id === entryId ? { ...e, starred: !e.starred, updatedAt: Date.now() } : e)),
           })),
         })),
 
@@ -570,7 +615,7 @@ export const useAppStore = create<AppStore>()(
           })),
         })),
 
-      restoreEntries: (bookId, items) =>
+      restoreEntries: (bookId, items) => {
         set((s) => ({
           books: patchBook(s.books, bookId, (b) => {
             const entries = [...b.entries];
@@ -581,7 +626,10 @@ export const useAppStore = create<AppStore>()(
             }
             return { ...b, entries };
           }),
-        })),
+        }));
+        // 撤销删除：清除墓碑，防止对端把刚恢复的词条再次删掉
+        void clearTombstonesFor(items.map(({ entry }) => ({ kind: "entry" as const, id: entry.id, bookId })));
+      },
 
       setStudyConfig: (bookId, patch) =>
         set((s) => ({
@@ -595,44 +643,53 @@ export const useAppStore = create<AppStore>()(
         })),
 
       applyReview: (bookId, entryId, rating, elapsedMs, nowMs) => {
-        const book = get().books.find((b) => b.id === bookId);
-        const entry = book?.entries.find((e) => e.id === entryId);
-        if (!book || !entry) return null;
-        const cfg = studyConfigOf(book);
         const now = nowMs ?? Date.now();
-        const before = entry.srs;
-        const next = applyGrade(before, rating, cfg.retention, now);
-        const wasNew = isNewSrs(before);
-        set((s) => ({
-          books: patchBook(s.books, bookId, (b) => {
-            const daily = { ...(b.study?.daily ?? {}) };
-            const key = ymd(now);
-            const log = { ...(daily[key] ?? emptyDailyLog()) };
-            log.reviewed += 1;
-            log.ms += Math.max(0, elapsedMs);
-            if (wasNew) log.added += 1;
-            if (rating === 1) log.again += 1;
-            else if (rating === 2) log.hard += 1;
-            else if (rating === 3) log.good += 1;
-            else log.easy += 1;
-            daily[key] = log;
-            return {
-              ...b,
-              entries: b.entries.map((e) =>
-                e.id === entryId ? { ...e, srs: next, status: deriveStatusFromSrs(next) } : e,
-              ),
-              study: { config: b.study?.config ?? cfg, daily: pruneDaily(daily, now) },
-            };
-          }),
-        }));
-        return { before, next };
+        // CAS：在 set 回调内基于最新 srs 重算（同 tick 重复调用不再互相覆盖）
+        let outcome: { before: StudySrs | undefined; next: StudySrs; dayKey: string } | null = null;
+        set((s) => {
+          const book = s.books.find((b) => b.id === bookId);
+          const entry = book?.entries.find((e) => e.id === entryId);
+          if (!book || !entry) return {};
+          const cfg = studyConfigOf(book);
+          const before = entry.srs;
+          const next = applyGrade(before, rating, cfg.retention, now);
+          const wasNew = isNewSrs(before);
+          outcome = { before, next, dayKey: ymd(now) };
+          return {
+            books: patchBook(s.books, bookId, (b) => {
+              const daily = { ...(b.study?.daily ?? {}) };
+              const key = ymd(now);
+              const log = { ...(daily[key] ?? emptyDailyLog()) };
+              log.reviewed += 1;
+              log.ms += Math.max(0, elapsedMs);
+              if (wasNew) log.added += 1;
+              if (rating === 1) log.again += 1;
+              else if (rating === 2) log.hard += 1;
+              else if (rating === 3) log.good += 1;
+              else log.easy += 1;
+              daily[key] = log;
+              return {
+                ...b,
+                entries: b.entries.map((e) =>
+                  e.id === entryId ? { ...e, srs: next, status: deriveStatusFromSrs(next) } : e,
+                ),
+                study: { config: b.study?.config ?? cfg, daily: pruneDaily(daily, now) },
+              };
+            }),
+          };
+        });
+        if (!outcome) return null;
+        flushSoon(); // 学习进度即时落盘（不等防抖）
+        const picked = outcome as { before: StudySrs | undefined; next: StudySrs; dayKey: string };
+        return { before: picked.before, next: picked.next, dayKey: picked.dayKey };
       },
 
-      undoReview: (bookId, entryId, before, rating, elapsedMs) =>
+      undoReview: (bookId, entryId, before, rating, elapsedMs, dayKey) => {
         set((s) => ({
           books: patchBook(s.books, bookId, (b) => {
             const daily = { ...(b.study?.daily ?? {}) };
-            const key = ymd(Date.now());
+            // 与 applyReview 同源的日键：跨午夜撤销不会记错日期
+            const key = dayKey ?? ymd(Date.now());
             if (daily[key]) {
               const log = { ...daily[key] };
               log.reviewed = Math.max(0, log.reviewed - 1);
@@ -647,14 +704,15 @@ export const useAppStore = create<AppStore>()(
               entries: b.entries.map((e) => {
                 if (e.id !== entryId) return e;
                 if (before) return { ...e, srs: before, status: deriveStatusFromSrs(before) };
-                const next = { ...e };
-                delete next.srs;
-                return { ...next, status: "new" as const };
+                const { srs: _drop, ...rest } = e;
+                void _drop;
+                return { ...rest, status: "new" as const };
               }),
-              study: { config: b.study?.config ?? studyConfigOf(b), daily },
             };
           }),
-        })),
+        }));
+        flushSoon();
+      },
 
       resetEntrySrs: (bookId, entryId) =>
         set((s) => ({
@@ -697,7 +755,19 @@ export const useAppStore = create<AppStore>()(
           ),
         })),
 
-      removeLookupSource: (id) => set((s) => ({ lookupSources: s.lookupSources.filter((src) => src.id !== id) })),
+      removeLookupSource: (id) => {
+        set((s) => ({ lookupSources: s.lookupSources.filter((src) => src.id !== id) }));
+        void recordTombstones([{ kind: "lookupSource", id, deletedAt: Date.now() }]);
+      },
+
+      /** 跨端同步：把合并结果落库（lastBookId 保持本机值；其余字段整体替换） */
+      applySyncState: (next) =>
+        set((s) => ({
+          books: next.books,
+          settings: { ...next.settings, lastBookId: s.settings.lastBookId },
+          lookupSources: next.lookupSources,
+          dictionaries: next.dictionaries,
+        })),
 
       ensureLookupSources: () =>
         set((s) => {
@@ -736,20 +806,74 @@ export const useAppStore = create<AppStore>()(
           if (data.format !== "wulonvocab-backup" || !Array.isArray(data.books)) {
             return { ok: false, error: "不是有效的 WulonVocab 备份文件" };
           }
-          const books = data.books as Wordbook[];
+          // 结构校验与归一化：畸形词库跳过、重复 id 去重、缺省字段补齐（防后续渲染崩溃）
+          const seen = new Set<string>();
+          let dropped = 0;
+          const books: Wordbook[] = [];
+          for (const raw of data.books as unknown[]) {
+            const b = raw as Partial<Wordbook>;
+            if (
+              !b ||
+              typeof b !== "object" ||
+              typeof b.id !== "string" ||
+              typeof b.name !== "string" ||
+              !Array.isArray(b.entries) ||
+              !b.schema ||
+              !Array.isArray((b.schema as { sections?: unknown }).sections)
+            ) {
+              dropped += 1;
+              continue;
+            }
+            if (seen.has(b.id)) {
+              dropped += 1;
+              continue;
+            }
+            seen.add(b.id);
+            const entries = (b.entries as unknown[])
+              .filter(
+                (e): e is Entry =>
+                  Boolean(e) &&
+                  typeof e === "object" &&
+                  typeof (e as Entry).id === "string" &&
+                  typeof (e as Entry).headword === "string",
+              )
+              .map((e) => ({
+                ...e,
+                tags: Array.isArray(e.tags) ? e.tags : [],
+                values: e.values && typeof e.values === "object" ? e.values : {},
+              }));
+            const exportSettings = mergeExportSettings(
+              defaultExportSettings(b.name),
+              (b.exportSettings ?? {}) as DeepPartial<ExportSettings>,
+            );
+            books.push({ ...(b as Wordbook), entries, exportSettings });
+          }
+          if (!books.length) return { ok: false, error: "备份里没有可用的词库" };
+          const rawSources = Array.isArray(data.lookupSources) ? (data.lookupSources as unknown[]) : [];
+          const lookupSources = rawSources.filter(
+            (s): s is LookupSourceConfig =>
+              Boolean(s) && typeof s === "object" && typeof (s as LookupSourceConfig).id === "string",
+          );
+          const rawDicts = Array.isArray(data.dictionaries) ? (data.dictionaries as unknown[]) : [];
+          const dictionaries = rawDicts.filter(
+            (d): d is LocalDictMeta =>
+              Boolean(d) && typeof d === "object" && typeof (d as LocalDictMeta).id === "string",
+          );
           set({
             books,
             settings: {
               ...DEFAULT_SETTINGS,
               ...(typeof data.settings === "object" && data.settings ? (data.settings as Partial<AppSettings>) : {}),
             },
-            lookupSources:
-              Array.isArray(data.lookupSources) && data.lookupSources.length
-                ? (data.lookupSources as LookupSourceConfig[])
-                : DEFAULT_LOOKUP_SOURCES,
-            dictionaries: Array.isArray(data.dictionaries) ? (data.dictionaries as LocalDictMeta[]) : [],
+            lookupSources: lookupSources.length ? lookupSources : DEFAULT_LOOKUP_SOURCES,
+            dictionaries,
           });
-          return { ok: true, books: books.length };
+          flushSoon();
+          return {
+            ok: true,
+            books: books.length,
+            ...(dropped ? { warnings: [`已跳过 ${dropped} 个结构异常或重复的词库`] } : {}),
+          };
         } catch (e) {
           return { ok: false, error: (e as Error).message };
         }
@@ -777,4 +901,24 @@ export function useActiveBook(id: string | null | undefined): Wordbook | undefin
 
 export function findBook(books: Wordbook[], id: string | null | undefined): Wordbook | undefined {
   return id ? books.find((b) => b.id === id) : undefined;
+}
+
+/* ============================================================
+   多标签页同步：A 标签页写入成功后广播；空闲标签页防抖 rehydrate
+   （本地有未落盘改动时不覆盖，避免互相打架）
+   ============================================================ */
+
+let tabChannel: BroadcastChannel | null = null;
+if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+  tabChannel = new BroadcastChannel("wulonvocab-tabs");
+  let rehydrateTimer: ReturnType<typeof setTimeout> | null = null;
+  tabChannel.onmessage = (ev: MessageEvent) => {
+    if ((ev.data as { type?: string } | null)?.type !== "state-updated") return;
+    if (pending.size > 0) return;
+    if (rehydrateTimer) clearTimeout(rehydrateTimer);
+    rehydrateTimer = setTimeout(() => {
+      rehydrateTimer = null;
+      void useAppStore.persist.rehydrate();
+    }, 500);
+  };
 }

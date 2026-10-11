@@ -47,7 +47,7 @@ export async function runLookup(
 
   // L2 缓存：命中即全部同步回调（<10ms 级），UI 秒出结果
   if (!options.bypassCache) {
-    const cached = await readLookupCache(word, sources, schema);
+    const cached = await readLookupCache(word, sources, schema, options.localDictIds ?? []);
     if (cached) {
       cached.results.forEach((r) => options.onPartial?.(r));
       return cached.results;
@@ -95,6 +95,6 @@ export async function runLookup(
   );
 
   // 至少有一个成功源才写缓存（坏结果不固化）
-  void writeLookupCache(word, sources, schema, results);
+  void writeLookupCache(word, sources, schema, options.localDictIds ?? [], results);
   return results;
 }

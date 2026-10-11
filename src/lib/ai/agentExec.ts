@@ -38,14 +38,22 @@ export function makeAgentExecutor(bookId: string): ToolExecutor {
       case "add_entries": {
         const input = Array.isArray(args.entries) ? args.entries : [];
         if (!input.length) throw new Error("entries 不能为空");
+        if (input.length > 200) throw new Error("一次最多新增 200 条");
         const entries = input.map((raw) => {
           const rec = raw as { headword?: unknown; tags?: unknown; values?: unknown };
           const headword = String(rec.headword ?? "").trim();
           if (!headword) throw new Error("存在缺少 headword 的词条");
+          // 与其它写入路径一致：过 schema 归一化（拒绝畸形值污染数据）
+          const { values } = draftToValues(
+            (rec.values && typeof rec.values === "object" ? rec.values : {}) as Record<string, unknown>,
+            book.schema,
+            {},
+            { overwrite: true },
+          );
           return makeEntry({
             headword,
             tags: Array.isArray(rec.tags) ? rec.tags.map(String) : [],
-            values: (rec.values && typeof rec.values === "object" ? rec.values : {}) as Record<string, unknown>,
+            values,
             source: { kind: "ai", label: "AI 管家", at: Date.now() },
           });
         });
@@ -56,29 +64,52 @@ export function makeAgentExecutor(bookId: string): ToolExecutor {
       case "update_entries": {
         const updates = Array.isArray(args.updates) ? args.updates : [];
         if (!updates.length) throw new Error("updates 不能为空");
-        const detail: unknown[] = [];
-        let updated = 0;
-        let filled = 0;
-        for (const raw of updates) {
-          const rec = raw as { headword?: unknown; values?: unknown; overwrite?: unknown };
-          const headword = String(rec.headword ?? "").trim().toLowerCase();
-          const entry = book.entries.find((e) => e.headword.toLowerCase() === headword);
-          if (!entry) {
-            detail.push({ headword: rec.headword, error: "词库中没有这个词" });
-            continue;
+        if (updates.length > 200) throw new Error("一次最多更新 200 条");
+        // 应用到最新状态（确认流会延迟执行，必须重新取书）
+        const run = (): { updated: number; filledFields: number; detail: unknown[] } => {
+          const store2 = useAppStore.getState();
+          const bk = store2.books.find((b) => b.id === bookId);
+          if (!bk) throw new Error("词库不存在（可能已被删除）");
+          const detail: unknown[] = [];
+          let updated = 0;
+          let filled = 0;
+          for (const raw of updates) {
+            const rec = raw as { headword?: unknown; values?: unknown; overwrite?: unknown };
+            const headword = String(rec.headword ?? "").trim().toLowerCase();
+            const entry = bk.entries.find((e) => e.headword.toLowerCase() === headword);
+            if (!entry) {
+              detail.push({ headword: rec.headword, error: "词库中没有这个词" });
+              continue;
+            }
+            const { values, added } = draftToValues(
+              (rec.values && typeof rec.values === "object" ? rec.values : {}) as Record<string, unknown>,
+              bk.schema,
+              entry.values,
+              { overwrite: Boolean(rec.overwrite) },
+            );
+            store2.updateEntry(bookId, entry.id, { values });
+            updated += 1;
+            filled += added.length;
+            detail.push({ headword: entry.headword, filledFields: added });
           }
-          const { values, added } = draftToValues(
-            (rec.values && typeof rec.values === "object" ? rec.values : {}) as Record<string, unknown>,
-            book.schema,
-            entry.values,
-            { overwrite: Boolean(rec.overwrite) },
-          );
-          store.updateEntry(book.id, entry.id, { values });
-          updated += 1;
-          filled += added.length;
-          detail.push({ headword: entry.headword, filledFields: added });
+          return { updated, filledFields: filled, detail };
+        };
+        // 覆盖已有内容属于破坏性操作：即使模型声明了 overwrite 也先请用户确认
+        const wantsOverwrite = updates.some((u) => Boolean((u as { overwrite?: unknown })?.overwrite));
+        if (wantsOverwrite) {
+          const words = updates
+            .slice(0, 5)
+            .map((u) => String((u as { headword?: unknown }).headword ?? ""))
+            .filter(Boolean)
+            .join("、");
+          return {
+            needsConfirm: true,
+            confirmSummary: `覆盖 ${updates.length} 个词条的非空字段（${words}${updates.length > 5 ? "…" : ""}）——会替换已有内容`,
+            result: null,
+            apply: () => run(),
+          };
         }
-        return { result: { updated, filledFields: filled, detail } };
+        return { result: run() };
       }
 
       case "add_field": {

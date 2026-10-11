@@ -716,9 +716,19 @@ export function normalizeRating(raw: unknown): RatingValue {
   if (typeof raw === "number") return { value: Math.max(0, Math.round(raw)), max: 5 };
   if (typeof raw === "string") {
     const stars = (raw.match(/[★⭐]/g) ?? []).length;
-    if (stars) return { value: stars, max: 5 };
+    if (stars) return { value: Math.min(5, stars), max: 5 };
+    // 常见「x/y」写法：按分数解析（"4/5"→4；"3.5/5"→4；max 跟随分母），而非去符号拼数字
+    const frac = raw.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
+    if (frac) {
+      const v = Number(frac[1]);
+      const m = Number(frac[2]);
+      if (!Number.isNaN(v) && !Number.isNaN(m) && m > 0) {
+        const max = Math.max(1, Math.round(m));
+        return { value: Math.max(0, Math.min(max, Math.round(v))), max };
+      }
+    }
     const n = Number(raw.replace(/[^\d.]/g, ""));
-    if (!Number.isNaN(n)) return { value: Math.round(n), max: 5 };
+    if (!Number.isNaN(n)) return { value: Math.max(0, Math.round(n)), max: 5 };
   }
   if (isPlainObject(raw)) {
     const value = pickKey(raw, ["value", "rating", "score", "level", "掌握度", "值"]);
@@ -1246,6 +1256,8 @@ export interface SenseCell {
   from: number;
   to: number;
   part: "full" | "core" | "extras";
+  /** 原始义项序号（0 基）——供跨页连续编号 */
+  no?: number;
 }
 
 /** 该义项是否存在「扩展内容」（例句/搭配/近反义词/备注），且未被选项隐藏 */
@@ -1263,9 +1275,9 @@ export function senseHasExtras(sense: SenseItem, options: SectionOptions): boole
 export function buildSenseUnits(senses: SenseItem[], options: SectionOptions): { from: number; to: number; cells: SenseCell[] }[] {
   const units: { from: number; to: number; cells: SenseCell[] }[] = [];
   senses.forEach((s, i) => {
-    units.push({ from: i, to: i + 1, cells: [{ from: i, to: i + 1, part: "core" }] });
+    units.push({ from: i, to: i + 1, cells: [{ from: i, to: i + 1, part: "core", no: i }] });
     if (senseHasExtras(s, options)) {
-      units.push({ from: i, to: i + 1, cells: [{ from: i, to: i + 1, part: "extras" }] });
+      units.push({ from: i, to: i + 1, cells: [{ from: i, to: i + 1, part: "extras", no: i }] });
     }
   });
   return units;
@@ -1282,7 +1294,7 @@ export function sliceSenseCells(value: unknown, cells: SenseCell[]): SenseItem[]
       if (c.part === "full") {
         out.push(s);
       } else if (c.part === "core") {
-        out.push({ ...s, examples: [], collocations: [], synonyms: [], antonyms: [], notes: "" });
+        out.push({ ...s, printNo: c.no ?? i, examples: [], collocations: [], synonyms: [], antonyms: [], notes: "" });
       } else {
         out.push({ ...s, cont: true, translation: "", definition: "", usage: "", patterns: [] });
       }

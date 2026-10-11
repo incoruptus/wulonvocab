@@ -12,7 +12,7 @@ import { runBatchLookup, type BatchLookupItem } from "@/lib/lookup/batch";
 import { peekLocalSuggestions } from "@/lib/lookup/localdict";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { Input, Textarea } from "@/components/ui/field";
+import { Checkbox, Input, Textarea } from "@/components/ui/field";
 import { Badge, EmptyState } from "@/components/ui/misc";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/overlay";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -87,12 +87,15 @@ export function LookupPanel({
   }, [word, book.entries, dictionaries]);
 
   // 渐进渲染：按数据源占位，谁先返回谁先显示；命中缓存则瞬间全出
+  /** 检索请求代次：新请求作废旧请求的异步回调（防串词/后到覆盖先到） */
+  const lookupReqRef = useRef(0);
   const doLookup = async (override?: string, opts?: { refresh?: boolean }) => {
     const w = (override ?? word ?? "").trim() || (targetEntry?.headword ?? "").trim();
     if (!w) {
       toast.error("请输入要检索的单词");
       return;
     }
+    const req = ++lookupReqRef.current;
     setLoading(true);
     setResultsBySource({});
     setFromCache(false);
@@ -102,6 +105,7 @@ export function LookupPanel({
         localDictIds: dictionaries.map((d) => d.id),
         bypassCache: opts?.refresh,
         onPartial: (r) => {
+          if (lookupReqRef.current !== req) return;
           setResultsBySource((prev) => ({ ...prev, [r.sourceId]: r }));
           setPending((prev) => {
             if (!prev.has(r.sourceId)) return prev;
@@ -111,11 +115,14 @@ export function LookupPanel({
           });
         },
       });
+      if (lookupReqRef.current !== req) return;
       if (res.some((r) => r.fromCache)) setFromCache(true);
       if (res.length > 0 && res.every((r) => !r.ok)) toast.error("所有数据源均未返回结果");
     } finally {
-      setLoading(false);
-      setPending(new Set());
+      if (lookupReqRef.current === req) {
+        setLoading(false);
+        setPending(new Set());
+      }
     }
   };
 
@@ -191,10 +198,14 @@ export function LookupPanel({
     }
     if (newEntries.length) {
       useAppStore.getState().appendEntries(book.id, newEntries);
-      toast.success(`批量检索完成：新增 ${newEntries.length} 条${failed.length ? `，${failed.length} 条未获取到内容` : ""}`);
+      toast.success(
+        controller.signal.aborted
+          ? `已停止：新增 ${newEntries.length} 条（其余未处理）`
+          : `批量检索完成：新增 ${newEntries.length} 条${failed.length ? `，${failed.length} 条未获取到内容` : ""}`,
+      );
       if (newEntries[0]) onApplied(newEntries[0].id);
     } else {
-      toast.error("批量检索没有获得结果");
+      toast.error(controller.signal.aborted ? "已停止，没有新增词条" : "批量检索没有获得结果");
     }
     setBatchFailed(failed);
     setBatchRunning(false);
@@ -305,18 +316,12 @@ export function LookupPanel({
           <TabsContent value="single" className="mt-3 space-y-3">
             <div className="flex gap-2">
               <Input
-                list="wv-lookup-suggestions"
                 value={word}
                 onChange={(e) => setWord(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && doLookup()}
+                onKeyDown={(e) => e.key === "Enter" && !loading && doLookup()}
                 placeholder={targetEntry?.headword ? `默认：${targetEntry.headword}` : "例如 abrupt"}
                 autoFocus
               />
-              <datalist id="wv-lookup-suggestions">
-                {suggestions.map((s) => (
-                  <option key={s} value={s} />
-                ))}
-              </datalist>
               <Button onClick={() => doLookup()} loading={loading}>
                 <Search className="size-4" /> 检索
               </Button>
@@ -327,11 +332,12 @@ export function LookupPanel({
                   <button
                     key={s}
                     type="button"
+                    disabled={loading}
                     onClick={() => {
                       setWord(s);
                       void doLookup(s);
                     }}
-                    className="t-mono-12 rounded-full bg-gray-100 px-2 py-0.5 text-gray-900 hover:bg-gray-200"
+                    className="t-mono-12 rounded-full bg-gray-100 px-2 py-0.5 text-gray-900 hover:bg-gray-200 disabled:opacity-50"
                   >
                     {s}
                   </button>
@@ -349,7 +355,7 @@ export function LookupPanel({
               <EmptyState
                 icon={<Search className="size-4" />}
                 title="等待检索"
-                desc="结果会按数据源分组展示；应用到词条时只填充空缺字段。同一单词 30 天内会直接命中本地缓存。"
+                desc="结果会按数据源分组展示；应用到词条时只填充空缺字段。30 天内的结果会留在本机，再查更快。"
               />
             ) : null}
 
@@ -506,12 +512,10 @@ export function LookupPanel({
                         it.best ? "cursor-pointer" : "opacity-65",
                       )}
                     >
-                      <input
-                        type="checkbox"
-                        className="size-3.5 shrink-0 accent-blue-700"
+                      <Checkbox
                         disabled={!it.best}
                         checked={fillChecked.has(it.key)}
-                        onChange={() =>
+                        onCheckedChange={() =>
                           setFillChecked((prev) => {
                             const next = new Set(prev);
                             if (next.has(it.key)) next.delete(it.key);
@@ -628,7 +632,7 @@ function ResultCard({
                     : "HTTP API"}
         </Badge>
         {result.fromCache ? (
-          <span className="t-mono-12 ml-auto text-gray-700">缓存命中</span>
+          <span className="t-mono-12 ml-auto text-gray-700">来自本地记录</span>
         ) : (
           <span className="t-mono-12 ml-auto text-gray-700">{result.tookMs}ms</span>
         )}

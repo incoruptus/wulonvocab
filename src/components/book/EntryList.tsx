@@ -4,7 +4,8 @@ import { useMemo, useRef, useState } from "react";
 import { CheckSquare, Copy, Download, Plus, Search, Sparkles, Star, StarOff, Tag, Trash2, X } from "lucide-react";
 import type { Entry, Wordbook } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
-import { Input, Select, Checkbox } from "@/components/ui/field";
+import { Input, Checkbox } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
 import { Button, IconButton } from "@/components/ui/button";
 import { EmptyState, SegmentedControl } from "@/components/ui/misc";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/overlay";
@@ -144,20 +145,25 @@ export function EntryList(props: EntryListProps) {
           </IconButton>
         </div>
         <div className="flex items-center gap-1.5">
-          <Select value={sort} onChange={(e) => setSort(e.target.value as SortMode)} className="h-8 flex-1 text-[12px]">
-            <option value="order">列表顺序</option>
-            <option value="az">字母序 A→Z</option>
-            <option value="recent">最近编辑</option>
-          </Select>
+          <Select
+            size="sm"
+            className="flex-1"
+            value={sort}
+            onValueChange={(v) => setSort(v as SortMode)}
+            options={[
+              { value: "order", label: "列表顺序" },
+              { value: "az", label: "字母序 A→Z" },
+              { value: "recent", label: "最近编辑" },
+            ]}
+          />
           {allTags.length ? (
-            <Select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} className="h-8 flex-1 text-[12px]">
-              <option value="">全部标签</option>
-              {allTags.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </Select>
+            <Select
+              size="sm"
+              className="flex-1"
+              value={tagFilter}
+              onValueChange={setTagFilter}
+              options={[{ value: "", label: "全部标签" }, ...allTags.map((t) => ({ value: t, label: t }))]}
+            />
           ) : null}
         </div>
       </div>
@@ -400,7 +406,7 @@ function EntryRow({
                 checked={false}
                 onCheckedChange={() => onToggle(false)}
                 aria-label={`选择 ${entry.headword}`}
-                className="opacity-0 transition-opacity group-hover:opacity-100"
+                className="opacity-0 transition-opacity group-hover:opacity-100 max-sm:opacity-100"
               />
             </span>
           </>
@@ -425,7 +431,7 @@ function EntryRow({
         </div>
       </div>
       {!selecting ? (
-        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100">
           <IconButton
             label={entry.starred ? "取消星标" : "加星标"}
             size="xs"

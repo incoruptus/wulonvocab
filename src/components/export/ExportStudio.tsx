@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   ChevronDown,
@@ -20,7 +20,8 @@ import { sortSections } from "@/lib/sections";
 import { EXPORT_THEMES, applyTheme, normalizeCardStyle } from "@/lib/export/themes";
 import { useAppStore } from "@/lib/store";
 import { Button, IconButton } from "@/components/ui/button";
-import { Field, Input, Select, Slider, SwitchRow } from "@/components/ui/field";
+import { Field, Input, Slider, SwitchRow } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
 import { AccentPicker, SegmentedControl } from "@/components/ui/misc";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/overlay";
 import { PrintDocument } from "@/components/export/PrintDocument";
@@ -82,7 +83,7 @@ export function ExportStudio({ book }: { book: Wordbook }) {
       const root = rootRef.current;
       if (!root) return;
       await printPages(root, doc.geometry.paperMm, book.name);
-      toast.info("已打开打印窗口", { description: "目标选择「另存为 PDF」；边距=None，缩放=100%，勾选「背景图形」" });
+      toast.info("已打开打印窗口", { description: "目标选「另存为 PDF」；边距选「无」、缩放 100%、勾选「背景图形」" });
     });
 
   const onRasterPdf = () =>
@@ -183,7 +184,7 @@ export function ExportStudio({ book }: { book: Wordbook }) {
                   </div>
                 ) : (
                   <div className="flex h-96 w-[420px] items-center justify-center rounded-xl bg-background-100 shadow-geist-border">
-                    <span className="t-label-13 text-gray-800">正在测量与分页…</span>
+                    <span className="t-label-13 text-gray-800">正在排版…</span>
                   </div>
                 )}
               </div>
@@ -195,6 +196,7 @@ export function ExportStudio({ book }: { book: Wordbook }) {
             <span className="t-label-12 text-gray-800">缩放</span>
             <Slider
               className="w-36 sm:w-56"
+              ariaLabel="预览缩放"
               min={0.3}
               max={1.5}
               step={0.05}
@@ -306,13 +308,14 @@ function PanelsLayout({ settings, patch }: PanelGroupProps) {
     <>
       <Panel title="纸张与方向" defaultOpen>
         <Field label="纸张尺寸">
-          <Select value={settings.paper} onChange={(e) => patch({ paper: e.target.value as ExportSettings["paper"] })}>
-            {PAPERS.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} · {p.width}×{p.height}mm {p.note ? `（${p.note}）` : ""}
-              </option>
-            ))}
-          </Select>
+          <Select
+            value={settings.paper}
+            onValueChange={(v) => patch({ paper: v as ExportSettings["paper"] })}
+            options={PAPERS.map((p) => ({
+              value: p.id,
+              label: `${p.name} · ${p.width}×${p.height}mm${p.note ? `（${p.note}）` : ""}`,
+            }))}
+          />
         </Field>
         {settings.paper === "custom" ? (
           <div className="grid grid-cols-2 gap-2">
@@ -359,20 +362,13 @@ function PanelsLayout({ settings, patch }: PanelGroupProps) {
         <Field label="边距预设">
           <Select
             value=""
-            onChange={(e) => {
-              const preset = MARGIN_PRESETS.find((p) => p.id === e.target.value);
+            placeholder="选择预设…"
+            onValueChange={(v) => {
+              const preset = MARGIN_PRESETS.find((p) => p.id === v);
               if (preset) patch({ margin: preset.margin });
             }}
-          >
-            <option value="" disabled>
-              选择预设…
-            </option>
-            {MARGIN_PRESETS.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} — {p.hint}
-              </option>
-            ))}
-          </Select>
+            options={MARGIN_PRESETS.map((p) => ({ value: p.id, label: `${p.name} — ${p.hint}` }))}
+          />
         </Field>
         <div className="grid grid-cols-4 gap-2">
           {(["top", "right", "bottom", "left"] as const).map((k) => (
@@ -441,6 +437,9 @@ function PanelsLayout({ settings, patch }: PanelGroupProps) {
               />
             </Field>
             <SliderRow label="栏间距" value={settings.columnGap} min={4} max={16} step={1} suffix="mm" onChange={(v) => patch({ columnGap: v })} />
+            {normalizeCardStyle(settings.cardStyle) === "dictionary" && settings.columns === 1 ? (
+              <div className="t-label-12 text-gray-700">内容宽 ≥165mm（如 A4）时会自动排成 2 栏</div>
+            ) : null}
             <SliderRow label="词条间距" value={settings.entryGap} min={0} max={16} step={0.5} suffix="mm" onChange={(v) => patch({ entryGap: v })} />
           </>
         ) : (
@@ -530,7 +529,7 @@ function PanelsCards({ settings, patch, book }: PanelGroupProps) {
   return (
     <>
       <Panel title="卡片样式" defaultOpen>
-        <Field label="风格（结构骨架）">
+        <Field label="版式风格">
           <div className="grid grid-cols-2 gap-2">
             {EXPORT_THEMES.map((t) => {
               const active = normalizeCardStyle(settings.cardStyle) === t.id;
@@ -584,12 +583,16 @@ function PanelsCards({ settings, patch, book }: PanelGroupProps) {
         <SwitchRow label="词条编号" checked={settings.showEntryNumber} onCheckedChange={(v) => patch({ showEntryNumber: v })} />
         <SwitchRow label="跨页续标" hint="词条跨页时显示「续」" checked={settings.continuationMark} onCheckedChange={(v) => patch({ continuationMark: v })} />
         <Field label="单词大小写">
-          <Select value={settings.headwordCase} onChange={(e) => patch({ headwordCase: e.target.value as ExportSettings["headwordCase"] })}>
-            <option value="as-is">保持原样</option>
-            <option value="lower">小写</option>
-            <option value="upper">大写</option>
-            <option value="title">首字母大写</option>
-          </Select>
+          <Select
+            value={settings.headwordCase}
+            onValueChange={(v) => patch({ headwordCase: v as ExportSettings["headwordCase"] })}
+            options={[
+              { value: "as-is", label: "保持原样" },
+              { value: "lower", label: "小写" },
+              { value: "upper", label: "大写" },
+              { value: "title", label: "首字母大写" },
+            ]}
+          />
         </Field>
         <Field label="排序">
           <SegmentedControl
@@ -634,12 +637,16 @@ function PanelsAppearance({ settings, patch, book }: PanelGroupProps) {
         {settings.cover.enabled ? (
           <>
             <Field label="封面样式">
-              <Select value={settings.cover.style} onChange={(e) => patch({ cover: { style: e.target.value as ExportSettings["cover"]["style"] } })}>
-                <option value="minimal">极简居中</option>
-                <option value="band">色带横幅</option>
-                <option value="boxed">边框经典</option>
-                <option value="typewriter">打字机</option>
-              </Select>
+              <Select
+                value={settings.cover.style}
+                onValueChange={(v) => patch({ cover: { style: v as ExportSettings["cover"]["style"] } })}
+                options={[
+                  { value: "minimal", label: "极简居中" },
+                  { value: "band", label: "色带横幅" },
+                  { value: "boxed", label: "边框经典" },
+                  { value: "typewriter", label: "打字机" },
+                ]}
+              />
             </Field>
             <Field label="标题">
               <Input value={settings.cover.title} onChange={(e) => patch({ cover: { title: e.target.value } })} placeholder={book.name} />
@@ -700,11 +707,14 @@ function PanelsExtras({ settings, patch, onReset }: PanelGroupProps) {
 
 function Panel({ title, desc, children, defaultOpen = false }: { title: string; desc?: string; children: React.ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
+  const id = useId();
   return (
     <section className="border-b border-gray-300 py-3 first:pt-0 last:border-b-0">
       <button
         type="button"
         className="flex w-full items-center justify-between gap-2 text-left"
+        aria-expanded={open}
+        aria-controls={id}
         onClick={() => setOpen((v) => !v)}
       >
         <div>
@@ -713,7 +723,11 @@ function Panel({ title, desc, children, defaultOpen = false }: { title: string; 
         </div>
         <ChevronDown className={cx("size-4 text-gray-800 transition-transform", open ? "" : "-rotate-90")} />
       </button>
-      {open ? <div className="mt-3 space-y-3">{children}</div> : null}
+      {open ? (
+        <div id={id} className="mt-3 space-y-3">
+          {children}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -744,7 +758,7 @@ function SliderRow({
           {suffix ?? ""}
         </span>
       </div>
-      <Slider min={min} max={max} step={step} value={[value]} onValueChange={([v]) => onChange(v)} />
+      <Slider ariaLabel={label} min={min} max={max} step={step} value={[value]} onValueChange={([v]) => onChange(v)} />
     </div>
   );
 }

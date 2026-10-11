@@ -426,7 +426,7 @@ export function BookWorkspace() {
         fillEntryIds={lookupIntent.ids}
       />
 
-      <AgentPanel book={book} open={agentOpen} onOpenChange={setAgentOpen} />
+      <AgentPanel key={book.id} book={book} open={agentOpen} onOpenChange={setAgentOpen} />
       <ImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
@@ -530,7 +530,7 @@ export function BookWorkspace() {
       <Dialog open={pendingResetStatus} onOpenChange={setPendingResetStatus}>
         <DialogHeader
           title="清除所选词条的学习进度？"
-          desc="其中部分词条已有学习记录。设为「未学」会同时清除 FSRS 调度进度（复习历史保留在每日统计中），此操作可用「撤销」恢复。"
+          desc="其中部分词条已有学习记录。设为「未学」会同时清掉复习安排（历史保留在每日统计中），此操作可用「撤销」恢复。"
         />
         <DialogFooter>
           <Button variant="secondary" onClick={() => setPendingResetStatus(false)}>
@@ -621,7 +621,7 @@ function PreviewPanel({ book, entry, onClose }: { book: NonNullable<ReturnType<t
         <Badge variant="gray" size="sm">
           {themeById(normalizeCardStyle(settings.cardStyle)).name}
         </Badge>
-        <span className="t-label-12 text-gray-700">以导出样式渲染</span>
+        <span className="t-label-12 text-gray-700">按导出样式显示</span>
         <div className="ml-auto flex items-center gap-1">
           <Link href={`/book/export?id=${book.id}`}>
             <Button size="sm" variant="secondary">

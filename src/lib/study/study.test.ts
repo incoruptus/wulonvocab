@@ -14,7 +14,7 @@ import {
   RATING_GOOD,
 } from "@/lib/study/engine";
 import { buildQueue, studyOverview } from "@/lib/study/queue";
-import { DEFAULT_STUDY_CONFIG, ymd, type StudyConfig, type StudyDailyLog } from "@/lib/study/types";
+import { DEFAULT_STUDY_CONFIG, pruneDaily, ymd, type StudyConfig, type StudyDailyLog } from "@/lib/study/types";
 import { makeEntry } from "@/lib/presets";
 
 const T0 = Date.parse("2026-10-10T04:00:00Z");
@@ -126,5 +126,37 @@ describe("buildQueue / studyOverview", () => {
     book.study.daily[ymd(T0)] = { added: 2, reviewed: 2, again: 0, hard: 0, good: 2, easy: 0, ms: 0 };    const ov = studyOverview(book as never, T0);
     expect(ov.newRemaining).toBe(0);
     expect(buildQueue(book as never, "new", T0)).toHaveLength(0);
+  });
+});
+
+describe("边界：到期判定 / 时钟回拨 / 日志裁剪（审计盲区）", () => {
+  it("isDue：到期整点算到期；未来一刻不算；无 srs 与新卡不算", () => {
+    const review = { ...newSrs(T0), state: 2, reps: 3 };
+    expect(isDue({ ...review, due: T0 }, T0)).toBe(true);
+    expect(isDue({ ...review, due: T0 + 1 }, T0)).toBe(false);
+    expect(isDue(undefined, T0)).toBe(false);
+    expect(isDue(newSrs(T0), T0)).toBe(false); // New 不参与到期
+  });
+
+  it("clampReviewNow：时钟回拨/同一毫秒钳到 last+1s；正常时间原样；无记录原样", () => {
+    const srs = { ...newSrs(T0), lastReview: T0 };
+    expect(clampReviewNow(srs, T0 - 5000)).toBe(T0 + 1000);
+    expect(clampReviewNow(srs, T0)).toBe(T0 + 1000);
+    expect(clampReviewNow(srs, T0 + 5000)).toBe(T0 + 5000);
+    expect(clampReviewNow(undefined, T0)).toBe(T0);
+  });
+
+  it("pruneDaily：≤180 条原样返回（同引用）；超出只留字典序最近 180 条", () => {
+    const mk = (day: number): StudyDailyLog => ({ added: 0, reviewed: day, again: 0, hard: 0, good: 0, easy: 0, ms: 0 });
+    const days: Record<string, StudyDailyLog> = {};
+    for (let i = 0; i < 200; i += 1) days[String(i).padStart(3, "0")] = mk(i);
+    const pruned = pruneDaily(days, T0);
+    expect(Object.keys(pruned)).toHaveLength(180);
+    expect(pruned["000"]).toBeUndefined();
+    expect(pruned["199"]).toBeDefined();
+
+    const exact = Object.fromEntries(Object.entries(days).slice(20));
+    expect(Object.keys(exact)).toHaveLength(180);
+    expect(pruneDaily(exact, T0)).toBe(exact);
   });
 });

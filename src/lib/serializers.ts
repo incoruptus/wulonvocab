@@ -21,6 +21,8 @@ export function serializeBookDoc(book: Wordbook, opts: { includeSchema?: boolean
         status: e.status,
         starred: e.starred || undefined,
         values: e.values,
+        // 携带学习进度（用户拍板）：换设备导入后 SRS/学习中心与原文一致
+        ...(e.srs ? { srs: e.srs } : {}),
       })),
     },
     null,

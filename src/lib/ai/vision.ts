@@ -2,6 +2,14 @@ import type { Schema } from "../types";
 import { buildSchemaBrief, chatCompletion, type ChatConfig } from "../lookup/ai";
 
 /**
+ * 视觉 token 粗估：按 28px 补丁网格计（各家模型实际口径不同，仅用于给用户一个量级提示）。
+ * 下限 258 对齐常见「小图保底」口径。
+ */
+export function estimateVisionTokens(width: number, height: number): number {
+  return Math.max(258, Math.ceil(width / 28) * Math.ceil(height / 28));
+}
+
+/**
  * 视觉转写：把词表照片 / 扫描页图片转成 WulonVocab JSON 文本。
  * 输出交由 parseImportText 走既有导入管线（预览 → 导入）。
  * 成本参考（R2 调研）：DeepSeek flash 每图 ≤1024 tokens 封顶，单页约 ¥0.005 量级。

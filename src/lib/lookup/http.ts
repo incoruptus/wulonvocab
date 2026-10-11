@@ -46,7 +46,7 @@ export const httpAdapter: DictionaryAdapter = {
         const parsed = JSON.parse(config.mapping || "{}") as unknown;
         if (isPlainObject(parsed)) mapping = parsed as Record<string, string>;
       } catch {
-        throw new LookupError("字段映射不是合法 JSON");
+        throw new LookupError("字段对照不是合法 JSON");
       }
 
       const values: Record<string, unknown> = {};
@@ -64,7 +64,7 @@ export const httpAdapter: DictionaryAdapter = {
           values[section.key] = normalizeValue(section.type, raw);
         }
       }
-      if (!Object.keys(values).length) throw new LookupError("映射结果为空（检查映射配置）");
+      if (!Object.keys(values).length) throw new LookupError("对照结果为空（检查对照配置）");
       return { values, summary: { headword: word } };
     } finally {
       done();

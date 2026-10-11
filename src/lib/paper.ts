@@ -74,7 +74,10 @@ export function computeGeometry(
   const base =
     typeof paper === "string" ? getPaperBox(paper) : paper;
   const page = applyOrientation(base, orientation);
-  const contentW = Math.max(20, page.width - margin.left - margin.right);
+  // 装订留白（gutter）计入内容宽扣减：PageShell 的 padding 会再加 gutter，
+  // 若此处不扣，渲染列会被 flex 压缩导致每块比测量更高、内容被裁切（分页漂移）。
+  const gutter = Math.max(0, margin.gutter || 0);
+  const contentW = Math.max(20, page.width - margin.left - margin.right - gutter);
   const contentH = Math.max(20, page.height - margin.top - margin.bottom);
   const colW = Math.max(
     10,

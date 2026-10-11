@@ -14,7 +14,8 @@ import type {
   TransformItem,
 } from "@/lib/types";
 import { COMMON_POS } from "@/lib/sections";
-import { Input, Select, Textarea } from "@/components/ui/field";
+import { Input, Textarea } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
 import { Button, IconButton } from "@/components/ui/button";
 import { Tip } from "@/components/ui/overlay";
 import { MarkdownLite } from "@/components/MarkdownLite";
@@ -91,7 +92,7 @@ export function ValueEditor({ section, value, onChange }: ValueEditorProps) {
       );
     }
     case "divider":
-      return <p className="t-label-12 text-gray-800">分隔线无需内容，导出时会渲染为一条装饰线。</p>;
+      return <p className="t-label-12 text-gray-800">分隔线无需内容，导出时会画成一条装饰线。</p>;
     default:
       return null;
   }
@@ -397,18 +398,20 @@ export function TransformsEditor({ items, onChange }: { items: TransformItem[]; 
       {items.map((t, i) => (
         <div key={i} className="flex items-center gap-1.5">
           <Input value={t.form} onChange={(e) => update(i, { form: e.target.value })} placeholder="形式，如 abandoned" className="h-8 flex-1 text-[13px]" />
-          <Select value={t.pos ?? ""} onChange={(e) => update(i, { pos: e.target.value })} className="h-8 w-24 text-[12px]" wrapClassName="shrink-0">
-            <option value="">词性</option>
-            {COMMON_POS.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-            <option value="_custom">自定义…</option>
-            {t.pos && !(COMMON_POS as readonly string[]).includes(t.pos) && t.pos !== "_custom" ? (
-              <option value={t.pos}>{t.pos}</option>
-            ) : null}
-          </Select>
+          <Select
+            size="sm"
+            className="w-24 shrink-0"
+            value={t.pos ?? ""}
+            onValueChange={(v) => update(i, { pos: v })}
+            options={[
+              { value: "", label: "（无）" },
+              ...COMMON_POS.map((p) => ({ value: p, label: p })),
+              { value: "_custom", label: "自定义…" },
+              ...(t.pos && !(COMMON_POS as readonly string[]).includes(t.pos) && t.pos !== "_custom"
+                ? [{ value: t.pos, label: t.pos }]
+                : []),
+            ]}
+          />
           <Input value={t.note ?? ""} onChange={(e) => update(i, { note: e.target.value })} placeholder="说明，如 过去式" className="h-8 w-32 text-[12px]" />
           <ItemTools up={i > 0} down={i < items.length - 1} onMove={(d) => move(i, d)} onRemove={() => onChange(items.filter((_, k) => k !== i))} />
         </div>

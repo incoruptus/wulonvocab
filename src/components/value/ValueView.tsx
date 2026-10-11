@@ -209,8 +209,12 @@ export function SensesView({ section, value }: { section: SectionDef; value: unk
       let counter = 0;
       for (const it of items) {
         if (it.sense.cont) continue; // 续块（例句扩展）不占编号
-        counter += 1;
-        it.n = counter;
+        if (typeof it.sense.printNo === "number") {
+          it.n = it.sense.printNo + 1; // 分页切片：按原始序号连续编号
+        } else {
+          counter += 1;
+          it.n = counter;
+        }
       }
       groups.push({ pos, items });
     }
@@ -220,6 +224,7 @@ export function SensesView({ section, value }: { section: SectionDef; value: unk
       pos: "",
       items: senses.map((sense) => {
         if (sense.cont) return { sense, n: null as number | null };
+        if (typeof sense.printNo === "number") return { sense, n: sense.printNo + 1 };
         counter += 1;
         return { sense, n: counter as number | null };
       }),

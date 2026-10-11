@@ -109,13 +109,13 @@ export default function LandingPage() {
           <div className="t-h-20">两种学习模式，随你切换</div>
           <p className="t-label-13 mt-1 max-w-2xl text-gray-800">
             「翻卡自评」先回忆，再翻面对照；「看词选义」从四个释义里认出对的那一个。
-            忘记的词稍后还会来敲一次门——何时出现，交给 FSRS。
+            忘记的词稍后还会来敲一次门——何时再见面，交给它安排。
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <span className="rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">翻卡自评</span>
             <span className="rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">看词选义选择题</span>
             <span className="rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">系统语音自动发音</span>
-            <span className="rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">键盘 DFJK / WEIO 快捷操作</span>
+            <span className="wv-desktop-only rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">键盘 DFJK / WEIO 快捷操作</span>
           </div>
         </section>
 

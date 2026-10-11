@@ -19,6 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check:encoding": "node scripts/check-encoding.mjs",
+    "e2e:sync": "node scripts/e2e-sync.mjs",
     "sync:skill": "node scripts/sync-skill.mjs",
     "validate": "node skill/wulonvocab-json/scripts/validate.mjs"
   },
@@ -46,6 +47,7 @@
     "clsx": "^2.1.1",
     "geist": "^1.7.2",
     "harmonyos-sans-sc-webfont-splitted": "^1.1.0",
+    "heic-to": "^1.6.5",
     "html-to-image": "^1.11.13",
     "idb-keyval": "^6.3.0",
     "jspdf": "^4.2.1",

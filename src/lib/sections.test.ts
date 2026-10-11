@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildSenseUnits,
   dedupe,
+  isValueEmpty,
   normalizeExamples,
   normalizeKeyValue,
   normalizePos,
@@ -9,6 +10,7 @@ import {
   normalizeSenses,
   normalizeTable,
   normalizeTransforms,
+  normalizeValue,
   parsePosPrefix,
   sanitizeText,
   sliceSenseCells,
@@ -208,5 +210,32 @@ describe("buildSenseUnits / sliceSenseCells（义项细粒度分页）", () => {
     expect(extras.examples).toHaveLength(1);
     expect(extras.collocations).toEqual(["abandon hope"]);
     expect(JSON.stringify(s)).toBe(before); // 原数据未被修改
+  });
+});
+
+describe("normalizeValue / isValueEmpty 防御（审计盲区）", () => {
+  const TYPES = ["text", "tags", "senses", "examples", "keyvalue", "table", "transforms", "list", "image"] as const;
+
+  it("畸形输入不抛错（对象 / 数字 / null / undefined / 布尔 / 混合数组）", () => {
+    for (const t of TYPES) {
+      for (const raw of [{ weird: true }, 12345, null, undefined, false, [null, 1, {}]]) {
+        expect(() => normalizeValue(t, raw)).not.toThrow();
+      }
+    }
+  });
+
+  it("isValueEmpty 矩阵：空形态为 true、有内容为 false", () => {
+    expect(isValueEmpty("text", "")).toBe(true);
+    expect(isValueEmpty("text", "x")).toBe(false);
+    expect(isValueEmpty("tags", [])).toBe(true);
+    expect(isValueEmpty("tags", ["a"])).toBe(false);
+    expect(isValueEmpty("senses", [])).toBe(true);
+    expect(isValueEmpty("senses", [{ pos: "n.", translation: "书" }])).toBe(false);
+    expect(isValueEmpty("examples", [])).toBe(true);
+    expect(isValueEmpty("keyvalue", [])).toBe(true);
+    expect(isValueEmpty("table", [])).toBe(true);
+    expect(isValueEmpty("list", [])).toBe(true);
+    expect(isValueEmpty("list", ["条目"])).toBe(false);
+    expect(isValueEmpty("image", null)).toBe(true);
   });
 });

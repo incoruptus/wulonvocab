@@ -107,7 +107,7 @@ export function LearnHub() {
             <EmptyState
               icon={<BookOpen className="size-4" />}
               title="还没有词库"
-              desc="先创建词库或导入词表，就能开始间隔重复学习了。"
+              desc="先创建词库或导入词表，就能开始按记忆规律复习了。"
               action={
                 <Link href="/books">
                   <Button size="sm">去创建词库</Button>
@@ -130,7 +130,7 @@ export function LearnHub() {
                   <Link href={`/study?id=${continueTarget.book.id}`}>
                     <Button>
                       <Brain className="size-4" />
-                      {m.due + m.newRemainingTotal > 0 ? "开始学习" : "打开学习面板"}
+                      {m.due + m.newRemainingTotal > 0 ? "开始学习" : "打开学习设置"}
                     </Button>
                   </Link>
                 </div>
@@ -145,7 +145,7 @@ export function LearnHub() {
                 <Sparkles className="size-3.5" /> 建议新词 {advice.suggestedNew}
               </span>
               <span className="inline-flex items-center gap-1">
-                <Timer className="size-3.5" /> 预计约 {minutes} 分钟
+                <Timer className="size-3.5" /> 大约 {minutes} 分钟
               </span>
             </div>
           </Card>
@@ -164,7 +164,7 @@ export function LearnHub() {
         {/* 未来 7 天到期 */}
         {m ? (
           <Card className="space-y-3">
-            <div className="t-h-14">未来 7 天到期预排</div>
+            <div className="t-h-14">未来 7 天要复习的词</div>
             <div className="flex items-end gap-2" style={{ height: 84 }}>
               {m.due7.map((v, i) => {
                 const max = Math.max(1, ...m.due7);
@@ -196,7 +196,7 @@ export function LearnHub() {
                 ) : null}
                 {m.medianStability !== null ? (
                   <span>
-                    记忆持久度中位数 <span className="tabular-nums">{Math.round(m.medianStability)} 天</span>
+                    记忆能撑多久（中位）：<span className="tabular-nums">{Math.round(m.medianStability)} 天</span>
                   </span>
                 ) : null}
               </div>
@@ -231,7 +231,7 @@ export function LearnHub() {
                     ) : null}
                     {overview.due === 0 && overview.newRemaining === 0 ? (
                       <Badge variant="green" size="sm">
-                        今日已清空
+                        今天已完成
                       </Badge>
                     ) : null}
                   </div>

@@ -179,6 +179,8 @@ export interface SenseItem {
   notes: string;
   /** 内部标记：渲染分页续块（仅存在于切片克隆中，不入库） */
   cont?: boolean;
+  /** 内部标记：原始义项序号（0 基，仅存在于切片克隆中）——跨页连续编号 */
+  printNo?: number;
 }
 
 export interface KeyValueItem {

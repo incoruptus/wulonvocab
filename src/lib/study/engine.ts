@@ -1,5 +1,6 @@
 import { createEmptyCard, fsrs, generatorParameters, Rating, State, type Card, type Grade } from "ts-fsrs";
 import { clamp } from "../utils";
+import type { EntryStatus } from "../types";
 import type { StudySrs } from "./types";
 
 /**
@@ -84,6 +85,13 @@ export function isDue(srs: StudySrs | undefined, now: number): boolean {
 /** 已掌握：处于复习态且间隔 ≥ 21 天 */
 export function isMastered(srs?: StudySrs): boolean {
   return Boolean(srs) && srs!.state === State.Review && srs!.scheduledDays >= 21;
+}
+
+/** 依据调度状态推导词条学习状态（新 / 在学 / 已掌握）——同步合并与 store 共用 */
+export function deriveStatusFromSrs(srs: StudySrs | undefined): EntryStatus {
+  if (isNewSrs(srs)) return "new";
+  if (isMastered(srs)) return "mastered";
+  return "learning";
 }
 
 /** 会话内需要再练：处于学习/重学态且短期内到期 */

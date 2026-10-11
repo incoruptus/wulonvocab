@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import type { Entry, Wordbook } from "@/lib/types";
 import { TONES } from "@/lib/paper";
 import { accentCssVar, FlashcardCell, fontStackFor, SectionBlock, EntryHeaderBlock } from "@/components/export/blocks";
-import { themeCssVars } from "@/lib/export/themes";
+import { themeCssVars, themeRootClass } from "@/lib/export/themes";
 import type { ExportDocument } from "@/components/export/useExportDocument";
 import type { PlannedPage } from "@/lib/export/paginate";
 import { cx } from "@/lib/utils";
@@ -41,7 +41,7 @@ export function PrintDocument({ book, doc }: PrintDocumentProps) {
 
   return (
     <div
-      className="wv-doc"
+      className={cx("wv-doc", themeRootClass(s.cardStyle))}
       style={{
         // 强调色 / 行高 / 字体栈在文档根上生效，封面、索引、页脚与所有卡片统一继承
         ...accentCssVar(ctx),

@@ -53,7 +53,7 @@ export function StudyCard({
   return (
     <div
       className={cx(
-        "wv-card w-full max-w-xl cursor-pointer rounded-2xl p-5 shadow-geist-md touch-manipulation sm:p-7",
+        "wv-card wv-swiss w-full max-w-xl cursor-pointer rounded-2xl p-5 shadow-geist-md touch-manipulation sm:p-7",
         isDark ? "bg-gray-100" : "bg-white",
       )}
       style={{ ...accentCssVar(ctx), fontSize: "12pt", lineHeight: 1.65, ...themeStyle }}

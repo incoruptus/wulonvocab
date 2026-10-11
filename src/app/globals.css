@@ -417,6 +417,22 @@
 .wv-chip--fill {
   background: color-mix(in srgb, var(--wv-accent, #0068d6) 10%, transparent);
 }
+/* 瑞士主题：卡片内所有 chips 降为纯文本（themes-2026-10 §2.2：0.9em soft、「·」分隔、禁填充色） */
+.wv-swiss .wv-chip {
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-size: 0.9em;
+  color: var(--wv-soft, #4b4b4b);
+  overflow: visible;
+}
+.wv-swiss .wv-chip + .wv-chip::before {
+  content: "·";
+  margin-right: 0.35em;
+  opacity: 0.75;
+}
 .wv-sense-num {
   font-variant-numeric: tabular-nums;
   color: var(--wv-accent, #0068d6);
@@ -459,4 +475,11 @@
 .wv-table th {
   background: color-mix(in srgb, var(--wv-accent, #0068d6) 7%, transparent);
   font-weight: 600;
+}
+
+/* 移动端：toast 抬到主导航之上，避免遮挡底部 Tab 栏（沉浸式路由页更高些也无妨） */
+@media (max-width: 639px) {
+  [data-sonner-toaster][data-y-position="bottom"] {
+    bottom: calc(3.5rem + env(safe-area-inset-bottom) + 12px) !important;
+  }
 }

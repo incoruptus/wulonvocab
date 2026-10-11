@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { cloneElement, isValidElement, useMemo, useRef, useState, useId } from "react";
 import { toast } from "sonner";
 import { Archive, Database, DownloadCloud, ExternalLink, HardDrive, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
 import type { LookupKind, LookupSourceConfig } from "@/lib/types";
@@ -21,7 +21,10 @@ import { defaultSchema } from "@/lib/presets";
 import { useAppStore } from "@/lib/store";
 import { TopNav } from "@/components/app/TopNav";
 import { Button, IconButton } from "@/components/ui/button";
-import { Input, Select, SwitchRow, Textarea } from "@/components/ui/field";
+import { Input, SwitchRow, Textarea } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
+import { SyncSection } from "@/components/sync/SyncSection";
 import { AccentPicker, Badge, Card, CardTitle, EmptyState, SegmentedControl } from "@/components/ui/misc";
 import { Dialog, DialogFooter, DialogHeader } from "@/components/ui/overlay";
 import { cx, downloadText } from "@/lib/utils";
@@ -84,6 +87,7 @@ export default function SettingsPage() {
         note: `${parsed.kind} 结构 · 离线`,
       };
       await saveLocalDictionary(meta, rows);
+      dropDictionaryCache(meta.id); // 重导后清掉内存旧表，避免本会话继续命中旧数据
       addDictionary(meta);
       const state = useAppStore.getState();
       const localSrc = state.lookupSources.find((s) => s.kind === "localdict");
@@ -132,7 +136,7 @@ export default function SettingsPage() {
 
         {/* 数据源 */}
         <Card className="space-y-4">
-          <CardTitle desc="按启用的来源并行取词，结果分组展示，任你挑用。">
+          <CardTitle desc="多个来源同时找词，结果分好组等你挑。">
             <span className="inline-flex items-center gap-2">
               <Wifi className="size-4 text-gray-800" /> 词典检索数据源
             </span>
@@ -175,7 +179,7 @@ export default function SettingsPage() {
         {/* 本地词库 */}
         <Card className="space-y-4">
           <CardTitle
-            desc="先一键内置离线词典（ECDICT 精要 / 标准），或导入 OALD / ECDICT 等数据集（JSON / CSV）。内置包按词频与考纲裁剪，下载后完全离线。"
+            desc="先一键内置离线词典（ECDICT 精要 / 标准），或导入 OALD / ECDICT 等数据集（JSON / CSV）。内置包按词频与考纲挑过一遍，下载后完全离线。"
             right={
               <div>
                 <Button size="sm" variant="secondary" loading={dictBusy} onClick={() => dictFileRef.current?.click()}>
@@ -292,8 +296,13 @@ export default function SettingsPage() {
                   const file = e.target.files?.[0];
                   if (!file) return;
                   const res = importBackupJson(await file.text());
-                  if (res.ok) toast.success(`备份恢复完成：${res.books} 个词库`);
-                  else toast.error(`恢复失败：${res.error}`);
+                  if (res.ok) {
+                    toast.success(`备份恢复完成：${res.books} 个词库`, {
+                      description: res.warnings?.length ? res.warnings[0] : undefined,
+                    });
+                  } else {
+                    toast.error(`恢复失败：${res.error}`);
+                  }
                   e.target.value = "";
                 }}
               />
@@ -310,9 +319,12 @@ export default function SettingsPage() {
           </p>
         </Card>
 
+        {/* 跨端同步 */}
+        <SyncSection />
+
         {/* 关于 */}
         <Card className="space-y-2">
-          <CardTitle desc="版本 0.1.0 · Geist 设计系统 · Next.js 16 / React 19">关于 WulonVocab</CardTitle>
+          <CardTitle desc="版本 0.1.0 · 界面遵循 Geist 设计系统">关于 WulonVocab</CardTitle>
           <p className="t-label-13 text-gray-800">
             WulonVocab 是一个本地优先的单词本工坊：动态字段管理、宽容的 JSON 导入、打印级 PDF/PNG 导出。
             字段结构与数据格式属于你，随时可以导出 JSON 带走。
@@ -362,6 +374,18 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
   const [models, setModels] = useState<FetchedModel[] | null>(null);
   const [modelsBusy, setModelsBusy] = useState(false);
   const [probe, setProbe] = useState<{ busy: boolean; ok?: boolean; text?: string }>({ busy: false });
+
+  const modelOptions = useMemo(
+    () =>
+      (models ?? []).map((m) => ({
+        value: m.id,
+        label: m.id,
+        badge: [m.vision ? "视觉" : "", m.free ? "免费" : "", m.contextK ? `${m.contextK}K` : ""]
+          .filter(Boolean)
+          .join(" · "),
+      })),
+    [models],
+  );
 
   const activePreset = PROVIDER_PRESETS.find((p) => p.id === providerId);
 
@@ -455,6 +479,7 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
         </Badge>
         <SwitchRow
           label=""
+          ariaLabel="启用此数据源"
           checked={source.enabled}
           onCheckedChange={(v) => updateSource(source.id, { enabled: v })}
         />
@@ -469,19 +494,19 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
         <div className="mt-3 space-y-2.5">
           {source.kind === "freedict" ? (
             <p className="t-label-12 text-gray-800">
-              dictionaryapi.dev：上游自 2023 年起停更、长期不稳定（默认关闭）。建议改用「网络综合词典」或内置离线词库。
+              dictionaryapi.dev：这个来源已多年没更新、时好时坏（默认关闭）。建议改用「网络综合词典」或内置离线词库。
             </p>
           ) : null}
 
           {source.kind === "zerodict" ? (
             <p className="t-label-12 text-gray-800">
-              零配置综合词源：freedictionaryapi.com（音标 / 英文释义 / 例句 / 近反义词 / 词形）＋ MyMemory 中文翻译（匿名约 5 千词/天）。两者均允许浏览器直连，无需 Key。
+              零配置综合词源：freedictionaryapi.com（音标 / 英文释义 / 例句 / 近反义词 / 词形）＋ MyMemory 中文翻译（每天约 5 千词）。两个来源都无需注册、无需 Key。
             </p>
           ) : null}
 
           {source.kind === "youdao" ? (
             <div className="space-y-2.5">
-              <Labeled label="代理前缀（含 {url} 将被替换为编码后的目标地址，否则直接拼接）">
+              <Labeled label="代理前缀（含 {url} 时会替换为处理过的目标地址，否则直接接在后面）">
                 <Input
                   value={source.config.proxyPrefix ?? ""}
                   onChange={(e) => updateSource(source.id, { config: { proxyPrefix: e.target.value } })}
@@ -490,14 +515,14 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
                 />
               </Labeled>
               <p className="t-label-12 text-gray-800">
-                有道接口不返回 CORS 头，浏览器直连会被拒绝；可自建轻量代理（如 Cloudflare Worker）或使用任意 CORS 代理。词典音频（dictvoice）无需代理。
+                有道接口不允许网页直接访问，需要一个代理地址（自己搭一个或找现成的都行）。词典音频（dictvoice）无需代理。
               </p>
             </div>
           ) : null}
 
           {source.kind === "localdict" ? (
             <p className="t-label-12 text-gray-800">
-              使用「本地词库」区域导入的词典（{dictionaries.length} 部已就绪）。导入 ECDICT 后，音标 / 释义 / 词形变化 / 考纲标签会自动映射到字段。
+              使用「本地词库」区域导入的词典（{dictionaries.length} 部已就绪）。导入 ECDICT 后，音标 / 释义 / 词形变化 / 考纲标签会自动排进对应字段。
             </p>
           ) : null}
 
@@ -505,14 +530,14 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
             <div className="space-y-2.5">
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 <Labeled label="服务商（一键填充）">
-                  <Select value={providerId} onChange={(e) => applyPreset(e.target.value)}>
-                    {PROVIDER_PRESETS.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label}
-                      </option>
-                    ))}
-                    <option value={CUSTOM_PROVIDER_ID}>自定义（OpenAI 兼容）</option>
-                  </Select>
+                  <Select
+                    value={providerId}
+                    onValueChange={applyPreset}
+                    options={[
+                      ...PROVIDER_PRESETS.map((p) => ({ value: p.id, label: p.label })),
+                      { value: CUSTOM_PROVIDER_ID, label: "自定义（OpenAI 兼容）" },
+                    ]}
+                  />
                 </Labeled>
                 <Labeled label="API Base URL">
                   <Input
@@ -528,28 +553,21 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
               </div>
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 <Labeled label="模型">
-                  <Input
+                  <Combobox
                     value={source.config.model ?? ""}
-                    onChange={(e) => updateSource(source.id, { config: { model: e.target.value } })}
+                    onValueChange={(v) => updateSource(source.id, { config: { model: v } })}
+                    options={modelOptions}
+                    allowCustom
+                    loading={modelsBusy}
                     placeholder="deepseek-chat / gpt-4o-mini …"
+                    searchPlaceholder={models ? "搜索模型…" : "输入模型名（或先拉取列表）"}
+                    emptyText="没有匹配的模型——回车直接使用输入的名字"
                     className="t-mono-13"
-                    list={models ? "wv-model-options" : undefined}
                   />
                   {models ? (
-                    <>
-                      <datalist id="wv-model-options">
-                        {models.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {[m.vision ? "视觉" : "", m.free ? "免费" : "", m.contextK ? `${m.contextK}K 上下文` : ""]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </option>
-                        ))}
-                      </datalist>
-                      <div className="t-label-12 mt-1 text-gray-700">
-                        已拉取 {models.length} 个模型——输入框里可搜索；标「视觉」的能看图
-                      </div>
-                    </>
+                    <div className="t-label-12 mt-1 text-gray-700">
+                      已拉取 {models.length} 个模型——可搜索；标「视觉」的能看图
+                    </div>
                   ) : null}
                 </Labeled>
                 <Labeled label="API Key（只保存在本机）">
@@ -566,7 +584,7 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
                   <RefreshCw className="size-3.5" /> 拉取模型列表
                 </Button>
                 <Button size="sm" variant="secondary" loading={probe.busy} onClick={runProbe}>
-                  <Wifi className="size-3.5" /> 测连接（1 token 探针）
+                  <Wifi className="size-3.5" /> 测连接（只发 1 个 token）
                 </Button>
                 {activePreset?.createKeyUrl ? (
                   <a
@@ -628,11 +646,12 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
                 <Labeled label="请求方法">
                   <Select
                     value={source.config.method ?? "GET"}
-                    onChange={(e) => updateSource(source.id, { config: { method: e.target.value } })}
-                  >
-                    <option value="GET">GET</option>
-                    <option value="POST">POST</option>
-                  </Select>
+                    onValueChange={(v) => updateSource(source.id, { config: { method: v } })}
+                    options={[
+                      { value: "GET", label: "GET" },
+                      { value: "POST", label: "POST" },
+                    ]}
+                  />
                 </Labeled>
                 <Labeled label="结果路径（可选，点号取值）">
                   <Input
@@ -651,7 +670,7 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
                   className="t-mono-13"
                 />
               </Labeled>
-              <Labeled label="字段映射（JSON：字段key → 响应路径；$ 表示整个对象）">
+              <Labeled label="字段对照（JSON：字段名 → 返回内容里的位置；$ 代表整个返回）">
                 <Textarea
                   rows={3}
                   value={source.config.mapping ?? "{}"}
@@ -676,10 +695,17 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
 }
 
 function Labeled({ label, children }: { label: string; children: React.ReactNode }) {
+  const id = useId();
+  const control =
+    isValidElement(children) && !(children.props as { id?: string }).id
+      ? cloneElement(children as React.ReactElement<{ id?: string }>, { id })
+      : children;
   return (
     <div className="space-y-1">
-      <div className="t-label-12 text-gray-800">{label}</div>
-      {children}
+      <label htmlFor={id} className="t-label-12 block text-gray-800">
+        {label}
+      </label>
+      {control}
     </div>
   );
 }

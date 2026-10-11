@@ -30,7 +30,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     supportsModelList: "full",
     modelListAuth: true,
     models: { fast: "deepseek-chat", strong: "deepseek-reasoner", vision: "deepseek-chat" },
-    note: "谷时半价；/models 含 input_modalities 可直接判定视觉能力",
+    note: "谷时半价；模型清单里能看出哪些模型可以看图",
   },
   {
     id: "openai",
@@ -41,7 +41,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     supportsModelList: "basic",
     modelListAuth: true,
     models: { fast: "gpt-4o-mini", strong: "gpt-4o", vision: "gpt-4o-mini" },
-    note: "大陆需系统代理；推理模型探针自动回退 max_completion_tokens",
+    note: "国内使用需要代理；探针会自动适配推理模型",
   },
   {
     id: "moonshot",
@@ -52,7 +52,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     supportsModelList: "full",
     modelListAuth: true,
     models: { fast: "moonshot-v1-8k", strong: "kimi-k2-0905-preview", vision: "moonshot-v1-8k-vision-preview" },
-    note: "/models 含 supports_image_in；国际站为 api.moonshot.ai（Key 不混用）",
+    note: "模型清单支持视觉标注；国际站 Key 与国内不通用",
   },
   {
     id: "zhipu",
@@ -64,7 +64,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelListAuth: true,
     models: { fast: "glm-4-flash", strong: "glm-4-plus", vision: "glm-4v-flash" },
     visionModels: ["glm-4v-flash", "glm-4v-plus", "glm-4.1v-thinking-flash"],
-    note: "端点是 /api/paas/v4（非 /v1）；GLM-4V-Flash 免费档可用",
+    note: "路径特殊（已替你填好）；有免费视觉档",
   },
   {
     id: "dashscope",
@@ -76,7 +76,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelListAuth: true,
     models: { fast: "qwen-turbo", strong: "qwen-max", vision: "qwen-vl-max" },
     visionModels: ["qwen-vl-max", "qwen-vl-plus", "qwen2.5-vl-72b-instruct"],
-    note: "特殊路径 /compatible-mode/v1；Key 与地域绑定；新用户各模型 100 万 token 免费",
+    note: "路径特殊（已替你填好）；Key 绑地域；新用户有免费额度",
   },
   {
     id: "siliconflow",
@@ -87,7 +87,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     supportsModelList: "basic",
     modelListAuth: true,
     models: { fast: "Qwen/Qwen2.5-7B-Instruct", strong: "deepseek-ai/DeepSeek-V3", vision: "Qwen/Qwen2.5-VL-72B-Instruct" },
-    note: "模型 ID 带组织前缀；免费档真实存在（如 GLM-4.5V 系列白名单外仍有免费款）",
+    note: "模型名带组织前缀；确实有免费档",
   },
   {
     id: "openrouter",
@@ -98,7 +98,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     supportsModelList: "public",
     modelListAuth: false,
     models: { fast: "openai/gpt-4o-mini", strong: "anthropic/claude-sonnet-4", vision: "google/gemini-2.0-flash-001" },
-    note: "模型清单公开无需 Key；列表带上下文 / 价格 / 模态，可直接筛选免费与视觉模型",
+    note: "模型清单无需 Key 即可拉取，带价格与视觉标注",
   },
   {
     id: "modelscope",
@@ -109,7 +109,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     supportsModelList: "public",
     modelListAuth: false,
     models: { fast: "Qwen/Qwen2.5-7B-Instruct" },
-    note: "实验特性：聊天补全需真实 Key 复测",
+    note: "实验特性，首次使用请用真实 Key 试一下",
   },
 ];
 
@@ -140,12 +140,31 @@ interface RawModel {
   pricing?: { prompt?: unknown; completion?: unknown };
 }
 
+/** 带超时的 fetch（无信号黑洞：断网/慢代理时按钮不会永久 loading） */
+async function fetchWithTimeout(url: string, init: RequestInit, ms: number): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(new Error("超时")), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function fetchModelList(preset: ProviderPreset, apiKey: string): Promise<FetchedModel[]> {
   const base = preset.baseUrl.trim().replace(/\/+$/, "");
   if (!base) throw new Error("请先填写 Base URL");
-  const res = await fetch(`${base}/models`, {
-    headers: preset.modelListAuth && apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-  });
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      `${base}/models`,
+      { headers: preset.modelListAuth && apiKey ? { Authorization: `Bearer ${apiKey}` } : {} },
+      20000,
+    );
+  } catch (e) {
+    if ((e as Error).message === "超时") throw new Error("拉取超时（20s）——检查网络或改用其他服务商");
+    throw e;
+  }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = (await res.json()) as { data?: RawModel[] };
   const list = Array.isArray(json.data) ? json.data : [];
@@ -209,13 +228,21 @@ export async function probeConnection(baseUrl: string, apiKey: string, model: st
   const messages = [{ role: "user", content: "ping" }];
   const t0 = performance.now();
   const attempt = async (body: Record<string, unknown>) => {
-    const res = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body) });
+    const res = await fetchWithTimeout(endpoint, { method: "POST", headers, body: JSON.stringify(body) }, 30000);
     const text = await res.text();
     return { res, text };
   };
-  let r = await attempt({ model: model.trim(), messages, max_tokens: 1 });
-  if (r.res.status === 400) {
-    r = await attempt({ model: model.trim(), messages, max_completion_tokens: 16 });
+  let r: { res: Response; text: string };
+  try {
+    r = await attempt({ model: model.trim(), messages, max_tokens: 1 });
+    if (r.res.status === 400) {
+      r = await attempt({ model: model.trim(), messages, max_completion_tokens: 16 });
+    }
+  } catch (e) {
+    if ((e as Error).message === "超时") {
+      return { ok: false, status: 0, detail: "连接超时（30s）", latencyMs: Math.round(performance.now() - t0) };
+    }
+    throw e;
   }
   return {
     ok: r.res.ok,

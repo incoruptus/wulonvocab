@@ -36,8 +36,8 @@ const OPEN_RATIO = 0.5;
 const SNAP_MS = 220;
 
 const TONE_CLASS: Record<TrailingAction["tone"], string> = {
-  amber: "bg-amber-700 text-white",
-  red: "bg-red-800 text-white",
+  amber: "bg-amber-700 text-gray-1000",
+  red: "bg-red-900 text-white",
 };
 
 export function SwipeableRow({ children, open, onOpenChange, leading, trailing = [], disabled }: SwipeableRowProps) {
@@ -205,7 +205,7 @@ export function SwipeableRow({ children, open, onOpenChange, leading, trailing =
     <div ref={rootRef} className="relative overflow-hidden" style={{ touchAction: "pan-y" }}>
       {/* 左侧（右滑露出）：选择 */}
       {leading ? (
-        <div className="absolute inset-y-0 left-0 flex" style={{ width: leadWidth }} aria-hidden={!open}>
+        <div className="absolute inset-y-0 left-0 flex" style={{ width: leadWidth }} aria-hidden={!open} inert={!open}>
           <button
             type="button"
             className="flex h-full w-full flex-col items-center justify-center gap-0.5 bg-blue-700 text-white"
@@ -222,7 +222,7 @@ export function SwipeableRow({ children, open, onOpenChange, leading, trailing =
 
       {/* 右侧（左滑露出）：星标 / 删除 */}
       {trailing.length ? (
-        <div className="absolute inset-y-0 right-0 flex" style={{ width: trailWidth }}>
+        <div className="absolute inset-y-0 right-0 flex" style={{ width: trailWidth }} aria-hidden={!open} inert={!open}>
           {trailing.map((a) => (
             <button
               key={a.label}

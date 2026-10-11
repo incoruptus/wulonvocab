@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Bot, Check, Loader2, Send, Sparkles, Square, Wrench } from "lucide-react";
 import type { Wordbook } from "@/lib/types";
-import { agentSystemPrompt, buildAgentTools, runAgentTurn, type AgentEvent, type AgentThread } from "@/lib/ai/agent";
+import { agentSystemPrompt, AGENT_TOOL_LABELS, buildAgentTools, runAgentTurn, type AgentEvent, type AgentThread } from "@/lib/ai/agent";
 import { makeAgentExecutor } from "@/lib/ai/agentExec";
 import { useAppStore } from "@/lib/store";
 import { Button, IconButton } from "@/components/ui/button";
@@ -43,6 +43,7 @@ export function AgentPanel({
   const confirmRef = useRef<((v: boolean) => void) | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const threadRef = useRef<AgentThread>({ messages: [] });
+  const threadBookRef = useRef(book.id);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const tools = useMemo(() => buildAgentTools(), []);
@@ -51,6 +52,15 @@ export function AgentPanel({
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [items, confirmSummary]);
+
+  // 卸载（切路由/整页离开）时中止在跑的回合并释放挂起的确认
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      confirmRef.current?.(false);
+    },
+    [],
+  );
 
   const resetThread = () => {
     threadRef.current = { messages: [{ role: "system", content: agentSystemPrompt(book) }] };
@@ -73,7 +83,13 @@ export function AgentPanel({
   const send = async () => {
     const text = input.trim();
     if (!text || running || !configured || !aiSource) return;
-    if (!threadRef.current.messages.length) resetThread();
+    // 切书（同路由换 id）时重置会话，防止模型按旧词库上下文操作新词库
+    if (threadBookRef.current !== book.id) {
+      resetThread();
+      threadBookRef.current = book.id;
+    } else if (!threadRef.current.messages.length) {
+      resetThread();
+    }
     setInput("");
     setItems((prev) => [...prev, { kind: "user", text }]);
     setRunning(true);
@@ -116,9 +132,15 @@ export function AgentPanel({
         },
       });
     } catch (e) {
-      const msg = (e as Error).message;
-      setItems((prev) => [...prev, { kind: "assistant", text: `出错了：${msg}` }]);
-      toast.error(`AI 管家：${msg}`, { description: /401|auth|key/i.test(msg) ? "到「设置 → 词典数据源 → AI」更新 API Key" : undefined });
+      if (controller.signal.aborted) {
+        setItems((prev) => (prev.at(-1)?.kind === "stop" ? prev : [...prev, { kind: "stop", text: "已停止" }]));
+      } else {
+        const msg = (e as Error).message;
+        setItems((prev) => [...prev, { kind: "assistant", text: `出错了：${msg}` }]);
+        toast.error(`AI 管家：${msg}`, {
+          description: /401|auth|key/i.test(msg) ? "到「设置 → 词典数据源 → AI」更新 API Key" : undefined,
+        });
+      }
     } finally {
       setRunning(false);
       abortRef.current = null;
@@ -127,7 +149,18 @@ export function AgentPanel({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) resolveConfirm(false); }} widthClass="max-w-2xl">
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        onOpenChange(v);
+        if (!v) {
+          // 关闭即中止：避免面板背后的非确认类工具继续写库
+          abortRef.current?.abort();
+          resolveConfirm(false);
+        }
+      }}
+      widthClass="max-w-2xl"
+    >
       <DialogHeader
         title="AI 词库管家"
         desc={`直接让它加词、补字段、查重……动手前都会先给你过目；当前词库「${book.name}」`}
@@ -139,7 +172,7 @@ export function AgentPanel({
           </div>
         ) : null}
 
-        <div ref={scrollRef} className="min-h-0 flex-1 space-y-2.5 overflow-y-auto rounded-lg bg-background-200 p-3 scroll-thin">
+        <div ref={scrollRef} aria-live="polite" aria-label="对话记录" className="min-h-0 flex-1 space-y-2.5 overflow-y-auto rounded-lg bg-background-200 p-3 scroll-thin">
           {items.length === 0 ? (
             <div className="space-y-1.5 py-6 text-center">
               <Sparkles className="mx-auto size-5 text-gray-700" />
@@ -171,7 +204,9 @@ export function AgentPanel({
                 <div key={i} className="ml-8 rounded-lg bg-background-100 px-2.5 py-1.5 text-[12px] shadow-geist-border">
                   <div className="flex items-center gap-1.5">
                     <Wrench className="size-3 text-gray-800" />
-                    <span className="t-mono-12 text-gray-1000">{it.name}</span>
+                    <span className="t-mono-12 text-gray-1000" title={it.name}>
+                      {it.name ? (AGENT_TOOL_LABELS[it.name] ?? it.name) : ""}
+                    </span>
                     {it.state === "running" ? (
                       <Loader2 className="size-3 animate-spin text-gray-700" />
                     ) : (
@@ -189,11 +224,11 @@ export function AgentPanel({
         </div>
 
         {confirmSummary ? (
-          <div className="space-y-2 rounded-lg border border-amber-700/40 bg-amber-700/10 p-3">
+          <div role="alertdialog" aria-live="assertive" aria-label="需要你确认" className="space-y-2 rounded-lg border border-amber-700/40 bg-amber-700/10 p-3">
             <div className="t-label-13 font-medium text-amber-900">需要你确认</div>
             <div className="text-[13px] text-amber-900">{confirmSummary}</div>
             <div className="flex items-center gap-2">
-              <Button size="sm" onClick={() => resolveConfirm(true)}>确认执行</Button>
+              <Button size="sm" autoFocus onClick={() => resolveConfirm(true)}>确认执行</Button>
               <Button size="sm" variant="secondary" onClick={() => resolveConfirm(false)}>取消</Button>
             </div>
           </div>
@@ -215,7 +250,13 @@ export function AgentPanel({
             className="t-copy-14 max-h-28 min-h-9 flex-1 resize-none rounded-md bg-background-100 px-3 py-2 text-gray-1000 shadow-geist-border outline-none focus:ring-2 focus:ring-blue-700/40 disabled:opacity-60"
           />
           {running ? (
-            <IconButton label="停止" onClick={() => abortRef.current?.abort()}>
+            <IconButton
+              label="停止"
+              onClick={() => {
+                abortRef.current?.abort();
+                resolveConfirm(false); // 正卡在确认流时也要释放（确认后不会执行 apply）
+              }}
+            >
               <Square className="size-4" />
             </IconButton>
           ) : (

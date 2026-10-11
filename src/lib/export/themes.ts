@@ -125,3 +125,23 @@ export function applyTheme(s: ExportSettings, id: CardStyle): ExportSettings {
 export function themeCssVars(style: CardStyle): CSSProperties {
   return style === "notebook" ? { ["--wv-write-pitch" as string]: "1.7em" } : {};
 }
+
+/** 主题根类名：瑞士主题在卡片根挂 `wv-swiss`，卡片内一切 chips 降为纯文本（globals.css 配套） */
+export function themeRootClass(style: CardStyle): string {
+  return style === "swiss" ? "wv-swiss" : "";
+}
+
+/**
+ * 实际栏数：辞书体 + 流式 + 当前 1 栏 + 内容宽 ≥165mm → 自动 2 栏
+ * （测量与渲染同源：useExportDocument 用本函数决定 geometry，PrintDocument 按计划槽渲染）
+ */
+export function effectiveColumns(
+  cardStyle: ExportSettings["cardStyle"],
+  layout: ExportSettings["layout"],
+  columns: number,
+  contentWidthMm: number,
+): number {
+  if (cardStyle !== "dictionary" || layout !== "flow") return columns;
+  if (columns !== 1) return columns;
+  return contentWidthMm >= 165 ? 2 : 1;
+}

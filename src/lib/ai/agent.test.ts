@@ -129,4 +129,36 @@ describe("runAgentTurn", () => {
     const toolMsg = thread.messages.find((m) => m.role === "tool");
     expect(String(toolMsg?.content)).toContain("error");
   });
+
+  it("确认期间被中止：不执行 apply，并把中止回传模型", async () => {
+    mockChat.mockResolvedValueOnce({
+      content: "",
+      toolCalls: [{ id: "c5", function: { name: "delete_entries", arguments: '{"headwords":["x"]}' } }],
+    });
+    const apply = vi.fn(() => ({ deleted: 1 }));
+    const exec = vi.fn(async () => ({
+      result: null,
+      needsConfirm: true,
+      confirmSummary: "删除 1 个词条",
+      apply,
+    }));
+    const controller = new AbortController();
+    const thread = makeThread();
+    await runAgentTurn({
+      cfg: { baseUrl: "https://x", model: "m" },
+      thread,
+      userText: "删掉 x",
+      tools: [],
+      exec,
+      signal: controller.signal,
+      confirm: async () => {
+        controller.abort();
+        return true; // 即使用户点了确认，中止优先
+      },
+      onEvent: () => {},
+    });
+    expect(apply).not.toHaveBeenCalled();
+    const toolMsg = thread.messages.find((m) => m.role === "tool");
+    expect(String(toolMsg?.content)).toContain("cancelled");
+  });
 });

@@ -126,7 +126,7 @@ export function ChoiceCard({
                 stateClass,
               )}
             >
-              <span className="t-mono-12 grid size-6 shrink-0 place-items-center rounded-md bg-black/5 text-[11px] font-semibold">
+              <span className="t-mono-12 grid size-6 shrink-0 place-items-center rounded-md bg-gray-1000/10 text-[11px] font-semibold">
                 {"ABCD"[i]}
               </span>
               <span className="min-w-0 flex-1">{opt.text}</span>

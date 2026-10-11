@@ -9,8 +9,10 @@ import { runBatchLookup } from "@/lib/lookup/batch";
 import { createEmptyBook, defaultSchema, makeEntry } from "@/lib/presets";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { Input, Select, SwitchRow, Textarea } from "@/components/ui/field";
+import { Input, SwitchRow, Textarea } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
 import { Badge, Card } from "@/components/ui/misc";
+import { requestSyncSoon } from "@/lib/sync/auto";
 import { cx } from "@/lib/utils";
 
 interface WordMatch {
@@ -51,6 +53,8 @@ export function TextImportPanel({ onImported }: { onImported: (bookId: string) =
   const [target, setTarget] = useState<string>("new");
   const [name, setName] = useState("");
   const abortRef = useRef<AbortController | null>(null);
+  /** 匹配请求代次：清空重来/重新匹配作废旧回调，防止预览"复活" */
+  const matchReqRef = useRef(0);
 
   const parsed = useMemo(() => {
     const tokens = text
@@ -87,6 +91,7 @@ export function TextImportPanel({ onImported }: { onImported: (bookId: string) =
     setMatches(null);
     setRunning(false);
     setProgress({ done: 0, total: 0 });
+    matchReqRef.current += 1;
   };
 
   /** 逐词匹配：并发池 + 可中止（引擎与「补全空缺 / 批量导入」共用） */
@@ -98,6 +103,7 @@ export function TextImportPanel({ onImported }: { onImported: (bookId: string) =
     const controller = new AbortController();
     abortRef.current = controller;
     const schema = currentSchema();
+    const req = ++matchReqRef.current;
     setMatches(parsed.valid.map((w) => ({ word: w, status: "missing" })));
     setRunning(true);
     setProgress({ done: 0, total: parsed.valid.length });
@@ -108,9 +114,12 @@ export function TextImportPanel({ onImported }: { onImported: (bookId: string) =
         schema,
         localDictIds: dictionaries.map((d) => d.id),
         signal: controller.signal,
-        onProgress: (done, total) => setProgress({ done, total }),
+        onProgress: (done, total) => {
+          if (matchReqRef.current === req) setProgress({ done, total });
+        },
       },
     );
+    if (matchReqRef.current !== req) return; // 已被清空/重跑：丢弃过期续体
     setMatches(
       items.map((it) => {
         if (it.best?.draft) {
@@ -162,6 +171,7 @@ export function TextImportPanel({ onImported }: { onImported: (bookId: string) =
     }
     setText("");
     reset();
+    requestSyncSoon(); // 批量导入后 30s 推送（自动同步开启时才发生）
   };
 
   return (
@@ -305,14 +315,14 @@ export function TextImportPanel({ onImported }: { onImported: (bookId: string) =
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <div className="t-label-13 font-medium text-gray-900">导入到</div>
-              <Select value={target} onChange={(e) => setTarget(e.target.value)}>
-                <option value="new">新建词库</option>
-                {books.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    追加到：{b.name}
-                  </option>
-                ))}
-              </Select>
+              <Select
+                value={target}
+                onValueChange={setTarget}
+                options={[
+                  { value: "new", label: "新建词库" },
+                  ...books.map((b) => ({ value: b.id, label: `追加到：${b.name}` })),
+                ]}
+              />
             </div>
             {target === "new" ? (
               <div className="space-y-1.5">
@@ -330,7 +340,7 @@ export function TextImportPanel({ onImported }: { onImported: (bookId: string) =
             <Button onClick={doImport} disabled={running}>
               <CheckCircle2 className="size-4" /> 导入 {enabledMatches.length + (includeMissing ? missingMatches.length : 0)} 个词条
             </Button>
-            <Button variant="tertiary" onClick={reset}>
+            <Button variant="tertiary" onClick={reset} disabled={running}>
               清空重来
             </Button>
           </div>

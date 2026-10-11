@@ -16,6 +16,11 @@ import {
 
 export const AGENT_MAX_STEPS = 10;
 const TOOL_RESULT_LIMIT = 4000;
+/** 单轮工具调用上限与参数体积上限（费用/性能护栏） */
+const MAX_TOOL_CALLS_PER_STEP = 8;
+const TOOL_ARGS_LIMIT = 20000;
+/** 历史裁剪：保留 system + 最近 N 条（前缀缓存友好，防上下文爆） */
+const THREAD_KEEP_LAST = 40;
 
 /** 工具执行结果：needsConfirm 时先确认，再调用 apply 真正执行 */
 export interface ToolExecOutcome {
@@ -170,6 +175,34 @@ export interface AgentThread {
   messages: ChatMessage[];
 }
 
+/** 工具名的中文展示（UI 用；协议里仍是英文函数名） */
+export const AGENT_TOOL_LABELS: Record<string, string> = {
+  find_entries: "查找词条",
+  add_entries: "新增词条",
+  update_entries: "补全字段",
+  add_field: "新增字段",
+  delete_entries: "删除词条",
+};
+
+/** 历史裁剪：只在 user 消息边界切，保证 assistant(tool_calls) 与 tool 结果配对完整 */
+export function trimThread(messages: ChatMessage[], keepLast: number = THREAD_KEEP_LAST): ChatMessage[] {
+  if (messages.length <= keepLast + 1) return messages;
+  const minIndex = messages.length - keepLast;
+  let cut = -1;
+  for (let i = Math.max(1, minIndex); i < messages.length; i += 1) {
+    if (messages[i].role === "user") {
+      cut = i;
+      break;
+    }
+  }
+  if (cut <= 1) return messages;
+  return [
+    messages[0],
+    { role: "assistant", content: "（较早的对话已省略以节省上下文）" },
+    ...messages.slice(cut),
+  ];
+}
+
 export async function runAgentTurn(opts: {
   cfg: ChatConfig;
   thread: AgentThread;
@@ -187,21 +220,30 @@ export async function runAgentTurn(opts: {
       onEvent?.({ type: "stop", reason: "已停止" });
       return;
     }
-    const r = await chatCompletionMessage(cfg, thread.messages, { tools, jsonMode: false, signal, timeoutMs: 120000 });
+    const r = await chatCompletionMessage(cfg, trimThread(thread.messages), { tools, jsonMode: false, signal, timeoutMs: 120000 });
     if (r.toolCalls.length) {
       thread.messages.push({ role: "assistant", content: r.content || null, tool_calls: r.toolCalls });
       if (r.content) onEvent?.({ type: "assistant", text: r.content });
-      for (const call of r.toolCalls) {
+      const calls = r.toolCalls.slice(0, MAX_TOOL_CALLS_PER_STEP);
+      const overflow = r.toolCalls.slice(MAX_TOOL_CALLS_PER_STEP);
+      for (const call of calls) {
         onEvent?.({ type: "tool-call", name: call.function.name, args: call.function.arguments });
         let payload: string;
         try {
-          const args = JSON.parse(call.function.arguments || "{}") as Record<string, unknown>;
+          const argsRaw = call.function.arguments || "{}";
+          if (argsRaw.length > TOOL_ARGS_LIMIT) throw new Error("工具参数过大（>20KB），请拆成更少批次");
+          const args = JSON.parse(argsRaw) as Record<string, unknown>;
           const out = await exec(call.function.name, args);
           if (out.needsConfirm && out.apply) {
             const ok = await confirm(out.confirmSummary ?? "确认执行该操作？");
-            payload = ok
-              ? JSON.stringify(await out.apply())
-              : JSON.stringify({ cancelled: true, note: "用户取消了该操作，请尊重不做重试" });
+            if (signal?.aborted) {
+              // 确认期间被中止：绝不执行 apply
+              payload = JSON.stringify({ cancelled: true, note: "用户中止了运行，该操作未执行" });
+            } else {
+              payload = ok
+                ? JSON.stringify(await out.apply())
+                : JSON.stringify({ cancelled: true, note: "用户取消了该操作，请尊重不做重试" });
+            }
           } else {
             payload = JSON.stringify(out.result ?? { ok: true });
           }
@@ -209,6 +251,14 @@ export async function runAgentTurn(opts: {
           payload = JSON.stringify({ error: (e as Error).message || "工具执行失败" });
         }
         const clipped = payload.length > TOOL_RESULT_LIMIT ? `${payload.slice(0, TOOL_RESULT_LIMIT)}…（已截断）` : payload;
+        thread.messages.push({ role: "tool", tool_call_id: call.id, content: clipped });
+        onEvent?.({ type: "tool-result", name: call.function.name, result: clipped });
+      }
+      // 超出的调用也要回传（协议要求每个 tool_call 都有结果），但不执行
+      for (const call of overflow) {
+        const clipped = JSON.stringify({
+          error: `单轮工具调用过多（超过 ${MAX_TOOL_CALLS_PER_STEP} 个），本项未执行；请拆成更少批次`,
+        });
         thread.messages.push({ role: "tool", tool_call_id: call.id, content: clipped });
         onEvent?.({ type: "tool-result", name: call.function.name, result: clipped });
       }

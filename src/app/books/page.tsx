@@ -259,7 +259,7 @@ function BookCard({
         <div onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <IconButton label="词库操作" size="sm" className="opacity-0 transition-opacity group-hover:opacity-100">
+              <IconButton label="词库操作" size="sm" className="opacity-0 transition-opacity group-hover:opacity-100 max-sm:opacity-100 focus-visible:opacity-100">
                 <MoreHorizontal className="size-4" />
               </IconButton>
             </DropdownMenuTrigger>
@@ -311,7 +311,7 @@ function BookCard({
             {t}
           </span>
         ))}
-        <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-gray-700 opacity-0 transition-opacity group-hover:opacity-100">
+        <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-gray-700 opacity-0 transition-opacity group-hover:opacity-100 max-sm:opacity-100">
           <Download className="size-3" /> 点击打开
         </span>
       </div>

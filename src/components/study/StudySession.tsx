@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { requestSyncSoon } from "@/lib/sync/auto";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Brain, CalendarClock, ChevronLeft, Keyboard, RotateCcw, Sparkles, Undo2, Volume2, X } from "lucide-react";
@@ -71,7 +72,7 @@ export function StudySession({ book }: { book: Wordbook }) {
   const [revealed, setRevealed] = useState(false);
   const [previews, setPreviews] = useState<GradePreview[]>([]);
   const [stats, setStats] = useState<SessionStats>(EMPTY_STATS);
-  const [undo, setUndo] = useState<{ entryId: string; before?: StudySrs; rating: GradeValue; elapsedMs: number; isNew: boolean } | null>(null);
+  const [undo, setUndo] = useState<{ entryId: string; before?: StudySrs; rating: GradeValue; elapsedMs: number; isNew: boolean; dayKey?: string } | null>(null);
   const [confirmExit, setConfirmExit] = useState(false);
   const [overview, setOverview] = useState<StudyOverview & { nextDueLabel: string }>({
     due: 0,
@@ -167,7 +168,7 @@ export function StudySession({ book }: { book: Wordbook }) {
     (mode: StudyMode) => {
       const items = buildQueue(useAppStore.getState().books.find((b) => b.id === book.id) ?? book, mode, Date.now());
       if (!items.length) {
-        toast.info(mode === "new" ? "今日新词已学完" : "没有到期待复习的词");
+        toast.info(mode === "new" ? "今日新词已学完" : "今天没有要复习的词");
         return;
       }
       setQueue(items);
@@ -209,7 +210,7 @@ export function StudySession({ book }: { book: Wordbook }) {
         good: st.good + (rating === 3 ? 1 : 0),
         easy: st.easy + (rating === 4 ? 1 : 0),
       }));
-      setUndo({ entryId: current.id, before: res.before, rating, elapsedMs: elapsed, isNew: isNewSrs(res.before) });
+      setUndo({ entryId: current.id, before: res.before, rating, elapsedMs: elapsed, isNew: isNewSrs(res.before), dayKey: res.dayKey });
       gradedRef.current = { entryId: current.id, isNew: isNewSrs(res.before), next: res.next };
       inputLockRef.current = Date.now() + 180;
       return true;
@@ -255,7 +256,7 @@ export function StudySession({ book }: { book: Wordbook }) {
       let nextEntryId: string;
       if (dir === 1) {
         if (queue.length <= 1) {
-          toast.info("已是队列中的最后一个词");
+          toast.info("已经是最后一个词了");
           return;
         }
         skippedRef.current.push(queue[0]);
@@ -315,7 +316,7 @@ export function StudySession({ book }: { book: Wordbook }) {
   const onUndo = useCallback(() => {
     if (!undo || phase !== "session") return;
     clearAutoTimer();
-    undoReview(book.id, undo.entryId, undo.before, undo.rating, undo.elapsedMs);
+    undoReview(book.id, undo.entryId, undo.before, undo.rating, undo.elapsedMs, undo.dayKey);
     setStats((st) => ({
       ...st,
       answered: Math.max(0, st.answered - 1),
@@ -569,7 +570,7 @@ export function StudySession({ book }: { book: Wordbook }) {
                 )}
               >
                 {choiceCorrect ? (
-                  <>✓ 回答正确 · 记入「记得」</>
+                  <>✓ 回答正确 · 记为「记得」</>
                 ) : (
                   <span className="line-clamp-2">
                     ✗ 正确答案：{"ABCD"[question.correctIndex]}. {question.options[question.correctIndex].text} · 记入「忘记」
@@ -678,7 +679,7 @@ function HomeView({
           </IconButton>
           <div className="min-w-0">
             <div className="t-h-16 truncate">{book.name}</div>
-            <div className="t-label-12 text-gray-800">间隔重复学习 · FSRS 调度</div>
+            <div className="t-label-12 text-gray-800">间隔重复 · 帮你安排复习</div>
           </div>
         </div>
 
@@ -691,7 +692,7 @@ function HomeView({
 
         <div className="mt-5 space-y-2.5">
           <Button size="lg" className="w-full" disabled={nothingToday} onClick={() => onStart("mixed")}>
-            <Brain className="size-4" /> {nothingToday ? "今日任务已清空" : "开始学习"}
+            <Brain className="size-4" /> {nothingToday ? "今日已完成" : "开始学习"}
           </Button>
           <div className="grid grid-cols-2 gap-2.5">
             <Button variant="secondary" disabled={overview.due === 0} onClick={() => onStart("review")}>
@@ -748,7 +749,7 @@ function HomeView({
               grow
             />
             <p className="t-label-12 text-gray-700">
-              翻卡：先回忆，再翻面对照评级；选择题：从四个释义中选出正确的一项（干扰项不足的词自动回退翻卡）。
+              翻卡：先回忆，再翻面对照评级；选择题：从四个释义里选出正确的一项（选项凑不够四个的词会回到翻卡）。
             </p>
           </div>
           {cfg.quizMode === "choice" ? (
@@ -774,7 +775,7 @@ function HomeView({
             <Volume2 className="size-3.5" /> 朗读使用设备内置语音（无需配置、无网络请求）。
           </p>
           <p className="flex items-center gap-1.5">
-            <RotateCcw className="size-3.5" /> 调度算法为 FSRS（现代间隔重复），评错随时可撤销。
+            <RotateCcw className="size-3.5" /> 复习节奏由 FSRS 安排；评错了随时可撤销。
           </p>
           <p className="wv-desktop-only hidden flex-wrap items-center gap-1.5 sm:flex">
             <Keyboard className="size-3.5" /> 桌面键位：翻卡 <Kbd>空格</Kbd> 显示释义、<Kbd>D</Kbd>
@@ -829,6 +830,10 @@ function SummaryView({
   const accuracy = stats.answered > 0 ? Math.round(((stats.answered - stats.again) / stats.answered) * 100) : 0;
   const minutes = Math.floor(durationMs / 60000);
   const seconds = Math.round((durationMs % 60000) / 1000);
+  // 会话结束：30s 后把本轮学习进度推给云端（自动同步开启时才实际发生）
+  useEffect(() => {
+    requestSyncSoon();
+  }, []);
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background-200 px-4">
       <Card className="w-full max-w-md space-y-5 p-6">
@@ -851,7 +856,7 @@ function SummaryView({
             <RotateCcw className="size-4" /> 再来一轮
           </Button>
           <Button variant="secondary" onClick={onHome}>
-            返回学习面板
+            回到学习首页
           </Button>
           <Button variant="tertiary" onClick={onExit}>
             回到词库

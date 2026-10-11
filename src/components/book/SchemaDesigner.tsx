@@ -18,7 +18,8 @@ import { ACCENTS } from "@/lib/paper";
 import { isValueEmpty, SECTION_ICON_CHOICES, SECTION_TYPE_LIST, SECTIONS, sortSections } from "@/lib/sections";
 import { SCHEMA_PRESETS } from "@/lib/presets";
 import { useAppStore } from "@/lib/store";
-import { Input, Select, Switch, SwitchRow } from "@/components/ui/field";
+import { Input, Switch, SwitchRow } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
 import { Button, IconButton } from "@/components/ui/button";
 import { Badge, Card, EmptyState } from "@/components/ui/misc";
 import { Dialog, DialogBody, DialogFooter, DialogHeader, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/overlay";
@@ -159,7 +160,7 @@ function SortableFieldRow({
       <button
         type="button"
         aria-label="拖动排序"
-        className="cursor-grab text-gray-600 opacity-0 transition-opacity group-hover:opacity-100 active:cursor-grabbing"
+        className="cursor-grab text-gray-600 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 active:cursor-grabbing"
         {...attributes}
         {...listeners}
       >
@@ -183,7 +184,7 @@ function SortableFieldRow({
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <IconButton label="字段操作" size="xs" className="opacity-0 group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
+          <IconButton label="字段操作" size="xs" className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-sm:opacity-100" onClick={(e) => e.stopPropagation()}>
             <span className="text-[14px] leading-none">⋯</span>
           </IconButton>
         </DropdownMenuTrigger>
@@ -267,7 +268,7 @@ function FieldConfig({ book, section, onDeleted }: { book: Wordbook; section: Se
                 }
                 const ok = renameSectionKey(book.id, section.id, next);
                 if (!ok) {
-                  toast.error("键名冲突或无效，已还原");
+                  toast.error("键名冲突（已有同名字段或词条数据），已还原");
                   setKeyDraft(section.key);
                 } else {
                   toast.success(`数据键已重命名为 ${next}`, { description: "现有词条数据已同步迁移。" });
@@ -357,14 +358,9 @@ function FieldConfig({ book, section, onDeleted }: { book: Wordbook; section: Se
                     <div className="t-label-13 text-gray-900">{of.label}</div>
                     <Select
                       value={String(raw ?? (def.defaults as Record<string, unknown>)[of.key] ?? "")}
-                      onChange={(e) => updateSection(book.id, section.id, { options: { [of.key]: e.target.value } })}
-                    >
-                      {(of.options ?? []).map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </Select>
+                      onValueChange={(v) => updateSection(book.id, section.id, { options: { [of.key]: v } })}
+                      options={(of.options ?? []).map((opt) => ({ value: opt.value, label: opt.label }))}
+                    />
                   </div>
                 );
               }
@@ -388,7 +384,7 @@ function FieldConfig({ book, section, onDeleted }: { book: Wordbook; section: Se
       ) : null}
 
       <div className="t-label-12 text-gray-700">
-        已填写 {filled} / {book.entries.length} 个词条 · 类型 {section.type} · ID {section.id.slice(0, 8)}
+        已填写 {filled} / {book.entries.length} 个词条
       </div>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>

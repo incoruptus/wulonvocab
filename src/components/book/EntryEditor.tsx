@@ -11,7 +11,6 @@ import { Dialog, DialogBody, DialogFooter, DialogHeader, DropdownMenu, DropdownM
 import { SectionIcon } from "@/components/icon";
 import { ValueEditor } from "@/components/value/ValueEditor";
 import { TagsEditor } from "@/components/value/ValueEditor";
-import { PosDatalist } from "@/components/value/SensesEditor";
 import { EntryPreviewCard } from "@/components/book/EntryPreview";
 import { cx, formatDateTime } from "@/lib/utils";
 import { toast } from "sonner";
@@ -57,7 +56,6 @@ export function EntryEditor({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PosDatalist />
       {/* 词条头部 */}
       <div className="space-y-3 border-b border-gray-300 px-4 py-4 lg:px-5">
         {onBack ? (
@@ -122,7 +120,6 @@ export function EntryEditor({
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <SegmentedControl
-            size="sm"
             value={entry.status}
             onValueChange={(v) => useAppStore.getState().setEntryStatus(book.id, entry.id, v)}
             options={[
@@ -151,7 +148,7 @@ export function EntryEditor({
 
       {/* 动态字段（移动端：编辑 / 预览 双 Tab） */}
       <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
-        <div className={cx("space-y-6 px-4 py-5 pb-28 lg:px-5 lg:pb-6", mobileTab === "edit" ? "" : "hidden lg:block")}>
+        <div className={cx("space-y-6 px-4 py-5 pb-40 lg:px-5 lg:pb-6", mobileTab === "edit" ? "" : "hidden lg:block")}>
           {sections.length === 0 ? (
             <EmptyState
               icon={<Sparkles className="size-4" />}
@@ -205,9 +202,9 @@ export function EntryEditor({
         </div>
 
         {/* 预览 Tab（移动端）：与导出一致 */}
-        <div className={cx("px-4 py-5 pb-28 lg:hidden", mobileTab === "preview" ? "" : "hidden")}>
+        <div className={cx("px-4 py-5 pb-40 lg:hidden", mobileTab === "preview" ? "" : "hidden")}>
           <EntryPreviewCard book={book} entry={entry} className="mx-auto max-w-[340px]" />
-          <p className="t-label-12 mt-3 text-center text-gray-700">与导出排版一致 · 纸张与样式可在导出工作室调整</p>
+          <p className="t-label-12 mt-3 text-center text-gray-700">与导出排版一致（白纸即印刷所见）· 纸张与样式可在导出工作室调整</p>
         </div>
       </div>
 
@@ -259,8 +256,8 @@ export function EntryEditor({
         </DialogFooter>
       </Dialog>
 
-      {/* 移动端：编辑 / 预览 切换 */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-2 border-t border-gray-300 bg-background-100 pb-[env(safe-area-inset-bottom)] lg:hidden">
+      {/* 移动端：编辑 / 预览 切换（抬到主导航之上，避免两条底栏叠加遮挡） */}
+      <nav className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 grid grid-cols-2 border-t border-gray-300 bg-background-100 pb-0 sm:bottom-0 sm:pb-[env(safe-area-inset-bottom)] lg:hidden">
         {(
           [
             { id: "edit", label: "编辑", icon: PenLine },

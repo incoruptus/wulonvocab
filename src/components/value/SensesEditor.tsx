@@ -6,10 +6,10 @@ import type { SectionDef, SenseItem } from "@/lib/types";
 import { COMMON_POS, normalizePos } from "@/lib/sections";
 import { blankSense } from "@/lib/presets";
 import { Textarea } from "@/components/ui/field";
+import { Combobox } from "@/components/ui/combobox";
 import { Button, IconButton } from "@/components/ui/button";
 import { Tip } from "@/components/ui/overlay";
 import { ExamplesEditor, ListEditor, WordListEditor } from "./ValueEditor";
-import { cx } from "@/lib/utils";
 
 /**
  * 义项编辑器：词性 → 释义 → 用法 / 句型 / 例句 / 近反义词 / 搭配 / 备注。
@@ -187,30 +187,15 @@ function Labelled({ label, children }: { label: string; children: React.ReactNod
 
 function PosInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <input
-      list="wv-pos-list"
+    <Combobox
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onBlur={(e) => {
-        const norm = normalizePos(e.target.value);
-        if (norm !== e.target.value) onChange(norm);
-      }}
+      onValueChange={(v) => onChange(normalizePos(v))}
+      options={COMMON_POS.map((p) => ({ value: p, label: p }))}
+      allowCustom
       placeholder="词性"
-      className={cx(
-        "h-6 w-16 shrink-0 rounded-md bg-background-100 px-1.5 text-center text-[12px] font-medium text-gray-1000 shadow-geist-border",
-        "outline-none focus-visible:shadow-[0_0_0_1px_var(--ds-focus-color),0_0_0_3px_color-mix(in_srgb,var(--ds-focus-color)_18%,transparent)]",
-      )}
+      searchPlaceholder="词性…"
+      emptyText="回车直接使用输入的值"
+      className="h-6 w-24 shrink-0 px-1.5 text-[12px] font-medium"
     />
-  );
-}
-
-/** 全局共享的词性候选列表 */
-export function PosDatalist() {
-  return (
-    <datalist id="wv-pos-list">
-      {COMMON_POS.map((p) => (
-        <option key={p} value={p} />
-      ))}
-    </datalist>
   );
 }

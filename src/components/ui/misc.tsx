@@ -154,7 +154,7 @@ export function SegmentedControl<T extends string>({
           title={opt.title}
           className={cx(
             "inline-flex items-center justify-center gap-1.5 rounded-[5px] text-gray-900 transition-colors",
-            size === "sm" ? "h-6 px-2 text-[12px]" : "h-7 px-2.5 text-[13px]",
+            size === "sm" ? "h-7 px-2 text-[12px]" : "h-7 px-2.5 text-[13px]",
             grow && "min-w-0 flex-1",
             "hover:text-gray-1000 data-[state=on]:bg-background-100 data-[state=on]:text-gray-1000 data-[state=on]:shadow-geist-xs",
           )}
