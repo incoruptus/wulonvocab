@@ -24,7 +24,7 @@ interface PendingImport {
 
 /**
  * 跨端同步（P0 手动档）：
- * 导出/分享 `.wulonsync` 同步包 → 另一台「导入」→ 合并预览（冲突可翻转）→ 应用。
+ * 导出/分享 `.wulonsync` 同步包 → 在任一设备「导入」→ 合并预览（冲突可翻转）→ 应用。
  * 合并前自动安全快照；同步元数据独立存储，不进主库、不随包传播。
  */
 export function SyncSection() {
@@ -61,7 +61,7 @@ export function SyncSection() {
     try {
       const { filename, text } = buildFile();
       downloadText(filename, text, "application/json");
-      toast.success("同步包已导出", { description: "把它带到另一台设备，从「导入同步包」进入" });
+      toast.success("同步包已导出", { description: "把它带到其他设备，从「导入同步包」进入" });
     } catch (e) {
       toast.error((e as Error).message);
     }

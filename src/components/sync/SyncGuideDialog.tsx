@@ -40,7 +40,7 @@ export function SyncGuideDialog({ open, onOpenChange }: { open: boolean; onOpenC
                 <Badge variant="gray" size="sm">零配置</Badge>
               </div>
               <p className="mt-1.5 t-label-12 text-gray-700">
-                导出一个小文件（AirDrop / 微信 / 网盘都能带），在另一台导入合并。
+                导出一个小文件（AirDrop / 微信 / 网盘都能带），在任何一台导入合并。
                 偶尔换机、偶尔对账，用它就够了。
               </p>
             </div>
@@ -62,12 +62,15 @@ export function SyncGuideDialog({ open, onOpenChange }: { open: boolean; onOpenC
     },
     {
       key: "token",
-      title: "第 1 步 · 给应用一把「只开 Gists」的钥匙",
+      title: "第 1 步 · GitHub Token：一张只开 Gist 的门禁卡",
       body: (
         <div className="space-y-3">
           <p className="t-label-13 text-gray-800">
-            自动同步需要一个 GitHub Token——它相当于一把钥匙，让 WulonVocab 只能读写你自己的 Gist，碰不了你的代码和仓库。
-            <strong>Token 只保存在这台设备</strong>，不会发给任何人。
+            Gist 存在<strong>你的 GitHub 账号</strong>里——应用要带上一张门禁卡（Token），才有资格把内容放进你自己的柜子。
+            这张卡只能开 Gist 这一个柜子，碰不了你的代码和仓库。
+          </p>
+          <p className="t-label-12 text-gray-700">
+            <strong>Token 只保存在这台设备</strong>，不发给任何人、不上传。它管的是「放得进你的柜子」。
           </p>
           <ol className="list-decimal space-y-1.5 pl-5 t-label-13 text-gray-800">
             <li>打开下面这个链接（已帮你勾好权限，只需要点一下确认）。</li>
@@ -89,19 +92,36 @@ export function SyncGuideDialog({ open, onOpenChange }: { open: boolean; onOpenC
     },
     {
       key: "pair",
-      title: "第 2 步 · 配对码：两把锁配同一把钥匙",
+      title: "第 2 步 · 配对码：保险箱密码",
       body: (
         <div className="space-y-3">
           <p className="t-label-13 text-gray-800">
-            配对码是加密钥匙。这台设备生成一串码，另一台输入同一串码——只有你们俩能解开中转站里的内容。
+            为什么两个都要？因为它们是<strong>两把不同的钥匙，分工正好互补</strong>：
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="rounded-lg bg-background-200 p-3">
+              <div className="flex items-center gap-1.5 t-label-12 font-medium text-gray-900">
+                <Cloud className="size-3.5" /> GitHub Token · 门禁卡
+              </div>
+              <p className="mt-1 t-label-12 text-gray-700">决定「能不能进你的柜子」——没有它，写不进也读不出你的 Gist。</p>
+            </div>
+            <div className="rounded-lg bg-background-200 p-3">
+              <div className="flex items-center gap-1.5 t-label-12 font-medium text-gray-900">
+                <KeyRound className="size-3.5" /> 配对码 · 保险箱密码
+              </div>
+              <p className="mt-1 t-label-12 text-gray-700">决定「看得懂看不懂」——内容全程加密，链接泄露也只是一串乱码。</p>
+            </div>
+          </div>
+          <p className="t-label-13 text-gray-800">
+            配对码在本地生成；每台设备输入同一串码，就能互相解开内容：
           </p>
           <ol className="list-decimal space-y-1.5 pl-5 t-label-13 text-gray-800">
             <li>这台设备点「生成配对码」。</li>
-            <li>通过微信 / 备忘录 / 面对面，把码给另一台设备。</li>
-            <li>另一台在同样位置粘贴，保存即可。</li>
+            <li>通过微信 / 备忘录 / 面对面，把码发给要同步的设备（有几台发几台）。</li>
+            <li>每台都在同样位置粘贴，保存即可。</li>
           </ol>
           <div className="rounded-lg bg-amber-700/10 p-2.5 t-label-12 text-amber-900">
-            配对码就是密码，别发到公开群里。丢了也没关系——重新生成一对比，旧数据重新同步一次就会对上。
+            配对码就是密码，别发到公开群里。丢了也没关系——重新生成一串、各设备重新配对一次，数据重新同步就会对上。
           </div>
         </div>
       ),
@@ -112,14 +132,21 @@ export function SyncGuideDialog({ open, onOpenChange }: { open: boolean; onOpenC
       title: "完成 · 之后它会自己动",
       body: (
         <div className="space-y-3">
-          <p className="t-label-13 text-gray-800">两台设备都配好之后，同步会在这些时机自动发生：</p>
+          <p className="t-label-13 text-gray-800">配好之后（两台、三台……都可以），同步会在这些时机自动发生：</p>
           <ul className="space-y-1.5 t-label-13 text-gray-800">
             <li className="flex items-center gap-2"><Sparkles className="size-3.5 text-gray-800" /> 打开应用约 5 秒后</li>
             <li className="flex items-center gap-2"><RefreshCw className="size-3.5 text-gray-800" /> 切回前台时（距上次超过 10 分钟）、恢复联网时</li>
             <li className="flex items-center gap-2"><KeyRound className="size-3.5 text-gray-800" /> 常驻时每 30 分钟一次；也可以随时点「立即同步」</li>
           </ul>
+          <div className="rounded-lg bg-blue-100 p-3">
+            <div className="t-label-13 font-medium text-blue-900">三台、五台也可以</div>
+            <p className="mt-1 t-label-12 text-blue-900">
+              同一对 Token 和配对码，在每一台照配一遍、都打开自动同步就行。每台都会「先拉最新 → 合并 → 再推回去」，
+              像接力棒：一台的改动经另一台传到第三台，最多多等一轮。删除也会跟着传播，不会被别的设备「复活」。
+            </p>
+          </div>
           <p className="t-label-12 text-gray-700">
-            合并前会自动留一份安全快照；真正的冲突（两端都改了同一处）按较新一侧，并记录在对账里。
+            合并前会自动留一份安全快照；真正的冲突（两端都改了同一处）按较新一侧，并在提示里计数。
           </p>
         </div>
       ),

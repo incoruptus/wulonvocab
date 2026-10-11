@@ -148,7 +148,7 @@ export function GistSyncBlock() {
     if (!codeDraft) return;
     try {
       await navigator.clipboard.writeText(codeDraft);
-      toast.success("配对码已复制——把它带到另一台设备");
+      toast.success("配对码已复制——发给要同步的设备（有几台发几台）");
     } catch {
       toast.info("复制失败，请手动选中复制");
     }
@@ -173,7 +173,7 @@ export function GistSyncBlock() {
 
       <p className="t-label-12 text-gray-700">
         借你 GitHub 账号里的免费 Gist 当私密中转站：内容先用配对码加密再上传，中转站看到的只是密文。
-        不想用 GitHub？用上面的「同步包」手动搬一次，也一样能对齐。
+        多台设备？同一对 Token + 配对码照配一遍，几台都行。不想用 GitHub？用上面的「同步包」手动搬一次，也一样能对齐。
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -204,7 +204,7 @@ export function GistSyncBlock() {
             <Button size="sm" variant="secondary" onClick={() => setConfirm({ kind: "regen" })}>
               <RefreshCw className="size-3.5" /> 生成新码
             </Button>
-            <span className="t-label-12 text-gray-700">两台设备输入同一串码即可互解</span>
+            <span className="t-label-12 text-gray-700">同一串码配到每台设备——两台、三台都互解</span>
           </div>
         </div>
 
@@ -278,14 +278,14 @@ export function GistSyncBlock() {
           title={confirm?.kind === "regen" ? "生成新的配对码？" : "重新创建同步仓库？"}
           desc={
             confirm?.kind === "regen"
-              ? "另一台设备需要用新码重新配对才能继续同步；旧内容不会丢。"
+              ? "其他设备需要用新码重新配对才能继续同步；旧内容不会丢。"
               : "会在你的 GitHub 上新建一个 Gist；旧的不会被删除，可自行清理。"
           }
         />
         <DialogBody>
           <p className="t-label-13 text-gray-800">
             {confirm?.kind === "regen"
-              ? "确认后会生成一串新码并替换旧码；另一台设备下次同步前需要粘贴新码。"
+              ? "确认后会生成一串新码并替换旧码；每台设备下次同步前需要粘贴新码。"
               : "确认后清除当前仓库连接，下次同步将在你的 GitHub 上创建新的 Gist。"}
           </p>
         </DialogBody>
@@ -299,7 +299,7 @@ export function GistSyncBlock() {
               setConfirm(null);
               if (kind === "regen") {
                 const code = generatePairCode();
-                void patchGist({ pairCode: code, lastPushHash: null }).then(() => toast.success("新配对码已生成——记得复制给另一台设备"));
+                void patchGist({ pairCode: code, lastPushHash: null }).then(() => toast.success("新配对码已生成——记得复制给每一台设备"));
               } else {
                 void patchGist({ gistId: null, lastPushHash: null }).then(() => toast.success("下次同步会创建新的 Gist"));
               }
