@@ -50,6 +50,9 @@
    **主题上下文类**：瑞士主题必须在卡片/文档根挂 `wv-swiss`（经 `themeRootClass()`），卡片内 chips 由此降为纯文本；
    **有效栏数**：辞书体宽页自动双栏由 `effectiveColumns()` 统一派生——**分页（paginate）与几何（computeGeometry）必须共用同一有效栏数**，任何一处直用 `settings.columns` 都会造成测量-渲染漂移。新增卡片宿主（预览/学习卡/测量层/打印）必须同时接上两者。
 6. 打印路径基于隐藏 iframe 克隆 + 动态 `@page`；`@page` 内注入字面 mm 值，不使用 CSS 变量。
+   **测量管线（大词库防卡）**：测量层必须**分批挂载**（每帧一批，进度可数）并暴露 `ExportProgress`
+   （fonts → measure → paginate）；**滑杆类高频设置经 `useDebouncedValue`(180ms) 稳定后才触发重测量**，
+   旧预览保持可见并盖「正在更新排版…」；禁止回到「一次性渲染全部测量节点 + 单次同步测量」的写法。
 7. **导出配置生效约定**：强调色 / 行高 / 字体栈 / 纸张色调必须在 `.wv-doc` 根与页面壳上以 CSS 变量下发
    （`--wv-accent` / `--wv-lh` / `fontFamily` / `--wv-line` / `--wv-soft`，`.wv-card` 会读这些变量），
    且 `MeasureLayer` 与 `PrintDocument` 必须同源；**禁止只在词条卡片上设置这些变量**（封面/索引会拿不到）。

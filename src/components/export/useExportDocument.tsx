@@ -7,6 +7,7 @@ import { buildSenseUnits, isValueEmpty, sortSections, valueLength, type SenseCel
 import { paginate, type MeasuredBlock, type PaginationResult } from "@/lib/export/paginate";
 import { EntryHeaderBlock, fontStackFor, NotebookBandBlock, SectionBlock, type CardCtx } from "@/components/export/blocks";
 import { effectiveColumns, normalizeExportSettings, themeCssVars, themeRootClass } from "@/lib/export/themes";
+import { useDebouncedValue } from "@/lib/useDebounced";
 
 const SPLITTABLE_TYPES: SectionType[] = ["senses", "examples", "keyvalue", "transforms", "image", "list", "tags", "table"];
 
@@ -47,8 +48,14 @@ export interface ExportDocument {
   plan: PaginationResult | null;
   gridPerPage: number;
   measureKey: string;
-  register: (id: string) => (el: HTMLElement | null) => void;
+  register: (id: string) => (el: HTMLDivElement | null) => void;
   heights: Map<string, number>;
+  /** 已挂载的测量节点数（分批进度；undefined 视作全量） */
+  measureVisible?: number;
+  /** 排版进度（分批测量 / 分页阶段） */
+  progress: ExportProgress;
+  /** 滑杆防抖等待中（旧预览仍可见时显示「正在更新排版…」） */
+  pending: boolean;
 }
 
 function visibleSections(schema: Wordbook["schema"], settings: ExportSettings): SectionDef[] {
@@ -71,6 +78,13 @@ function unitRangesFor(type: SectionType, value: unknown, groupByPos: boolean): 
 
 /** 各主题的块内间距（mm；见 themes-2026-10.md §2） */
 const INTRA_GAP_MM: Record<string, number> = { dictionary: 1.6, swiss: 3.2, notebook: 2.8, flashcard: 2.4 };
+
+/** 排版进度（供工作室显示「确实没卡」）：fonts → measure（分批挂载）→ paginate → done */
+export interface ExportProgress {
+  phase: "idle" | "fonts" | "measure" | "paginate" | "done";
+  done: number;
+  total: number;
+}
 
 export function useExportDocument(book: Wordbook, rawSettings: ExportSettings): ExportDocument {
   // 迁移与补齐（旧 cardStyle / grid.gapMm）在入口统一处理，测量与渲染共享同一份设置
@@ -233,30 +247,67 @@ export function useExportDocument(book: Wordbook, rawSettings: ExportSettings): 
     [book.id, book.updatedAt, entries.length, sections, settings, geometry.slotW, columns],
   );
 
+  // 滑杆类高频设置：等待 180ms 稳定后再进入重测量（离散开关走 specs 立即重跑）
+  const settle = useDebouncedValue(measureKey, 180);
+  const [measureVisible, setMeasureVisible] = useState(0);
+  const [progress, setProgress] = useState<ExportProgress>({ phase: "idle", done: 0, total: 0 });
+
   useEffect(() => {
     let cancelled = false;
+    let raf = 0;
+    const total = specs.length;
     const run = async () => {
+      await Promise.resolve(); // 确保 setState 落在异步回调（不在 effect 同步体）
+      if (cancelled) return;
+      if (settings.layout === "grid") {
+        // 网格模式不走测量/分页（rAF 回调内 setState，规避同步 setState 规则）
+        raf = requestAnimationFrame(() => {
+          if (cancelled) return;
+          setMeasureVisible(0);
+          setProgress({ phase: "done", done: 0, total: 0 });
+        });
+        return;
+      }
       try {
         await document.fonts.ready;
       } catch {
         /* ignore */
       }
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (cancelled) return;
-          const next = new Map<string, number>();
-          for (const [id, el] of elsRef.current) {
-            next.set(id, el.getBoundingClientRect().height);
-          }
-          setHeights(next);
-        });
-      });
+      if (cancelled) return;
+      setMeasureVisible(0);
+      setProgress({ phase: "measure", done: 0, total });
+      // 分批挂载测量节点：每帧一批，主线程可响应，进度可见
+      let count = 0;
+      const chunk = Math.max(80, Math.ceil(total / 40));
+      const step = () => {
+        if (cancelled) return;
+        count = Math.min(total, count + chunk);
+        setMeasureVisible(count);
+        setProgress({ phase: "measure", done: count, total });
+        if (count < total) {
+          raf = requestAnimationFrame(step);
+          return;
+        }
+        // 全部挂载后：单次强制布局测量（双 rAF 等样式稳定）
+        raf = requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (cancelled) return;
+            setProgress({ phase: "paginate", done: total, total });
+            const next = new Map<string, number>();
+            for (const [id, el] of elsRef.current) next.set(id, el.getBoundingClientRect().height);
+            setHeights(next);
+            setProgress({ phase: "done", done: total, total });
+          }),
+        );
+      };
+      raf = requestAnimationFrame(step);
     };
     void run();
     return () => {
       cancelled = true;
+      cancelAnimationFrame(raf);
     };
-  }, [measureKey]);
+  }, [settle.value, specs, settings.layout]);
 
   const plan = useMemo<PaginationResult | null>(() => {
     if (settings.layout === "grid") return null;
@@ -320,6 +371,11 @@ export function useExportDocument(book: Wordbook, rawSettings: ExportSettings): 
     measureKey,
     register,
     heights,
+    /** 已挂载的测量节点数（分批进度） */
+    measureVisible,
+    /** 排版进度与防抖等待（UI「没卡」指示） */
+    progress,
+    pending: settle.pending,
   };
 }
 
@@ -329,6 +385,7 @@ export function useExportDocument(book: Wordbook, rawSettings: ExportSettings): 
 
 export function MeasureLayer({ doc }: { doc: ExportDocument }) {
   const { specs, ctx, geometry, register } = doc;
+  const visible = Math.min(specs.length, doc.measureVisible ?? specs.length);
   return (
     <div
       aria-hidden
@@ -351,7 +408,7 @@ export function MeasureLayer({ doc }: { doc: ExportDocument }) {
           ...themeCssVars(ctx.settings.cardStyle),
         }}
       >
-        {specs.map((spec) => {
+        {specs.slice(0, visible).map((spec) => {
           if (spec.kind === "header") {
             return (
               <div key={spec.id} ref={register(spec.id)} style={{ marginTop: spec.gapBefore }}>

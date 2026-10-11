@@ -11,6 +11,7 @@ import {
   FileDown,
   FileJson,
   LayoutGrid,
+  Loader2,
   Palette,
   Printer,
   SlidersHorizontal,
@@ -27,11 +28,25 @@ import { AccentPicker, SegmentedControl } from "@/components/ui/misc";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/overlay";
 import { PrintDocument } from "@/components/export/PrintDocument";
 import { ExportPresetDialog } from "@/components/export/ExportPresetDialog";
-import { MeasureLayer, useExportDocument } from "@/components/export/useExportDocument";
+import { MeasureLayer, useExportDocument, type ExportProgress } from "@/components/export/useExportDocument";
 import { capturePagesAsPng, exportBaseName, exportRasterPdf, printPages, zipFiles, dpiLabel } from "@/lib/export/print";
 import { cx, downloadBlob } from "@/lib/utils";
 
 type ExportPatch = Parameters<ReturnType<typeof useAppStore.getState>["updateExportSettings"]>[1];
+
+/** 排版阶段文案（「确实没卡」的可读反馈） */
+function phaseText(p: ExportProgress): string {
+  switch (p.phase) {
+    case "fonts":
+      return "正在加载字体…";
+    case "measure":
+      return "正在测量排版…";
+    case "paginate":
+      return "正在分页…";
+    default:
+      return "正在排版…";
+  }
+}
 
 /** 移动端底部工具抽屉的分组（参考图片编辑器的 Tab 式组织：按工作流分 4 组） */
 const MOBILE_TABS = [
@@ -185,13 +200,35 @@ export function ExportStudio({ book }: { book: Wordbook }) {
                     <PrintDocument book={book} doc={doc} />
                   </div>
                 ) : (
-                  <div className="flex h-96 w-[420px] items-center justify-center rounded-xl bg-background-100 shadow-geist-border">
-                    <span className="t-label-13 text-gray-800">正在排版…</span>
+                  <div className="flex h-96 w-[420px] flex-col items-center justify-center gap-3 rounded-xl bg-background-100 px-6 shadow-geist-border">
+                    <Loader2 className="size-5 animate-spin text-gray-700" />
+                    <span className="t-label-13 text-gray-800">{phaseText(doc.progress)}</span>
+                    {doc.progress.phase === "measure" && doc.progress.total > 0 ? (
+                      <div className="w-full max-w-[280px] space-y-1.5">
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+                          <div
+                            className="h-full rounded-full bg-gray-1000 transition-[width] duration-150"
+                            style={{ width: `${Math.round((doc.progress.done / doc.progress.total) * 100)}%` }}
+                          />
+                        </div>
+                        <div className="t-mono-12 text-center text-gray-700">
+                          已测量 {doc.progress.done} / {doc.progress.total} 块
+                        </div>
+                      </div>
+                    ) : null}
+                    <span className="t-label-12 text-gray-700">词库越大这一步越久；期间界面可以正常操作。</span>
                   </div>
                 )}
               </div>
             </div>
           </div>
+
+          {/* 已就绪但正在重测量（滑杆防抖/离散改动）：盖一枚轻量提示，旧预览保持可见 */}
+          {doc.ready && doc.pending ? (
+            <div className="pointer-events-none absolute right-3 top-3 z-10 flex items-center gap-1.5 rounded-full bg-gray-1000/85 px-3 py-1.5 t-label-12 text-background-100 shadow-geist-md">
+              <Loader2 className="size-3.5 animate-spin" /> 正在更新排版…
+            </div>
+          ) : null}
 
           {/* 缩放控制：停靠在预览区底部，不遮挡页面内容 */}
           <div className="flex shrink-0 items-center justify-end gap-3 border-t border-gray-300 bg-background-100 px-3 py-2 sm:px-4">
