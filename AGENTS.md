@@ -80,9 +80,13 @@
   Gist 分片阈值 460KB 不得上调（GitHub API 1MB 截断线以内）；向导（`SyncGuideDialog`）文案结构「是什么 / 为什么 / 怎么做」，
   改配置 UI 时必须同步走查向导三步不脱节。
   **自动调度必须全局常驻**：节奏触发器只在根布局的 `SyncAutoProvider`（所有页面）——**禁止把调度或依赖注册放进页面级组件**
-  （三端实测缺陷：曾挂在设置页卡片里，用户不开设置页则永不同步）；设置类变更一律走 `store.setSettings`
-  （自动 bump `settings.updatedAt` 并 `requestSyncSoon()`），`settings.updatedAt` 参与冲突裁决
-  （较新变更胜；双方旧数据平局按 deviceId 确定性裁决——不得绕过它直改 settings）。
+  （三端实测缺陷：曾挂在设置页卡片里，用户不开设置页则永不同步）。
+  **外观本地化（用户拍板）**：明暗模式与强调色（`LOCAL_SETTING_KEYS`）是**设备本地偏好**——不进载荷、不进哈希、
+  不参与冲突（`stripLocalSettings`/`pickLocalSettings`；旧包携带也一律剔除；`applySyncState` 回写本机外观）；
+  改外观不 bump `updatedAt`、不触发推送。**同步域设置改动立即上云**：`store.setSettings`（同步键）、学习参数
+  `setStudyConfig`、数据源 `add/remove` 与 `update`（仅开关类 patch）→ `requestSyncNow()`（成功/失败均有轻提示，
+  未配置自动同步时静默）；数据源表单**文本编辑**用 `requestSyncSoon()`（30s 防抖，防逐键风暴）。
+  `settings.updatedAt` 由同步域改动 bump 并参与冲突裁决（较新变更胜；平局按 deviceId 确定性裁决——不得绕过）。
   **中转站发现（禁止退回旧逻辑）**：首同步**必须**先 `gistFind()` 在账号内按配对标识认领已有 Gist——
   描述格式 `WulonVocab 跨端同步 · <pairId>`（`pairIdOf(pairCode)`）；迁移期旧描述的中转站也要「拉取 + 解密验证」后认领；
   已连接的设备要收敛到「最新更新的本配对中转站」；「重新创建」经 `excludeGistIds` 跳过旧站。

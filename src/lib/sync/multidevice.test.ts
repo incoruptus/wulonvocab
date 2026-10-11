@@ -69,7 +69,7 @@ function mkBook(): Wordbook {
 
 function mkDevice(
   id: string,
-  accent: AppSettings["accent"],
+  uiScale: number,
   opts: { reviewEntry?: string; reviewAt?: number; noBooks?: boolean } = {},
 ): Device {
   let books: Wordbook[] = [];
@@ -88,7 +88,7 @@ function mkDevice(
     id,
     state: {
       books,
-      settings: mkSettings({ accent, updatedAt: accent === "blue" ? 0 : T }),
+      settings: mkSettings({ uiScale, updatedAt: uiScale === 1 ? 0 : T }),
       lookupSources: [],
       dictionaries: [],
     },
@@ -188,10 +188,10 @@ function sync(dev: Device, world: World): void {
 }
 
 describe("三端仿真（World 模型：发现 → 拉 → 合并 → 推）", () => {
-  it("全新配对的三台设备收敛到同一个中转站（历史缺陷回归）：主题色 + 学习进度全部对齐", () => {
-    const phone = mkDevice("phone", "amber", { reviewEntry: "e-1", reviewAt: T });
-    const laptop = mkDevice("laptop", "blue", { reviewEntry: "e-2", reviewAt: T + 1000 });
-    const desktop = mkDevice("desktop", "blue");
+  it("全新配对的三台设备收敛到同一个中转站（历史缺陷回归）：设置（同步域）+ 学习进度全部对齐", () => {
+    const phone = mkDevice("phone", 1.2, { reviewEntry: "e-1", reviewAt: T });
+    const laptop = mkDevice("laptop", 1, { reviewEntry: "e-2", reviewAt: T + 1000 });
+    const desktop = mkDevice("desktop", 1);
     const world = mkWorld();
 
     for (let c = 0; c < 4; c += 1) {
@@ -207,13 +207,31 @@ describe("三端仿真（World 模型：发现 → 拉 → 合并 → 推）", (
       const entries = new Map(dev.state.books[0].entries.map((e) => [e.id, e]));
       expect(entries.get("e-1")?.srs, `${dev.id} 应拿到手机的复习记录`).toBeTruthy();
       expect(entries.get("e-2")?.srs, `${dev.id} 应拿到笔记本的复习记录`).toBeTruthy();
-      expect(dev.state.settings.accent, `${dev.id} 应拿到琥珀主题`).toBe("amber");
+      expect(dev.state.settings.uiScale, `${dev.id} 应拿到手机的缩放设置`).toBe(1.2);
     }
+  });
+
+  it("明暗与强调色是设备本地偏好：同步只对齐同步域，各设备外观保持自己的", () => {
+    const world = mkWorld();
+    const phone = mkDevice("phone", 1.2, { noBooks: true });
+    phone.state.settings = { ...phone.state.settings, theme: "dark", accent: "amber" };
+    const laptop = mkDevice("laptop", 1, { noBooks: true });
+
+    sync(phone, world);
+    sync(laptop, world);
+    sync(phone, world);
+    sync(laptop, world);
+
+    expect(laptop.state.settings.uiScale, "同步域字段应跨设备对齐").toBe(1.2);
+    expect(laptop.state.settings.theme, "笔记本保留自己的明暗").toBe("light");
+    expect(laptop.state.settings.accent, "笔记本保留自己的强调色").toBe("blue");
+    expect(phone.state.settings.theme, "手机的暗色未被同步改动").toBe("dark");
+    expect(phone.state.settings.accent).toBe("amber");
   });
 
   it("迁移：账号里已有旧文案的中转站（无配对标识）也会被认领——手机保住新设置并带着它回家", () => {
     const world = mkWorld();
-    const legacy = mkDevice("laptop", "blue", { noBooks: true });
+    const legacy = mkDevice("laptop", 1, { noBooks: true });
     world.clock += 1;
     world.gists.set("g_legacy", {
       id: "g_legacy",
@@ -223,23 +241,23 @@ describe("三端仿真（World 模型：发现 → 拉 → 合并 → 推）", (
       updatedAt: world.clock,
     });
 
-    const phone = mkDevice("phone", "amber", { noBooks: true });
+    const phone = mkDevice("phone", 1.2, { noBooks: true });
     sync(phone, world);
     expect(phone.gistId, "旧站也要认领").toBe("g_legacy");
-    expect(phone.state.settings.accent, "手机不应被旧蓝色覆盖").toBe("amber");
+    expect(phone.state.settings.uiScale, "手机不应被旧设置覆盖").toBe(1.2);
     expect(world.gists.get("g_legacy")!.deviceId, "推送回到了同一站（而非新建）").toBe("phone");
 
-    const laptop = mkDevice("laptop", "blue", { noBooks: true });
+    const laptop = mkDevice("laptop", 1, { noBooks: true });
     sync(laptop, world);
     expect(laptop.gistId).toBe("g_legacy");
-    expect(laptop.state.settings.accent, "笔记本应跟随手机的琥珀").toBe("amber");
+    expect(laptop.state.settings.uiScale, "笔记本应跟随手机的设置").toBe(1.2);
     expect(world.gists.size).toBe(1);
   });
 
   it("迁移窗口：两边各抱升级前的旧站（描述无标识）——先升级的一方认领对方旧站，数据合并收敛", () => {
     const world = mkWorld();
-    const phone = mkDevice("phone", "amber", { noBooks: true });
-    const desktop = mkDevice("desktop", "blue", { noBooks: true });
+    const phone = mkDevice("phone", 1.2, { noBooks: true });
+    const desktop = mkDevice("desktop", 1, { noBooks: true });
 
     // 旧版本创建的两个私有站（描述不带配对标识）
     world.clock += 1;
@@ -251,26 +269,26 @@ describe("三端仿真（World 模型：发现 → 拉 → 合并 → 推）", (
 
     sync(phone, world); // 手机先升级：认领更新的他站（候选按更新时间排序）
     expect(phone.gistId).toBe("g_d");
-    expect(phone.state.settings.accent, "合并后仍是手机的新设置").toBe("amber");
+    expect(phone.state.settings.uiScale, "合并后仍是手机的新设置").toBe(1.2);
     expect(world.gists.get("g_d")!.deviceId, "回推到共享站").toBe("phone");
 
     sync(desktop, world); // 桌面升级后：共享站已带标识 → 拉取合并
     expect(desktop.gistId).toBe("g_d");
-    expect(desktop.state.settings.accent, "桌面应拿到手机的琥珀").toBe("amber");
+    expect(desktop.state.settings.uiScale, "桌面应拿到手机的设置").toBe(1.2);
     expect(world.gists.get("g_p")!.deviceId, "废弃的旧站不再被使用").toBe("phone");
   });
 
   it("双方都是旧数据（均无时间戳）时按设备号确定性裁决——双方收敛到同一侧", () => {
     const world = mkWorld();
-    const phone = mkDevice("phone", "amber", { noBooks: true });
-    const laptop = mkDevice("laptop", "blue", { noBooks: true });
+    const phone = mkDevice("phone", 1.2, { noBooks: true });
+    const laptop = mkDevice("laptop", 1, { noBooks: true });
     phone.state.settings.updatedAt = 0;
     laptop.state.settings.updatedAt = 0;
 
     sync(phone, world);
     sync(laptop, world);
     sync(phone, world);
-    expect(phone.state.settings.accent).toBe(laptop.state.settings.accent);
-    expect(phone.state.settings.accent).toBe("amber"); // "phone" > "laptop"：设备号较大者胜
+    expect(phone.state.settings.uiScale).toBe(laptop.state.settings.uiScale);
+    expect(phone.state.settings.uiScale).toBe(1.2); // "phone" > "laptop"：设备号较大者胜
   });
 });

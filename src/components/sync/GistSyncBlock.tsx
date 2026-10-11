@@ -136,6 +136,7 @@ export function GistSyncBlock() {
       <p className="t-label-12 text-gray-700">
         借你 GitHub 账号里的免费 Gist 当私密中转站：内容先用配对码加密再上传，中转站看到的只是密文。
         多台设备？同一对 Token + 配对码照配一遍，几台都行。不想用 GitHub？用上面的「同步包」手动搬一次，也一样能对齐。
+        合并规则见「同步向导」：较新改动胜 · 删除有墓碑 · 明暗与强调色各设备保留。
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -211,7 +212,7 @@ export function GistSyncBlock() {
 
       <SwitchRow
         label="自动同步"
-        hint="打开应用、切回前台、恢复联网、每 30 分钟自动对账"
+        hint="打开应用、切回前台、恢复联网、每 30 分钟自动对账；除外观外的设置改动会立即同步并确认"
         checked={Boolean(gist?.enabled)}
         onCheckedChange={(v) => void patchGist({ enabled: v })}
       />

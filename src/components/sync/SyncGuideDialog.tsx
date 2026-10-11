@@ -138,6 +138,16 @@ export function SyncGuideDialog({ open, onOpenChange }: { open: boolean; onOpenC
             <li className="flex items-center gap-2"><RefreshCw className="size-3.5 text-gray-800" /> 切回前台时（距上次超过 10 分钟）、恢复联网时</li>
             <li className="flex items-center gap-2"><KeyRound className="size-3.5 text-gray-800" /> 常驻时每 30 分钟一次；也可以随时点「立即同步」</li>
           </ul>
+          <div className="rounded-lg bg-background-200 p-3">
+            <div className="t-label-13 font-medium text-gray-1000">合并是怎么算的（覆盖原理）</div>
+            <ul className="mt-1.5 space-y-1 t-label-12 text-gray-700">
+              <li>· 一边改、一边没动 → 取改过的那一边；<strong>两边都改同一处 → 较新的改动胜</strong>，并提示冲突处数，可在预览里翻转</li>
+              <li>· 删除会留「墓碑」随数据传播，不会被其他设备把删掉的词「复活」</li>
+              <li>· 学习进度：复习记录取最近一次；每日统计取两边较大值（不会重复累计）</li>
+              <li>· <strong>明暗模式与强调色不会同步</strong>——每台设备保留自己的外观；其余设置（数据源、学习参数等）才跨端对齐</li>
+              <li>· 每次合并前都先留一份<strong>安全快照</strong>；自动同步也是「先拉 → 合并 → 再推回」，不会整包覆盖</li>
+            </ul>
+          </div>
           <div className="rounded-lg bg-blue-100 p-3">
             <div className="t-label-13 font-medium text-blue-900">三台、五台也可以</div>
             <p className="mt-1 t-label-12 text-blue-900">

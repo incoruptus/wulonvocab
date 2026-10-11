@@ -8,7 +8,7 @@
 import { uid } from "../utils";
 import { decryptPayload, encryptPayload, pairIdOf } from "./crypto";
 import type { SyncEnvelopeV1, SyncMeta, SyncPayloadV1, SyncState } from "./types";
-import { SYNC_FORMAT, SYNC_FORMAT_VERSION } from "./types";
+import { stripLocalSettings, SYNC_FORMAT, SYNC_FORMAT_VERSION } from "./types";
 
 export function stableJson(v: unknown): string {
   return JSON.stringify(sortValue(v));
@@ -68,8 +68,8 @@ export function buildSyncPayload(
   state: SyncState,
   opts: { mode: "snapshot" | "delta"; since?: number | null; deviceId: string; tombstones: SyncMeta["tombstones"] },
 ): SyncPayloadV1 {
-  const { lastBookId: _ignored, ...settings } = state.settings;
-  void _ignored;
+  // 设备本地设置（明暗/强调色）与 lastBookId 一律不出机
+  const settings = stripLocalSettings(state.settings);
   const since = opts.mode === "delta" ? (opts.since ?? 0) : null;
   // delta：只带 updatedAt 超过 since 的条目（加 5min 安全边距，防时钟边界漏条目）
   const margin = 5 * 60 * 1000;

@@ -8,6 +8,34 @@ import type { AppSettings, Entry, LocalDictMeta, LookupSourceConfig, Wordbook } 
 export const SYNC_FORMAT = "wulonvocab-sync" as const;
 export const SYNC_FORMAT_VERSION = 1 as const;
 
+/** 设备本地设置：明暗模式与强调色因设备而异——不进同步载荷、不参与哈希与冲突裁决 */
+export const LOCAL_SETTING_KEYS = ["theme", "accent"] as const;
+export type LocalSettingKey = (typeof LOCAL_SETTING_KEYS)[number];
+
+/** 同步载荷中的设置形态：剥离 lastBookId 与设备本地字段 */
+export type SyncSettings = Omit<AppSettings, "lastBookId" | LocalSettingKey>;
+
+/** 剥离设备本地字段（构建载荷 / 计算指纹用） */
+export function stripLocalSettings(s: AppSettings): SyncSettings {
+  const { theme: _theme, accent: _accent, lastBookId: _last, ...rest } = s;
+  void _theme;
+  void _accent;
+  void _last;
+  return rest;
+}
+
+/** 取本机设置里的本地独占字段（合并回写 / 应用远端时保留） */
+export function pickLocalSettings(s: AppSettings): Pick<AppSettings, LocalSettingKey> {
+  return { theme: s.theme, accent: s.accent };
+}
+
+/** patch 是否触及需要同步的设置键（决定：是否 bump updatedAt / 是否立即推送） */
+export function hasSyncedSettingChange(patch: Partial<AppSettings>): boolean {
+  return Object.keys(patch).some(
+    (k) => k !== "updatedAt" && !(LOCAL_SETTING_KEYS as readonly string[]).includes(k),
+  );
+}
+
 /** 设备身份（存独立 IDB，不进主 store、不入同步载荷之外的隐私面） */
 export interface SyncDeviceInfo {
   id: string;
@@ -84,7 +112,7 @@ export interface SyncPayloadV1 {
   deviceId: string;
   books: { book: Omit<Wordbook, "entries">; entries?: Entry[] }[];
   tombstones: SyncTombstone[];
-  settings?: Omit<AppSettings, "lastBookId">;
+  settings?: SyncSettings;
   lookupSources?: LookupSourceConfig[];
   dictionaries?: LocalDictMeta[];
   stats: { books: number; entries: number };

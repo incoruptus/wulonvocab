@@ -21,7 +21,8 @@ import { applyGrade, deriveStatusFromSrs, isNewSrs, type GradeValue } from "./st
 import { studyConfigOf } from "./study/queue";
 import { emptyDailyLog, pruneDaily, ymd, type StudyConfig, type StudySrs } from "./study/types";
 import { clearTombstonesFor, recordTombstones } from "./sync/meta";
-import { requestSyncSoon } from "./sync/auto";
+import { requestSyncNow, requestSyncSoon } from "./sync/auto";
+import { hasSyncedSettingChange, pickLocalSettings } from "./sync/types";
 import type { SyncState } from "./sync/types";
 import { uid } from "./utils";
 
@@ -633,7 +634,7 @@ export const useAppStore = create<AppStore>()(
         void clearTombstonesFor(items.map(({ entry }) => ({ kind: "entry" as const, id: entry.id, bookId })));
       },
 
-      setStudyConfig: (bookId, patch) =>
+      setStudyConfig: (bookId, patch) => {
         set((s) => ({
           books: patchBook(s.books, bookId, (b) => ({
             ...b,
@@ -642,7 +643,9 @@ export const useAppStore = create<AppStore>()(
               daily: b.study?.daily ?? {},
             },
           })),
-        })),
+        }));
+        requestSyncNow(); // 学习参数（同步域设置）改动立即上云
+      },
 
       applyReview: (bookId, entryId, rating, elapsedMs, nowMs) => {
         const now = nowMs ?? Date.now();
@@ -745,28 +748,35 @@ export const useAppStore = create<AppStore>()(
           })),
         })),
 
-      addLookupSource: (source) =>
-        set((s) => ({ lookupSources: [...s.lookupSources, { ...source, id: uid() }] })),
+      addLookupSource: (source) => {
+        set((s) => ({ lookupSources: [...s.lookupSources, { ...source, id: uid() }] }));
+        requestSyncNow(); // 数据源增删是离散设置改动：立即上云
+      },
 
-      updateLookupSource: (id, patch) =>
+      updateLookupSource: (id, patch) => {
         set((s) => ({
           lookupSources: s.lookupSources.map((src) =>
             src.id === id
-              ? { ...src, ...patch, config: { ...src.config, ...(patch.config ?? {}) } }
+              ? { ...src, ...patch, config: patch.config ? { ...src.config, ...patch.config } : src.config }
               : src,
           ),
-        })),
+        }));
+        // 开关等离散改动：立即同步；表单文本编辑：30s 防抖合并（防逐键风暴）
+        if (Object.keys(patch).some((k) => k !== "config")) requestSyncNow();
+        else requestSyncSoon();
+      },
 
       removeLookupSource: (id) => {
         set((s) => ({ lookupSources: s.lookupSources.filter((src) => src.id !== id) }));
         void recordTombstones([{ kind: "lookupSource", id, deletedAt: Date.now() }]);
+        requestSyncNow(); // 删除立即上云（配合墓碑传播）
       },
 
-      /** 跨端同步：把合并结果落库（lastBookId 保持本机值；其余字段整体替换） */
+      /** 跨端同步：把合并结果落库（lastBookId 与设备本地外观保持本机值；其余字段整体替换） */
       applySyncState: (next) =>
         set((s) => ({
           books: next.books,
-          settings: { ...next.settings, lastBookId: s.settings.lastBookId },
+          settings: { ...next.settings, ...pickLocalSettings(s.settings), lastBookId: s.settings.lastBookId },
           lookupSources: next.lookupSources,
           dictionaries: next.dictionaries,
         })),
@@ -784,8 +794,13 @@ export const useAppStore = create<AppStore>()(
       removeDictionary: (id) => set((s) => ({ dictionaries: s.dictionaries.filter((d) => d.id !== id) })),
 
       setSettings: (patch) => {
+        if (!hasSyncedSettingChange(patch)) {
+          // 外观（明暗/强调色）：纯设备本地偏好——不 bump、不推送、不参与冲突
+          set((s) => ({ settings: { ...s.settings, ...patch } }));
+          return;
+        }
         set((s) => ({ settings: { ...s.settings, ...patch, updatedAt: Date.now() } }));
-        requestSyncSoon(); // 设置变更（主题色/模式等）30s 后补推，让其他设备尽快跟上
+        requestSyncNow(); // 设置变更立即上云（自动同步开启时；成功/失败都有轻提示）
       },
 
       exportBackupJson: () => {

@@ -129,7 +129,7 @@ export default function SettingsPage() {
             <div className="space-y-1.5">
               <div className="t-label-13 font-medium text-gray-900">强调色</div>
               <AccentPicker value={settings.accent} onChange={(v) => setSettings({ accent: v })} />
-              <p className="t-label-12 text-gray-700">用于界面点缀；导出卡片的强调色在导出工作室中单独设置。</p>
+              <p className="t-label-12 text-gray-700">用于界面点缀；导出卡片的强调色在导出工作室中单独设置。明暗模式与强调色是本机偏好，不会随跨端同步改动其他设备。</p>
             </div>
           </div>
         </Card>

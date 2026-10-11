@@ -1,6 +1,7 @@
 import type { AppSettings, Entry, LocalDictMeta, LookupSourceConfig, Wordbook } from "../types";
 import { deriveStatusFromSrs } from "../study/engine";
 import { emptyDailyLog, type StudyDailyLog } from "../study/types";
+import { pickLocalSettings } from "./types";
 import { quickHash, stableJson } from "./pack";
 import type {
   BaseHashes,
@@ -28,9 +29,13 @@ const TOMBSTONE_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 
 /* ---------------- 指纹 ---------------- */
 
-function settingsHash(s: AppSettings): string {
-  const { lastBookId: _ignored, ...rest } = s;
-  void _ignored;
+/** 同步域设置的规范指纹：排除 lastBookId、设备本地字段（theme/accent）与 updatedAt 元数据 */
+function syncedSettingsHash(s: Partial<AppSettings>): string {
+  const { theme: _theme, accent: _accent, lastBookId: _last, updatedAt: _updated, ...rest } = s;
+  void _theme;
+  void _accent;
+  void _last;
+  void _updated;
   return quickHash(rest);
 }
 
@@ -50,7 +55,7 @@ export function computeBaseHashes(state: SyncState): BaseHashes {
   for (const s of state.lookupSources) lookupSources[s.id] = quickHash(s);
   const dictionaries: Record<string, string> = {};
   for (const d of state.dictionaries) dictionaries[d.id] = quickHash(d);
-  return { settings: settingsHash(state.settings), books, lookupSources, dictionaries };
+  return { settings: syncedSettingsHash(state.settings), books, lookupSources, dictionaries };
 }
 
 /* ---------------- 通用裁决 ---------------- */
@@ -340,11 +345,11 @@ export function mergeSync(input: MergeInput): MergeResult {
     outBooks.push(merged);
   }
 
-  // ---- Settings（lastBookId 排除） ----
+  // ---- Settings（lastBookId 与设备本地字段：明暗/强调色 永久排除） ----
   let settings: AppSettings = local.settings;
   if (remote.settings) {
-    const lh = settingsHash(local.settings);
-    const rh = settingsHash({ ...remote.settings, lastBookId: local.settings.lastBookId } as AppSettings);
+    const lh = syncedSettingsHash(local.settings);
+    const rh = syncedSettingsHash(remote.settings);
     const verdict = trioVerdict({ baseHash: meta.base?.settings, localHash: lh, remoteHash: rh });
     let side: "local" | "remote" = verdict === "remote" ? "remote" : "local";
     if (verdict === "conflict") {
@@ -357,7 +362,18 @@ export function mergeSync(input: MergeInput): MergeResult {
       side = forced ?? byTime;
       conflicts.push({ entityKey: "settings", kind: "settings", label: "应用设置", chosen: side, canFlip: forced === undefined });
     }
-    if (side === "remote") settings = { ...(remote.settings as AppSettings), lastBookId: local.settings.lastBookId };
+    if (side === "remote") {
+      // 远端包可能来自旧版本（其中仍带 theme/accent）——防御性剔除后再叠加本机外观，外观永不跨设备覆盖
+      const remoteCore: Partial<AppSettings> = { ...remote.settings };
+      delete remoteCore.theme;
+      delete remoteCore.accent;
+      delete remoteCore.lastBookId;
+      settings = {
+        ...(remoteCore as AppSettings),
+        ...pickLocalSettings(local.settings),
+        lastBookId: local.settings.lastBookId,
+      };
+    }
   }
 
   // ---- lookupSources ----

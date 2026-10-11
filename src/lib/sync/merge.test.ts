@@ -259,16 +259,36 @@ describe("mergeSync · SRS / 日志", () => {
 });
 
 describe("mergeSync · 设置与收敛", () => {
-  it("settings 单边改取改方；lastBookId 永远保持 local", () => {
+  it("设置单边改取改方（同步域字段）；lastBookId 与明暗/强调色永远保持 local", () => {
     const local = mkState([]);
     const base = computeBaseHashes(local);
     const remoteBooks: Wordbook[] = [];
     const input = mkInput(local, remoteBooks, { base, lastSyncAt: 1 });
-    input.remote.settings = { theme: "dark", accent: "blue", uiScale: 1, sidebarCollapsed: false };
+    // 远端（含旧包可能的 theme/accent）：只有同步域字段（uiScale）应当被采纳
+    input.remote.settings = {
+      theme: "dark",
+      accent: "amber",
+      uiScale: 1.2,
+      sidebarCollapsed: false,
+    } as (typeof input.remote)["settings"];
     const r = mergeSync(input);
-    expect(r.state.settings.theme).toBe("dark");
+    expect(r.state.settings.uiScale).toBe(1.2); // 同步域：取改方
+    expect(r.state.settings.theme).toBe("light"); // 设备本地：明暗不外传
+    expect(r.state.settings.accent).toBe("blue"); // 设备本地：强调色不外传
     expect(r.state.settings.lastBookId).toBe("local-book");
     expect(r.conflicts).toHaveLength(0);
+  });
+
+  it("仅外观不同的两端：设置指纹一致 → 不产生冲突、不必同步", () => {
+    const local = mkState([]);
+    const base = computeBaseHashes(local);
+    const input = mkInput(local, [], { base, lastSyncAt: 1 });
+    // 远端所有值都与本地一致，只有外观不同（且远端是旧包还会携带 theme/accent）
+    input.remote.settings = { ...local.settings, theme: "dark", accent: "amber" } as (typeof input.remote)["settings"];
+    const r = mergeSync(input);
+    expect(r.conflicts).toHaveLength(0);
+    expect(r.state.settings.theme).toBe("light");
+    expect(r.state.settings.accent).toBe("blue");
   });
 
   it("无变化合并不产生 added/updated", () => {

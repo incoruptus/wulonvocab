@@ -152,7 +152,7 @@ export function SyncSection() {
 
   return (
     <Card className="space-y-4">
-      <CardTitle desc="两种搬运方式：①「同步包」手动带一次（零配置）；②「自动同步」设置一次后自动对账。删除、学习进度与设置都会对上。">
+      <CardTitle desc="两种搬运方式：①「同步包」手动带一次（零配置）；②「自动同步」设置一次后自动对账。删除、学习进度与偏好（明暗模式与强调色除外）都会对上。">
         <span className="inline-flex items-center gap-2">
           <Smartphone className="size-4 text-gray-800" /> 跨端同步
         </span>
