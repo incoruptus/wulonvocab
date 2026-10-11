@@ -433,6 +433,51 @@
   margin-right: 0.35em;
   opacity: 0.75;
 }
+
+/* 手账「笔记带」（themes-2026-10 §2.3）：cue 列 30% + 3 行实线 + CSS 方框勾选；2 栏降级单列 */
+.wv-band {
+  display: flex;
+  gap: 0.8em;
+  margin-top: 0.2em;
+  border-top: 1px solid color-mix(in srgb, var(--wv-line, #e6e6e6) 70%, transparent);
+  padding-top: 0.55em;
+}
+.wv-band--single {
+  flex-direction: column;
+  gap: 0.45em;
+}
+.wv-band__cue {
+  width: 30%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0.4em;
+}
+.wv-band__cue--row {
+  width: 100%;
+  flex-direction: row;
+  align-items: center;
+}
+.wv-band__cue-label {
+  font-size: 0.58em;
+  letter-spacing: 0.14em;
+  color: var(--wv-soft, #4b4b4b);
+  opacity: 0.75;
+}
+.wv-band__box {
+  width: 0.72em;
+  height: 0.72em;
+  border: 1px solid var(--wv-soft, #4b4b4b);
+  border-radius: 0.1em;
+}
+.wv-band__write {
+  flex: 1;
+  min-width: 0;
+}
+.wv-band__line {
+  height: 1.7em;
+  border-bottom: 1px solid color-mix(in srgb, var(--wv-line, #e6e6e6) 60%, transparent);
+}
 .wv-sense-num {
   font-variant-numeric: tabular-nums;
   color: var(--wv-accent, #0068d6);

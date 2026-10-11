@@ -2,6 +2,7 @@ import type { Wordbook } from "../types";
 import {
   buildSchemaBrief,
   chatCompletionMessage,
+  streamChatCompletionMessage,
   type ChatConfig,
   type ChatMessage,
   type ToolDef,
@@ -33,7 +34,7 @@ export interface ToolExecOutcome {
 export type ToolExecutor = (name: string, args: Record<string, unknown>) => Promise<ToolExecOutcome>;
 
 export interface AgentEvent {
-  type: "assistant" | "tool-call" | "tool-result" | "stop";
+  type: "assistant" | "delta" | "assistant-end" | "tool-call" | "tool-result" | "stop";
   text?: string;
   name?: string;
   args?: string;
@@ -211,19 +212,38 @@ export async function runAgentTurn(opts: {
   exec: ToolExecutor;
   confirm: (summary: string) => Promise<boolean>;
   onEvent?: (e: AgentEvent) => void;
+  /** 流式输出（需要 onEvent 消费 delta；默认关闭，保持旧路径与单测稳定） */
+  stream?: boolean;
   signal?: AbortSignal;
 }): Promise<void> {
   const { cfg, thread, userText, tools, exec, confirm, onEvent, signal } = opts;
+  const streamed = opts.stream === true;
   thread.messages.push({ role: "user", content: userText });
+
+  /** 一次模型调用：流式（stream:true 时）或一次性；流式会给 UI 广播 delta / assistant-end */
+  const callModel = async (): Promise<{ content: string; toolCalls: { id: string; function: { name: string; arguments: string } }[] }> => {
+    if (!streamed) {
+      return chatCompletionMessage(cfg, trimThread(thread.messages), { tools, jsonMode: false, signal, timeoutMs: 120000 });
+    }
+    const r = await streamChatCompletionMessage(cfg, trimThread(thread.messages), {
+      tools,
+      signal,
+      timeoutMs: 180000,
+      onDelta: (t) => onEvent?.({ type: "delta", text: t }),
+    });
+    onEvent?.({ type: "assistant-end" });
+    return r;
+  };
+
   for (let step = 0; step < AGENT_MAX_STEPS; step += 1) {
     if (signal?.aborted) {
       onEvent?.({ type: "stop", reason: "已停止" });
       return;
     }
-    const r = await chatCompletionMessage(cfg, trimThread(thread.messages), { tools, jsonMode: false, signal, timeoutMs: 120000 });
+    const r = await callModel();
     if (r.toolCalls.length) {
       thread.messages.push({ role: "assistant", content: r.content || null, tool_calls: r.toolCalls });
-      if (r.content) onEvent?.({ type: "assistant", text: r.content });
+      if (r.content && !streamed) onEvent?.({ type: "assistant", text: r.content });
       const calls = r.toolCalls.slice(0, MAX_TOOL_CALLS_PER_STEP);
       const overflow = r.toolCalls.slice(MAX_TOOL_CALLS_PER_STEP);
       for (const call of calls) {
@@ -265,7 +285,7 @@ export async function runAgentTurn(opts: {
       continue;
     }
     thread.messages.push({ role: "assistant", content: r.content });
-    onEvent?.({ type: "assistant", text: r.content });
+    if (!streamed) onEvent?.({ type: "assistant", text: r.content });
     if (!r.content) onEvent?.({ type: "stop", reason: "模型没有返回内容" });
     return;
   }

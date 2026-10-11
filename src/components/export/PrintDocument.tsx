@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import type { Entry, Wordbook } from "@/lib/types";
 import { TONES } from "@/lib/paper";
-import { accentCssVar, FlashcardCell, fontStackFor, SectionBlock, EntryHeaderBlock } from "@/components/export/blocks";
+import { accentCssVar, FlashcardCell, fontStackFor, NotebookBandBlock, SectionBlock, EntryHeaderBlock } from "@/components/export/blocks";
 import { themeCssVars, themeRootClass } from "@/lib/export/themes";
 import type { ExportDocument } from "@/components/export/useExportDocument";
 import type { PlannedPage } from "@/lib/export/paginate";
@@ -124,6 +124,8 @@ export function PrintDocument({ book, doc }: PrintDocumentProps) {
                               index={spec.entryIndex}
                               continued={pb.continued && s.continuationMark}
                             />
+                          ) : spec.kind === "band" ? (
+                            <NotebookBandBlock ctx={ctx} />
                           ) : (
                             <SectionBlock entry={spec.entry} section={spec.section!} ctx={ctx} slice={pb.slice} cells={pb.cells} />
                           )}

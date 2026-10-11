@@ -212,6 +212,29 @@ describe("paginate", () => {
     const result = paginate(blocks, { columns: 3, columnHeight: 1000 });
     expect(result.pages).toHaveLength(1);
   });
+
+  it("glueWithPrev（手账笔记带）：上一块放得下但装不下带子时，两块一起换列", () => {
+    const blocks: MeasuredBlock[] = [
+      block("a", "e1", 700, { kind: "header", gapBefore: 0 }),
+      block("s", "e1", 200, { gapBefore: 0 }),
+      block("band", "e1", 150, { kind: "band", gapBefore: 0, glueWithPrev: true }),
+      block("e2", "e2", 100, { kind: "header", gapBefore: 0 }),
+    ];
+    const result = paginate(blocks, { columns: 2, columnHeight: 1000 });
+    // s 放完后只剩 100 < 150：s 与 band 一起移入第二列（而非 s 留在第一列、band 掉到第二列）
+    expect(result.pages[0].slots[0].map((b) => b.id)).toEqual(["a"]);
+    expect(result.pages[0].slots[1].map((b) => b.id)).toEqual(["s", "band", "e2"]);
+  });
+
+  it("glueWithPrev 无论如何都放不下时优雅分离（不卡死、不溢出）", () => {
+    const blocks: MeasuredBlock[] = [
+      block("a", "e1", 900, { kind: "header" }),
+      block("band", "e1", 300, { kind: "band", glueWithPrev: true }),
+    ];
+    const result = paginate(blocks, { columns: 1, columnHeight: 1000 });
+    expect(result.pages[0].slots[0].map((b) => b.id)).toEqual(["a"]);
+    expect(result.pages[1].slots[0].map((b) => b.id)).toEqual(["band"]);
+  });
 });
 
 describe("paginateGrid", () => {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Download, FileUp, Share2, Smartphone } from "lucide-react";
+import { Download, FileUp, QrCode, Share2, Smartphone } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { loadSyncMeta, saveSyncMeta, writeSafetySnapshot } from "@/lib/sync/meta";
 import { exportSyncFile, importSyncFile } from "@/lib/sync/transports/file";
@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/field";
 import { Badge, Card, CardTitle } from "@/components/ui/misc";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/overlay";
 import { GistSyncBlock } from "@/components/sync/GistSyncBlock";
+import { PeerSyncDialog } from "@/components/sync/PeerSyncDialog";
 import { requestSyncSoon } from "@/lib/sync/auto";
 import { cx, downloadText, formatDateTime } from "@/lib/utils";
 
@@ -33,6 +34,7 @@ export function SyncSection() {
   const [pending, setPending] = useState<PendingImport | null>(null);
   const [resolutions, setResolutions] = useState<Record<string, "local" | "remote">>({});
   const [applying, setApplying] = useState(false);
+  const [peerOpen, setPeerOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -202,6 +204,22 @@ export function SyncSection() {
 
       {/* 自动同步（Gist 档） */}
       <GistSyncBlock />
+
+      {/* 扫码直传（PeerJS · 面对面零服务器） */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="secondary" size="sm" onClick={() => setPeerOpen(true)} disabled={!meta}>
+          <QrCode className="size-3.5" /> 扫码直传（免 GitHub · 面对面）
+        </Button>
+        <span className="t-label-12 text-gray-700">两台设备当面互传：一台出码、一台扫码，直连互换并合并。</span>
+      </div>
+      <PeerSyncDialog
+        open={peerOpen}
+        onOpenChange={setPeerOpen}
+        onPayload={(payload) => {
+          setResolutions({});
+          setPending({ payload, now: Date.now(), fileName: "扫码直传" });
+        }}
+      />
 
       {/* 合并预览 / 对账 */}
       <Dialog open={Boolean(pending)} onOpenChange={(v) => !v && setPending(null)}>

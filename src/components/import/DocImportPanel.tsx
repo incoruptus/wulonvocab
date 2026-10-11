@@ -5,11 +5,13 @@ import { toast } from "sonner";
 import { FileScan, Loader2 } from "lucide-react";
 import { buildImportResult, parseImportText } from "@/lib/importer";
 import { blobToDataUrl, compressImageWithMeta, extractDocx, extractPdf, type ExtractOutcome } from "@/lib/import/extract";
+import { ocrImageToWords } from "@/lib/import/ocr";
 import { extractJsonText } from "@/lib/lookup/ai";
 import { estimateVisionTokens, transcribeImageToWulon } from "@/lib/ai/vision";
 import { defaultSchema } from "@/lib/presets";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
+import { SwitchRow } from "@/components/ui/field";
 import { Card } from "@/components/ui/misc";
 
 /**
@@ -30,6 +32,8 @@ export function DocImportPanel({ onSeeded }: { onSeeded: (seed: { name: string; 
   } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  /** 本机 OCR（免 AI）：清晰的单词表照片/扫描件优先用它，零费用、数据不出本机 */
+  const [localOcr, setLocalOcr] = useState(false);
 
   const aiSource = sources.find((s) => s.kind === "ai" && s.enabled) ?? sources.find((s) => s.kind === "ai");
   const visionCfg = aiSource
@@ -56,6 +60,16 @@ export function DocImportPanel({ onSeeded }: { onSeeded: (seed: { name: string; 
   };
 
   const transcribe = async (blob: Blob, label: string, signal?: AbortSignal) => {
+    if (localOcr) {
+      // 本机 OCR：产出行级单词 tokens → wulonvocab JSON（复用统一预览导入管线）
+      setBusy(`${label}：本机识别中…`);
+      const words = await ocrImageToWords(blob, {
+        signal,
+        onProgress: (p) => setBusy(`${label}：本机识别中… ${Math.round((p.progress ?? 0) * 100)}%`),
+      });
+      if (!words.length) throw new Error("本机识别没找到单词——换更清晰的照片，或关掉本机 OCR 改用 AI 转写");
+      return JSON.stringify({ format: "wulonvocab", version: 1, entries: words.map((w) => ({ headword: w })) });
+    }
     const cfg = requireVision();
     const small = await compressImageWithMeta(blob);
     const dataUrl = await blobToDataUrl(small.blob);
@@ -246,9 +260,18 @@ export function DocImportPanel({ onSeeded }: { onSeeded: (seed: { name: string; 
         {visionCfg?.baseUrl && visionCfg.model ? (
           <span className="t-label-12 text-gray-700">视觉模型：{visionCfg.model}</span>
         ) : (
-          <span className="t-label-12 text-gray-700">照片 / 扫描件需先在设置里配置 AI 的「视觉模型」</span>
+          <span className="t-label-12 text-gray-700">
+            {localOcr ? "本机 OCR 已就绪（首次识别需联网下载语言包）" : "照片 / 扫描件需先配置 AI「视觉模型」，或打开下方本机 OCR"}
+          </span>
         )}
       </div>
+      <SwitchRow
+        label="本机 OCR（免 AI）"
+        hint="适合清晰的单词表照片 / 扫描件：数据不出本机、零费用；首次识别需联网下载语言包"
+        checked={localOcr}
+        onCheckedChange={setLocalOcr}
+        disabled={Boolean(busy)}
+      />
       {busy && progress > 0 ? (
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
           <div className="h-full rounded-full bg-blue-700 transition-[width]" style={{ width: `${Math.round(progress * 100)}%` }} />

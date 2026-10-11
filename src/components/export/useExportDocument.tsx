@@ -5,7 +5,7 @@ import type { Entry, ExportSettings, SectionDef, SectionType, SenseItem, Wordboo
 import { computeGeometry, getPaperBox, mmToPx } from "@/lib/paper";
 import { buildSenseUnits, isValueEmpty, sortSections, valueLength, type SenseCell } from "@/lib/sections";
 import { paginate, type MeasuredBlock, type PaginationResult } from "@/lib/export/paginate";
-import { EntryHeaderBlock, fontStackFor, SectionBlock, type CardCtx } from "@/components/export/blocks";
+import { EntryHeaderBlock, fontStackFor, NotebookBandBlock, SectionBlock, type CardCtx } from "@/components/export/blocks";
 import { effectiveColumns, normalizeExportSettings, themeCssVars, themeRootClass } from "@/lib/export/themes";
 
 const SPLITTABLE_TYPES: SectionType[] = ["senses", "examples", "keyvalue", "transforms", "image", "list", "tags", "table"];
@@ -15,7 +15,7 @@ export interface BlockSpec {
   entryId: string;
   entry: Entry;
   entryIndex: number;
-  kind: "header" | "section";
+  kind: "header" | "section" | "band";
   section?: SectionDef;
   gapBefore: number;
   splittable: boolean;
@@ -187,6 +187,19 @@ export function useExportDocument(book: Wordbook, rawSettings: ExportSettings): 
           unitCells,
         });
       }
+      // 手账「笔记带」：每词条尾部一条（cue 列 + 3 行书写区 + 自测方框；不可拆分、与上一块粘合）
+      if (settings.cardStyle === "notebook") {
+        out.push({
+          id: `band:${entry.id}`,
+          entryId: entry.id,
+          entry,
+          entryIndex,
+          kind: "band",
+          gapBefore: intraGapPx,
+          splittable: false,
+          unitRanges: [],
+        });
+      }
     });
     // 词条间距：每个词条头部之前（除第一个）用 entryGap
     let lastEntry: string | null = null;
@@ -261,6 +274,7 @@ export function useExportDocument(book: Wordbook, rawSettings: ExportSettings): 
           height: h,
           gapBefore: spec.gapBefore,
           glueWithNext: spec.kind === "header",
+          glueWithPrev: spec.kind === "band",
         });
       } else {
         const wholeH = heights.get(spec.id);
@@ -342,6 +356,13 @@ export function MeasureLayer({ doc }: { doc: ExportDocument }) {
             return (
               <div key={spec.id} ref={register(spec.id)} style={{ marginTop: spec.gapBefore }}>
                 <EntryHeaderBlock entry={spec.entry} ctx={ctx} index={spec.entryIndex} />
+              </div>
+            );
+          }
+          if (spec.kind === "band") {
+            return (
+              <div key={spec.id} ref={register(spec.id)} style={{ marginTop: spec.gapBefore }}>
+                <NotebookBandBlock ctx={ctx} />
               </div>
             );
           }

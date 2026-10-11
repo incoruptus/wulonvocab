@@ -253,6 +253,37 @@ export function SectionBlock({
 }
 
 /* ============================================================
+   手账「笔记带」（Notebook 专属 · themes-2026-10 §2.3）
+   cue 列 30% + 书写区 3 行实线 + CSS 方框勾选（不用 Unicode ☐）；
+   splittable:false 且 glueWithPrev（见 paginate）；2 栏降级单列。
+   ============================================================ */
+
+export function NotebookBandBlock({ ctx }: { ctx: CardCtx }) {
+  const twoCol = ctx.settings.columns > 1;
+  const boxes = Array.from({ length: 3 });
+  const lines = Array.from({ length: 3 });
+  return (
+    <div className="wv-card" style={accentCssVar(ctx)}>
+      <div className={cx("wv-band", twoCol && "wv-band--single")}>
+        <div className={cx("wv-band__cue", twoCol && "wv-band__cue--row")}>
+          <span className="wv-band__cue-label">自测</span>
+          <span className={cx("flex gap-[0.5em]", twoCol ? "flex-row" : "flex-col items-start gap-[1.5em]")}>
+            {boxes.map((_, i) => (
+              <span key={i} className="wv-band__box" />
+            ))}
+          </span>
+        </div>
+        <div className="wv-band__write">
+          {lines.map((_, i) => (
+            <div key={i} className="wv-band__line" />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    网格（闪卡）单元
    ============================================================ */
 

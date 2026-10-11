@@ -110,6 +110,33 @@ interface ChatResponse {
 
 const EMPTY_RESULT_HINT = "模型未返回内容";
 
+/** 解析 OpenAI 兼容响应体（非流式与流式降级共用） */
+function parseChatJson(text: string): ChatCompletionResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text) as unknown;
+  } catch {
+    throw new LookupError("AI 接口返回的不是 JSON");
+  }
+  const message = (parsed as ChatResponse).choices?.[0]?.message;
+  if (!message) throw new LookupError(EMPTY_RESULT_HINT);
+  const content =
+    typeof message.content === "string"
+      ? message.content
+      : Array.isArray(message.content)
+        ? (message.content as { type?: string; text?: string }[])
+            .filter((p) => p.type === "text" && typeof p.text === "string")
+            .map((p) => p.text as string)
+            .join("\n")
+        : "";
+  const rawCalls = Array.isArray(message.tool_calls) ? (message.tool_calls as ToolCall[]) : [];
+  const toolCalls = rawCalls.filter(
+    (c) => c && typeof c.id === "string" && typeof c.function?.name === "string" && typeof c.function?.arguments === "string",
+  );
+  if (!content && !toolCalls.length) throw new LookupError(EMPTY_RESULT_HINT);
+  return { content, toolCalls };
+}
+
 /**
  * OpenAI 兼容 chat/completions 调用（完整版）。
  * - jsonMode：请求 response_format=json_object；服务端不支持时自动降级重试（与 tools 互斥，带 tools 时不发）；
@@ -175,29 +202,14 @@ export async function chatCompletionMessage(
         }
         throw new LookupError(msg);
       }
-      let parsed: unknown;
+      let parsed: ChatCompletionResult;
       try {
-        parsed = JSON.parse(text) as unknown;
-      } catch {
-        throw new LookupError("AI 接口返回的不是 JSON");
+        parsed = parseChatJson(text);
+      } catch (e) {
+        if (e instanceof LookupError) throw e;
+        throw new LookupError(EMPTY_RESULT_HINT);
       }
-      const message = (parsed as ChatResponse).choices?.[0]?.message;
-      if (!message) throw new LookupError(EMPTY_RESULT_HINT);
-      const content =
-        typeof message.content === "string"
-          ? message.content
-          : Array.isArray(message.content)
-            ? (message.content as { type?: string; text?: string }[])
-                .filter((p) => p.type === "text" && typeof p.text === "string")
-                .map((p) => p.text as string)
-                .join("\n")
-            : "";
-      const rawCalls = Array.isArray(message.tool_calls) ? (message.tool_calls as ToolCall[]) : [];
-      const toolCalls = rawCalls.filter(
-        (c) => c && typeof c.id === "string" && typeof c.function?.name === "string" && typeof c.function?.arguments === "string",
-      );
-      if (!content && !toolCalls.length) throw new LookupError(EMPTY_RESULT_HINT);
-      return { content, toolCalls };
+      return parsed;
     } finally {
       done();
     }
@@ -224,6 +236,188 @@ export async function chatCompletion(
   const result = await chatCompletionMessage(cfg, messages, opts);
   if (!result.content) throw new LookupError(EMPTY_RESULT_HINT);
   return result.content;
+}
+
+/* ---------------- 流式补全（SSE） ---------------- */
+
+export interface SseToolDelta {
+  index: number;
+  id?: string;
+  name?: string;
+  arguments?: string;
+}
+
+export interface SseDelta {
+  content?: string;
+  toolCalls?: SseToolDelta[];
+}
+
+/**
+ * SSE 增量解析器（纯函数式）：喂入任意切分的文本块，产出 delta。
+ * 容忍半截行、心跳注释、无法解析的 data 行（忽略而不炸流）。
+ */
+export function createSseParser(onDelta: (d: SseDelta) => void): { feed: (chunk: string) => void; flush: () => void } {
+  let buffer = "";
+  const handleLine = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) return;
+    const payload = trimmed.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+    let obj: unknown;
+    try {
+      obj = JSON.parse(payload);
+    } catch {
+      return;
+    }
+    const delta = (obj as { choices?: { delta?: { content?: unknown; tool_calls?: unknown } }[] }).choices?.[0]?.delta;
+    if (!delta) return;
+    const out: SseDelta = {};
+    if (typeof delta.content === "string" && delta.content) out.content = delta.content;
+    if (Array.isArray(delta.tool_calls)) {
+      const calls = (
+        delta.tool_calls as { index?: unknown; id?: unknown; function?: { name?: unknown; arguments?: unknown } }[]
+      )
+        .filter((c) => c && typeof c.index === "number")
+        .map((c) => ({
+          index: c.index as number,
+          id: typeof c.id === "string" ? c.id : undefined,
+          name: typeof c.function?.name === "string" ? (c.function!.name as string) : undefined,
+          arguments: typeof c.function?.arguments === "string" ? (c.function!.arguments as string) : undefined,
+        }));
+      if (calls.length) out.toolCalls = calls;
+    }
+    if (out.content || out.toolCalls) onDelta(out);
+  };
+  return {
+    feed(chunk: string) {
+      buffer += chunk;
+      let idx: number;
+      while ((idx = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 1);
+        handleLine(line);
+      }
+    },
+    flush() {
+      if (buffer) handleLine(buffer);
+      buffer = "";
+    },
+  };
+}
+
+/**
+ * 流式 chat/completions（OpenAI 兼容 SSE）。
+ * - onDelta：增量文本（正文）；tool_calls 增量按 index 聚合，流结束后产出完整 ToolCall[]；
+ * - 服务端不支持流式（非 event-stream）时自动降级为整体 JSON（一次性触发 onDelta）；
+ * - 取消/超时/网络错误统一抛 LookupError。
+ */
+export async function streamChatCompletionMessage(
+  cfg: ChatConfig,
+  messages: ChatMessage[],
+  opts: {
+    temperature?: number;
+    tools?: ToolDef[];
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    onDelta?: (text: string) => void;
+  } = {},
+): Promise<ChatCompletionResult> {
+  const baseUrl = (cfg.baseUrl ?? "").trim().replace(/\/+$/, "");
+  const apiKey = (cfg.apiKey ?? "").trim();
+  const model = (cfg.model ?? "").trim();
+  if (!baseUrl) throw new LookupError("未配置 API Base URL");
+  if (!model) throw new LookupError("未配置模型名称");
+  const endpoint = baseUrl.endsWith("/chat/completions") ? baseUrl : `${baseUrl}/chat/completions`;
+  const hasTools = Boolean(opts.tools?.length);
+  const { signal: s, done } = withTimeout(opts.timeoutMs ?? 180000, opts.signal);
+  try {
+    let res: Response;
+    try {
+      res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model,
+          temperature: opts.temperature ?? 0.2,
+          messages,
+          stream: true,
+          ...(hasTools ? { tools: opts.tools } : {}),
+        }),
+        signal: s,
+      });
+    } catch (e) {
+      if ((e as Error).name === "AbortError") throw e;
+      if (opts.signal?.aborted) throw new LookupError("已取消");
+      if ((e as Error).message === "超时") {
+        throw new LookupError(`请求超时（${Math.round((opts.timeoutMs ?? 180000) / 1000)}s）——网络较慢或服务未响应`);
+      }
+      throw new LookupError(`无法连接 AI 接口（${(e as Error).message}）；请检查 Base URL 与网络/跨域是否可用`);
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      let msg = `HTTP ${res.status}`;
+      try {
+        const err = JSON.parse(text) as ChatResponse;
+        if (err.error?.message) msg = err.error.message;
+      } catch {
+        if (text.trim()) msg = `HTTP ${res.status}：${text.trim().slice(0, 200)}`;
+      }
+      throw new LookupError(msg);
+    }
+    const ctype = res.headers.get("content-type") ?? "";
+    if (!/event-stream/i.test(ctype) || !res.body) {
+      // 服务端不支持流式：退回整体 JSON（把完整文本作为一次 delta 播出）
+      const text = await res.text();
+      const result = parseChatJson(text);
+      if (result.content) opts.onDelta?.(result.content);
+      return result;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let content = "";
+    const acc = new Map<number, { id: string; name: string; args: string }>();
+    const parser = createSseParser((d) => {
+      if (d.content) {
+        content += d.content;
+        opts.onDelta?.(d.content);
+      }
+      for (const tc of d.toolCalls ?? []) {
+        const cur = acc.get(tc.index) ?? { id: "", name: "", args: "" };
+        if (tc.id) cur.id = tc.id;
+        if (tc.name) cur.name = tc.name;
+        if (tc.arguments) cur.args += tc.arguments;
+        acc.set(tc.index, cur);
+      }
+    });
+    try {
+      for (;;) {
+        const { done: rdDone, value } = await reader.read();
+        if (rdDone) break;
+        parser.feed(decoder.decode(value, { stream: true }));
+      }
+      parser.feed(decoder.decode());
+      parser.flush();
+    } catch (e) {
+      if (opts.signal?.aborted) throw new LookupError("已取消");
+      if ((e as Error).message === "超时") throw new LookupError("流式响应中断（超时）——网络较慢或服务未响应");
+      throw new LookupError(`流式连接中断：${(e as Error).message}`);
+    }
+    const toolCalls: ToolCall[] = [...acc.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([index, cur]) => ({
+        id: cur.id || `call_stream_${index}`,
+        type: "function",
+        function: { name: cur.name, arguments: cur.args || "{}" },
+      }))
+      .filter((c) => c.function.name);
+    if (!content && !toolCalls.length) throw new LookupError(EMPTY_RESULT_HINT);
+    return { content, toolCalls };
+  } finally {
+    done();
+  }
 }
 
 /** 从模型输出中提取 JSON 文本（剥离代码块围栏 / 前后说明文字） */

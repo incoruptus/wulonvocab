@@ -23,12 +23,14 @@ export interface MeasuredUnit {
 export interface MeasuredBlock {
   id: string;
   entryId: string;
-  kind: "header" | "section";
+  kind: "header" | "section" | "band";
   sectionId?: string;
   height: number;
   /** 可拆分包：header 为小节标题 + 空列表的高度；units 为可拆分单元（按单元整体移动/续排） */
   split?: { header: number; units: MeasuredUnit[] };
   glueWithNext?: boolean;
+  /** 必须与本列上一块同页/同栏（如手账笔记带；放不下时「上一块 + 本块」一起换列） */
+  glueWithPrev?: boolean;
   /** 与本列上一块之间的间距（px），由词条间距 / 字段间距决定 */
   gapBefore?: number;
 }
@@ -36,7 +38,7 @@ export interface MeasuredBlock {
 export interface PlannedBlock {
   id: string;
   entryId: string;
-  kind: "header" | "section";
+  kind: "header" | "section" | "band";
   sectionId?: string;
   slice?: [number, number];
   /** 义项细粒度切片（优先于 slice 渲染） */
@@ -157,6 +159,13 @@ export function paginate(blocks: MeasuredBlock[], options: PaginateOptions): Pag
       if (needed > remaining(block)) {
         advance();
       }
+    }
+
+    // glueWithPrev：下一块（如手账笔记带）必须与本块同列——本块放完后若装不下下一块，两块一起换列
+    const nextBlock = i + 1 < blocks.length ? blocks[i + 1] : null;
+    if (nextBlock?.glueWithPrev && blockCount > 0) {
+      const need = block.height + gapFor(nextBlock) + nextBlock.height;
+      if (need > remaining(block) && need <= columnHeight) advance();
     }
 
     if (!block.split || !block.split.units.length) {

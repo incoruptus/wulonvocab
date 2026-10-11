@@ -88,6 +88,13 @@
   已连接的设备要收敛到「最新更新的本配对中转站」；「重新创建」经 `excludeGistIds` 跳过旧站。
   **绝不允许「无 gistId 就 POST 新建」**——三端实测主凶：各端各建私有站，gistId 从不共享，配对也永不相遇。
   `multidevice.test.ts`（World 模型）是此行为的回归测试，改传输层必须保持绿。
+  **PeerJS 直传（面对面档）**：会话码一码两用（`derivePeerId` 确定性推导信令房间 + 作 AES-GCM 钥匙）；
+  信封格式与 Gist 档完全一致（`buildEncryptedEnvelope`/`parseEnvelopeWithCode`），合并复用同步包预览管线；
+  分片 40k 字符/帧（`transports/peer.ts`，JSON 转义膨胀余量）；**禁止在此链路引入任何中转服务器**（信令除外）。
+  **AI 管家**：流式经 `streamChatCompletionMessage`（`stream:true` 显式开启，默认旧路径保证单测稳定）；
+  会话持久化在独立 IDB（`ai/agentStore.ts`，key `chat:<bookId>`）——**聊天记录是设备本地资产，不进主 store、不随同步载荷传播**。
+  **OCR**：tesseract.js 动态加载（worker 会话复用，中止即终止重置）；产物经 `extractWordTokens` 清洗为单词 tokens 后走统一导入管线。
+  **手账笔记带**：`kind:"band"` 块（`splittable:false` + `glueWithPrev`）——分页器保证与上一块同列；渲染必须同时接 PrintDocument 与 MeasureLayer；2 栏降级单列。
 
 ## 控件形态约定（审计结论，新代码必须遵守）
 

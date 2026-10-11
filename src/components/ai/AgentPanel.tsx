@@ -6,21 +6,25 @@ import { Bot, Check, Loader2, Send, Sparkles, Square, Wrench } from "lucide-reac
 import type { Wordbook } from "@/lib/types";
 import { agentSystemPrompt, AGENT_TOOL_LABELS, buildAgentTools, runAgentTurn, type AgentEvent, type AgentThread } from "@/lib/ai/agent";
 import { makeAgentExecutor } from "@/lib/ai/agentExec";
+import { clearAgentChat, loadAgentChat, saveAgentChat, type AgentChatItem } from "@/lib/ai/agentStore";
 import { useAppStore } from "@/lib/store";
 import { Button, IconButton } from "@/components/ui/button";
 import { Badge } from "@/components/ui/misc";
 import { Dialog, DialogBody, DialogHeader } from "@/components/ui/overlay";
 import { cx } from "@/lib/utils";
 
-interface ChatItem {
-  kind: "user" | "assistant" | "tool" | "stop";
-  text: string;
-  name?: string;
-  state?: "running" | "ok";
+/** 把尾部流式气泡定型（关闭光标）；无变更时原样返回 */
+function finalizeStreaming(items: AgentChatItem[]): AgentChatItem[] {
+  const last = items.at(-1);
+  if (last?.kind !== "assistant" || !last.streaming) return items;
+  const next = [...items];
+  next[next.length - 1] = { ...last, streaming: false };
+  return next;
 }
 
 /**
  * AI 词库管家：对话 → 工具调用（本地执行）→ 危险操作两段式确认 → 汇报。
+ * 流式输出（delta 增量渲染）；会话按词库持久化（独立 IDB），关掉再开接着聊。
  * 工具写入全部经 store 既有 actions；Key 只在本机。
  */
 export function AgentPanel({
@@ -36,14 +40,14 @@ export function AgentPanel({
   const aiSource = sources.find((s) => s.kind === "ai" && s.enabled) ?? sources.find((s) => s.kind === "ai");
   const configured = Boolean(aiSource?.config.baseUrl && aiSource?.config.model);
 
-  const [items, setItems] = useState<ChatItem[]>([]);
+  const [items, setItems] = useState<AgentChatItem[]>([]);
+  const [hydratedKey, setHydratedKey] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
   const [confirmSummary, setConfirmSummary] = useState<string | null>(null);
   const confirmRef = useRef<((v: boolean) => void) | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const threadRef = useRef<AgentThread>({ messages: [] });
-  const threadBookRef = useRef(book.id);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const tools = useMemo(() => buildAgentTools(), []);
@@ -62,10 +66,48 @@ export function AgentPanel({
     [],
   );
 
+  // 打开本词库：载入已存会话（system 提示以当前词库重建）；没有则开新对话
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    const freshThread = (): AgentThread => ({ messages: [{ role: "system", content: agentSystemPrompt(book) }] });
+    void loadAgentChat(book.id).then((stored) => {
+      if (!alive) return;
+      if (stored && stored.items.length) {
+        threadRef.current = {
+          messages: [
+            { role: "system", content: agentSystemPrompt(book) },
+            ...stored.messages.filter((m) => m.role !== "system"),
+          ],
+        };
+        setItems(stored.items);
+      } else {
+        threadRef.current = freshThread();
+        setItems([]);
+      }
+      setHydratedKey(book.id);
+    });
+    return () => {
+      alive = false;
+    };
+    // book 的提示只取名称/数量/schema，随词库对象变化由书 id 变化覆盖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, book.id]);
+
+  // 会话持久化（防抖；载入完成前不写，避免把空态覆盖到已存历史）
+  useEffect(() => {
+    if (!open || hydratedKey !== book.id || !items.length) return;
+    const t = setTimeout(() => {
+      void saveAgentChat(book.id, { items, messages: threadRef.current.messages });
+    }, 700);
+    return () => clearTimeout(t);
+  }, [items, open, hydratedKey, book.id]);
+
   const resetThread = () => {
     threadRef.current = { messages: [{ role: "system", content: agentSystemPrompt(book) }] };
     setItems([]);
     setConfirmSummary(null);
+    void clearAgentChat(book.id);
   };
 
   const resolveConfirm = (v: boolean) => {
@@ -83,13 +125,7 @@ export function AgentPanel({
   const send = async () => {
     const text = input.trim();
     if (!text || running || !configured || !aiSource) return;
-    // 切书（同路由换 id）时重置会话，防止模型按旧词库上下文操作新词库
-    if (threadBookRef.current !== book.id) {
-      resetThread();
-      threadBookRef.current = book.id;
-    } else if (!threadRef.current.messages.length) {
-      resetThread();
-    }
+    if (!threadRef.current.messages.length) resetThread();
     setInput("");
     setItems((prev) => [...prev, { kind: "user", text }]);
     setRunning(true);
@@ -107,12 +143,32 @@ export function AgentPanel({
         tools,
         exec,
         confirm,
+        stream: true,
         signal: controller.signal,
         onEvent: (e: AgentEvent) => {
-          if (e.type === "assistant" && e.text) {
+          if (e.type === "delta" && e.text) {
+            const chunk = e.text;
+            setItems((prev) => {
+              const last = prev.at(-1);
+              if (last?.kind === "assistant" && last.streaming) {
+                const next = [...prev];
+                next[next.length - 1] = { ...last, text: last.text + chunk };
+                return next;
+              }
+              return [...prev, { kind: "assistant", text: chunk, streaming: true }];
+            });
+          } else if (e.type === "assistant-end") {
+            setItems((prev) => {
+              const last = prev.at(-1);
+              if (last?.kind !== "assistant" || !last.streaming) return prev;
+              const next = [...prev];
+              next[next.length - 1] = { ...last, streaming: false };
+              return next;
+            });
+          } else if (e.type === "assistant" && e.text) {
             setItems((prev) => [...prev, { kind: "assistant", text: e.text as string }]);
           } else if (e.type === "tool-call") {
-            setItems((prev) => [...prev, { kind: "tool", name: e.name, text: e.args ?? "", state: "running" }]);
+            setItems((prev) => [...finalizeStreaming(prev), { kind: "tool", name: e.name, text: e.args ?? "", state: "running" }]);
           } else if (e.type === "tool-result") {
             setItems((prev) => {
               const idx = [...prev].reverse().findIndex((it) => it.kind === "tool" && it.name === e.name && it.state === "running");
@@ -127,16 +183,16 @@ export function AgentPanel({
               return next;
             });
           } else if (e.type === "stop") {
-            setItems((prev) => [...prev, { kind: "stop", text: e.reason ?? "已停止" }]);
+            setItems((prev) => [...finalizeStreaming(prev), { kind: "stop", text: e.reason ?? "已停止" }]);
           }
         },
       });
     } catch (e) {
       if (controller.signal.aborted) {
-        setItems((prev) => (prev.at(-1)?.kind === "stop" ? prev : [...prev, { kind: "stop", text: "已停止" }]));
+        setItems((prev) => (prev.at(-1)?.kind === "stop" ? prev : [...finalizeStreaming(prev), { kind: "stop", text: "已停止" }]));
       } else {
         const msg = (e as Error).message;
-        setItems((prev) => [...prev, { kind: "assistant", text: `出错了：${msg}` }]);
+        setItems((prev) => [...finalizeStreaming(prev), { kind: "assistant", text: `出错了：${msg}` }]);
         toast.error(`AI 管家：${msg}`, {
           description: /401|auth|key/i.test(msg) ? "到「设置 → 词典数据源 → AI」更新 API Key" : undefined,
         });
@@ -195,6 +251,9 @@ export function AgentPanel({
                   </span>
                   <div className="max-w-[85%] whitespace-pre-wrap rounded-xl rounded-bl-sm bg-background-100 px-3 py-2 text-[13px] text-gray-1000 shadow-geist-border">
                     {it.text}
+                    {it.streaming ? (
+                      <span className="ml-0.5 inline-block h-[0.9em] w-[2px] animate-pulse rounded-full bg-gray-700 align-[-0.1em]" />
+                    ) : null}
                   </div>
                 </div>
               );
