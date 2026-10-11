@@ -35,4 +35,17 @@ describe("filterCommands", () => {
     expect(filterCommands(cmds, "考研").some((c) => c.id === "book-b2")).toBe(true);
     expect(filterCommands(cmds, "zzz不存在")).toHaveLength(0);
   });
+
+  it("历史命令：仅在可撤销/可重做时出现，可被过滤与执行路由", () => {
+    const none = buildCommands({ books, lastBookId: "b1" });
+    expect(none.some((c) => c.id === "act-undo")).toBe(false);
+
+    const cmds = buildCommands({ books, lastBookId: "b1", canUndo: true, canRedo: true });
+    const undo = cmds.find((c) => c.id === "act-undo");
+    const redo = cmds.find((c) => c.id === "act-redo");
+    expect(undo?.run).toEqual({ kind: "history", op: "undo" });
+    expect(redo?.run).toEqual({ kind: "history", op: "redo" });
+    expect(filterCommands(cmds, "撤销").some((c) => c.id === "act-undo")).toBe(true);
+    expect(filterCommands(cmds, "chongzuo").some((c) => c.id === "act-redo")).toBe(true);
+  });
 });

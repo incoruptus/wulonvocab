@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Coffee, Moon, Search, Sun } from "lucide-react";
+import { Coffee, Moon, Redo2, Search, Sun, Undo2 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
+import { useHistoryStore } from "@/lib/history";
 import { useResolvedTheme } from "@/components/app/Providers";
 import { cx } from "@/lib/utils";
 import { IconButton } from "@/components/ui/button";
@@ -25,6 +26,10 @@ const NAV = [
 export function TopNav({ right }: { right?: React.ReactNode }) {
   const pathname = usePathname();
   const setSettings = useAppStore((s) => s.setSettings);
+  const undoHistory = useAppStore((s) => s.undoHistory);
+  const redoHistory = useAppStore((s) => s.redoHistory);
+  const canUndo = useHistoryStore((s) => s.canUndo);
+  const canRedo = useHistoryStore((s) => s.canRedo);
   const resolvedTheme = useResolvedTheme();
   const isDark = resolvedTheme === "dark";
   return (
@@ -55,6 +60,14 @@ export function TopNav({ right }: { right?: React.ReactNode }) {
         </nav>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {right}
+          <span className="wv-desktop-only hidden items-center gap-1 sm:flex">
+            <IconButton label="撤销（Ctrl+Z）" onClick={undoHistory} disabled={!canUndo}>
+              <Undo2 className="size-4" />
+            </IconButton>
+            <IconButton label="重做（Ctrl+Shift+Z）" onClick={redoHistory} disabled={!canRedo}>
+              <Redo2 className="size-4" />
+            </IconButton>
+          </span>
           <button
             type="button"
             onClick={() => window.dispatchEvent(new CustomEvent("wv:open-command-palette"))}

@@ -14,7 +14,8 @@ export interface PaletteBookRef {
 
 export type PaletteRun =
   | { kind: "navigate"; href: string }
-  | { kind: "theme"; theme: "light" | "dark" | "system" };
+  | { kind: "theme"; theme: "light" | "dark" | "system" }
+  | { kind: "history"; op: "undo" | "redo" };
 
 export interface PaletteCommand {
   id: string;
@@ -27,8 +28,13 @@ export interface PaletteCommand {
   run: PaletteRun;
 }
 
-export function buildCommands(input: { books: PaletteBookRef[]; lastBookId: string | null }): PaletteCommand[] {
-  const { books, lastBookId } = input;
+export function buildCommands(input: {
+  books: PaletteBookRef[];
+  lastBookId: string | null;
+  canUndo?: boolean;
+  canRedo?: boolean;
+}): PaletteCommand[] {
+  const { books, lastBookId, canUndo = false, canRedo = false } = input;
   const lastBook = books.find((b) => b.id === lastBookId) ?? null;
   const recent = [...books].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5);
 
@@ -41,6 +47,30 @@ export function buildCommands(input: { books: PaletteBookRef[]; lastBookId: stri
     { id: "go-settings", group: "导航", label: "设置", keywords: "shezhi settings", run: { kind: "navigate", href: "/settings" } },
 
     // 动作
+    ...(canUndo
+      ? [
+          {
+            id: "act-undo",
+            group: "动作",
+            label: "撤销上一步",
+            hint: "Ctrl+Z",
+            keywords: "chexiao undo huifu",
+            run: { kind: "history" as const, op: "undo" as const },
+          },
+        ]
+      : []),
+    ...(canRedo
+      ? [
+          {
+            id: "act-redo",
+            group: "动作",
+            label: "重做",
+            hint: "Ctrl+Shift+Z",
+            keywords: "chongzuo redo",
+            run: { kind: "history" as const, op: "redo" as const },
+          },
+        ]
+      : []),
     { id: "act-new-book", group: "动作", label: "新建词库", keywords: "xinjian ciku new", run: { kind: "navigate", href: "/books?new=1" } },
     lastBook
       ? {

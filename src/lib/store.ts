@@ -25,7 +25,8 @@ import { emptyDailyLog, pruneDaily, ymd, type StudyConfig, type StudySrs } from 
 import { clearTombstonesFor, recordTombstones } from "./sync/meta";
 import { requestSyncNow, requestSyncSoon } from "./sync/auto";
 import { hasSyncedSettingChange, pickLocalSettings } from "./sync/types";
-import type { SyncState } from "./sync/types";
+import type { SyncState, SyncTombstone } from "./sync/types";
+import { historyOf, withHistory } from "./history";
 import { uid } from "./utils";
 
 /* ============================================================
@@ -270,6 +271,9 @@ export interface AppStore {
   removeLookupSource: (id: string) => Promise<boolean> | null;
   /** 跨端同步：合并结果落库（lastBookId 保持本机值） */
   applySyncState: (next: SyncState) => void;
+  /** 全局撤销/重做（内容域：词库/词条/数据源/预设；评分与同步合并不入历史） */
+  undoHistory: () => void;
+  redoHistory: () => void;
   /** 数据迁移：补齐新版本新增的默认数据源（不覆盖用户已有配置） */
   ensureLookupSources: () => void;
 
@@ -295,6 +299,47 @@ function sanitizePresetSettings(s: ExportSettings): ExportSettings {
   return { ...n, cover: { ...n.cover, title: "" } };
 }
 
+/**
+ * 撤销/重做后的墓碑对齐（跨端语义同删除动作一致）：
+ * - 恢复出来的书/词/数据源/预设（当前没有的）→ 清除其墓碑；
+ * - 被撤销掉的书/词/数据源/预设（恢复后没有的）→ 补写墓碑；
+ * 书籍删除与既有 deleteBook 同粒度（只写 book 墓碑，不逐词写 entry）。
+ */
+async function alignTombstones(restored: Record<string, unknown>, replaced: Record<string, unknown>): Promise<void> {
+  const ids = (snap: Record<string, unknown>) => {
+    const books = (snap.books ?? []) as Wordbook[];
+    const bookIds = new Set(books.map((b) => b.id));
+    const entries = new Map<string, Set<string>>();
+    for (const b of books) entries.set(b.id, new Set(b.entries.map((e) => e.id)));
+    const sourceIds = new Set(((snap.lookupSources ?? []) as LookupSourceConfig[]).map((s) => s.id));
+    const presetIds = new Set(((snap.exportPresets ?? []) as ExportPreset[]).map((p) => p.id));
+    return { bookIds, entries, sourceIds, presetIds };
+  };
+  try {
+    const a = ids(restored);
+    const b = ids(replaced);
+    const at = Date.now();
+    const dead: Array<Omit<SyncTombstone, "deviceId">> = [];
+    const back: Array<{ kind: SyncTombstone["kind"]; id: string; bookId?: string }> = [];
+    for (const id of b.bookIds) if (!a.bookIds.has(id)) dead.push({ kind: "book", id, deletedAt: at });
+    for (const id of a.bookIds) if (!b.bookIds.has(id)) back.push({ kind: "book", id });
+    for (const [bid, setB] of b.entries) {
+      const setA = a.entries.get(bid);
+      if (!setA) continue; // 整书都不见了，book 墓碑已覆盖
+      for (const eid of setB) if (!setA.has(eid)) dead.push({ kind: "entry", id: eid, bookId: bid, deletedAt: at });
+      for (const eid of setA) if (!setB.has(eid)) back.push({ kind: "entry", id: eid, bookId: bid });
+    }
+    for (const id of b.sourceIds) if (!a.sourceIds.has(id)) dead.push({ kind: "lookupSource", id, deletedAt: at });
+    for (const id of a.sourceIds) if (!b.sourceIds.has(id)) back.push({ kind: "lookupSource", id });
+    for (const id of b.presetIds) if (!a.presetIds.has(id)) dead.push({ kind: "exportPreset", id, deletedAt: at });
+    for (const id of a.presetIds) if (!b.presetIds.has(id)) back.push({ kind: "exportPreset", id });
+    if (dead.length) await recordTombstones(dead);
+    if (back.length) await clearTombstonesFor(back);
+  } catch {
+    /* 墓碑对齐失败不影响撤销本身 */
+  }
+}
+
 function mergeExportSettings(prev: ExportSettings, patch: DeepPartial<ExportSettings>): ExportSettings {  return {
     ...prev,
     ...(patch as Partial<ExportSettings>),
@@ -309,7 +354,8 @@ function mergeExportSettings(prev: ExportSettings, patch: DeepPartial<ExportSett
 
 export const useAppStore = create<AppStore>()(
   persist(
-    (set, get) => ({
+    withHistory<AppStore>(
+      (set, get, api) => ({
       hydrated: false,
       books: [],
       settings: DEFAULT_SETTINGS,
@@ -666,6 +712,8 @@ export const useAppStore = create<AppStore>()(
       },
 
       applyReview: (bookId, entryId, rating, elapsedMs, nowMs) => {
+        const endHist = historyOf(api)?.suppress();
+        try {
         const now = nowMs ?? Date.now();
         // CAS：在 set 回调内基于最新 srs 重算（同 tick 重复调用不再互相覆盖）
         let outcome: { before: StudySrs | undefined; next: StudySrs; dayKey: string } | null = null;
@@ -705,9 +753,14 @@ export const useAppStore = create<AppStore>()(
         flushSoon(); // 学习进度即时落盘（不等防抖）
         const picked = outcome as { before: StudySrs | undefined; next: StudySrs; dayKey: string };
         return { before: picked.before, next: picked.next, dayKey: picked.dayKey };
+        } finally {
+          endHist?.();
+        }
       },
 
       undoReview: (bookId, entryId, before, rating, elapsedMs, dayKey) => {
+        const endHist = historyOf(api)?.suppress();
+        try {
         set((s) => ({
           books: patchBook(s.books, bookId, (b) => {
             const daily = { ...(b.study?.daily ?? {}) };
@@ -735,9 +788,14 @@ export const useAppStore = create<AppStore>()(
           }),
         }));
         flushSoon();
+        } finally {
+          endHist?.();
+        }
       },
 
-      resetEntrySrs: (bookId, entryId) =>
+      resetEntrySrs: (bookId, entryId) => {
+        const endHist = historyOf(api)?.suppress();
+        try {
         set((s) => ({
           books: patchBook(s.books, bookId, (b) => ({
             ...b,
@@ -748,7 +806,11 @@ export const useAppStore = create<AppStore>()(
               return { ...next, status: "new" as const };
             }),
           })),
-        })),
+        }));
+        } finally {
+          endHist?.();
+        }
+      },
 
       updateExportSettings: (bookId, patch) =>
         set((s) => ({
@@ -835,14 +897,20 @@ export const useAppStore = create<AppStore>()(
       },
 
       /** 跨端同步：把合并结果落库（lastBookId 与设备本地外观保持本机值；其余字段整体替换） */
-      applySyncState: (next) =>
+      applySyncState: (next) => {
+        const endHist = historyOf(api)?.suppress(); // 远端合并不进入本地撤销栈
+        try {
         set((s) => ({
           books: next.books,
           settings: { ...next.settings, ...pickLocalSettings(s.settings), lastBookId: s.settings.lastBookId },
           lookupSources: next.lookupSources,
           dictionaries: next.dictionaries,
           exportPresets: next.exportPresets ?? [],
-        })),
+        }));
+        } finally {
+          endHist?.();
+        }
+      },
 
       ensureLookupSources: () =>
         set((s) => {
@@ -885,6 +953,10 @@ export const useAppStore = create<AppStore>()(
       },
 
       importBackupJson: (json) => {
+        // 整库恢复：不进入撤销栈（先清历史，恢复后从新状态起记）
+        const endHist = historyOf(api)?.suppress();
+        historyOf(api)?.clear();
+        try {
         try {
           const data = JSON.parse(json) as Record<string, unknown>;
           if (data.format !== "wulonvocab-backup" || !Array.isArray(data.books)) {
@@ -975,8 +1047,23 @@ export const useAppStore = create<AppStore>()(
         } catch (e) {
           return { ok: false, error: (e as Error).message };
         }
+        } finally {
+          endHist?.();
+        }
       },
+
+      undoHistory: () => historyOf(api)?.undo(),
+      redoHistory: () => historyOf(api)?.redo(),
     }),
+    {
+      keys: ["books", "lookupSources", "dictionaries", "exportPresets"],
+      limit: 40,
+      coalesceMs: 500,
+      onRestore: (restored, replaced) => {
+        void alignTombstones(restored, replaced).finally(() => requestSyncSoon(10_000));
+      },
+    },
+  ) as never,
     {
       name: "wulonvocab-v1",
       version: 1,

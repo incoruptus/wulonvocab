@@ -8,6 +8,7 @@ import "@fontsource/noto-serif-sc/600.css";
 import { assetPath } from "@/lib/paths";
 import { Providers } from "@/components/app/Providers";
 import { CommandPalette } from "@/components/app/CommandPalette";
+import { HistoryHotkeys } from "@/components/app/HistoryHotkeys";
 import { SyncAutoProvider } from "@/components/sync/SyncAutoProvider";
 
 export const metadata: Metadata = {
@@ -47,6 +48,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
           {/* 全局命令面板（Ctrl/⌘+K）：导航 / 最近词库 / 动作 / 主题 */}
           <CommandPalette />
+          {/* 全局撤销/重做热键（Ctrl/⌘+Z / Shift+Z） */}
+          <HistoryHotkeys />
           {/* 全局自动同步调度：不依赖任何页面是否打开（见 SyncAutoProvider 注释） */}
           <SyncAutoProvider />
         </Providers>

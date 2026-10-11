@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { useAppStore } from "@/lib/store";
+import { useHistoryStore } from "@/lib/history";
 import { buildCommands, filterCommands, type PaletteCommand } from "@/lib/commandPalette";
 import { Kbd, KbdGroup } from "@/components/ui/misc";
 import { cx } from "@/lib/utils";
@@ -19,14 +20,22 @@ export function CommandPalette() {
   const books = useAppStore((s) => s.books);
   const lastBookId = useAppStore((s) => s.settings.lastBookId);
   const setSettings = useAppStore((s) => s.setSettings);
+  const canUndo = useHistoryStore((s) => s.canUndo);
+  const canRedo = useHistoryStore((s) => s.canRedo);
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
 
   const commands = useMemo(
-    () => buildCommands({ books: books.map(({ id, name, updatedAt }) => ({ id, name, updatedAt })), lastBookId }),
-    [books, lastBookId],
+    () =>
+      buildCommands({
+        books: books.map(({ id, name, updatedAt }) => ({ id, name, updatedAt })),
+        lastBookId,
+        canUndo,
+        canRedo,
+      }),
+    [books, lastBookId, canUndo, canRedo],
   );
   const filtered = useMemo(() => filterCommands(commands, query), [commands, query]);
 
@@ -80,7 +89,12 @@ export function CommandPalette() {
     (cmd: PaletteCommand) => {
       setOpen(false);
       if (cmd.run.kind === "navigate") router.push(cmd.run.href);
-      else setSettings({ theme: cmd.run.theme });
+      else if (cmd.run.kind === "theme") setSettings({ theme: cmd.run.theme });
+      else {
+        const store = useAppStore.getState();
+        if (cmd.run.op === "undo") store.undoHistory();
+        else store.redoHistory();
+      }
     },
     [router, setSettings],
   );
@@ -103,6 +117,7 @@ export function CommandPalette() {
           <Search className="size-4 shrink-0 text-gray-700" />
           <input
             autoFocus
+            data-native-undo
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);

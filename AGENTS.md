@@ -181,9 +181,15 @@
 - **列表滑动约定**：右滑＝进入多选（`touch-action: pan-y`、轴锁 8px、展开阈值 50%、全滑阈值 55%），
   左滑＝星标/删除（整条左滑＝删除）；长按 500ms 也可进多选；每个手势动作必须有非手势替代路径
   （复选框 / ⋯ 菜单 / 多选按钮）；删除必须带「撤销」（按原位置恢复）；
-- **全局命令面板**：**Ctrl/⌘+K 是全局唯一快捷键**（其余动作收进面板，避免与表单/会话键位冲突）；
-  面板提供 导航 / 最近词库 / 动作（新建词库、开始学习、导出）/ 主题，逻辑在 `lib/commandPalette.ts`（纯函数，可单测），
-  组件 `app/CommandPalette.tsx` 挂根布局；入口在 TopNav（桌面门控 + 键帽提示）；新增高频动作须同时登记进面板与本节；
+- **全局命令面板与撤销**：**Ctrl/⌘+K** 打开命令面板（唯一全局面板键）；**Ctrl/⌘+Z 撤销、Ctrl/⌘+Shift+Z / Ctrl+Y 重做**
+  （`HistoryHotkeys`）；面板提供 导航 / 最近词库 / 动作（撤销、重做、新建词库、开始学习、导出）/ 主题，
+  逻辑在 `lib/commandPalette.ts`（纯函数，可单测），组件 `app/CommandPalette.tsx` 挂根布局；
+  入口在 TopNav（桌面门控 + 键帽提示）；新增高频动作须同时登记进面板与本节；
+  **撤销/重做（`lib/history.ts` 中间件）**：只跟踪内容域（`books / lookupSources / dictionaries / exportPresets`），
+  结构共享快照、500ms 同签名合并（逐键输入算一步）、深度 40；**评分（applyReview/undoReview/resetEntrySrs）、
+  同步合并（applySyncState）、整库恢复（importBackupJson）必须 `suppress()` 包裹**（后两者还会 `clear()` 历史）；
+  undo/redo 后由 `alignTombstones` 对齐墓碑（恢复的项清墓碑、被撤销掉的项补墓碑，书级与 deleteBook 同粒度）；
+  带 `[data-native-undo]` 的输入（命令面板筛选框）保留浏览器原生撤销；
 - **路由结构**：`/` 品牌首页、`/books` 词库列表、`/learn` 学习中心、`/study?id=` 学习会话、
   `/book?id=` 工作区、`/book/export?id=` 导出工作室。
 
