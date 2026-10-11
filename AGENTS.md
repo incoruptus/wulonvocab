@@ -95,10 +95,29 @@
   **PeerJS 直传（面对面档）**：会话码一码两用（`derivePeerId` 确定性推导信令房间 + 作 AES-GCM 钥匙）；
   信封格式与 Gist 档完全一致（`buildEncryptedEnvelope`/`parseEnvelopeWithCode`），合并复用同步包预览管线；
   分片 40k 字符/帧（`transports/peer.ts`，JSON 转义膨胀余量）；**禁止在此链路引入任何中转服务器**（信令除外）。
+  **同步状态单例（globalThis）**：协调器注册表/定时器与引擎状态/订阅/单飞锁必须挂 `globalThis.__wvSyncAuto` /
+  `__wvSyncEngine`——Turbopack 同模块多副本或增量缓存陈旧时（实测：设置改动静默、控件加载态失效），
+  模块级变量会「丢注册」；**同步相关改动后若出现改动静默/状态不更新，先重启 dev server 再排查**。
   **AI 管家**：流式经 `streamChatCompletionMessage`（`stream:true` 显式开启，默认旧路径保证单测稳定）；
   会话持久化在独立 IDB（`ai/agentStore.ts`，key `chat:<bookId>`）——**聊天记录是设备本地资产，不进主 store、不随同步载荷传播**。
   **OCR**：tesseract.js 动态加载（worker 会话复用，中止即终止重置）；产物经 `extractWordTokens` 清洗为单词 tokens 后走统一导入管线。
   **手账笔记带**：`kind:"band"` 块（`splittable:false` + `glueWithPrev`）——分页器保证与上一块同列；渲染必须同时接 PrintDocument 与 MeasureLayer；2 栏降级单列。
+
+## 术语与品牌（统一口径）
+
+- **正式中文名：乌龙单词**（品牌展示仍为 WulonVocab；中文语境可用「WulonVocab（乌龙单词）」，不用其它译名）。
+- **词库** = 应用里的书（books 实体，唯一说法）；**禁止「词书」**；**词表** = 一批词条数据（导入 / 导出 / AI 生成的 JSON 数据面，不是应用实体）。
+- **词条** = 词典里的一条记录。
+- **同步** = 跨端数据交换（唯一说法）；**「更新」只用于「修改词条 / 新版本」语境，不得指代同步**；
+  同步结果计数文案固定为「新增 / 更新 / 删除」（词条级动作）。
+- **同步触发点（完整清单，改同步相关代码必须走查）**：
+  ① 自动节奏：启动 +5s / 切回前台（≥10min）/ 恢复联网 / 每 30 分钟（`SyncAutoProvider`，全局常驻）；
+  ② 设置类改动立即：`setSettings`（同步键）/ `setStudyConfig` / 数据源增删与开关 → `requestSyncNow()`
+  （控件经 `useSyncCommit` 显示加载态、云端确认前禁止再改；数据源文本编辑用 `requestSyncSoon()` 防抖）；
+  ③ 学习：进入学习中心与学习会话前 `requestSyncNow({silent})`（拉最新）；会话结束 `requestSyncNow({silent})`（推结果）；
+  ④ 编辑：进入词条编辑器 `requestSyncNow({silent})`（拉最新）；离开编辑器 `requestSyncSoon(5000)`（推改动）；
+  ⑤ 导入：批量导入后 `requestSyncSoon()`（30s）；手动合并同步包后 `requestSyncSoon(10_000)`；
+  ⑥ 手动：「立即同步」按钮（手动路径绕过失败退避）。
 
 ## 控件形态约定（审计结论，新代码必须遵守）
 

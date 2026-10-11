@@ -12,6 +12,7 @@ import { Heatmap } from "@/components/learn/Heatmap";
 import { buildAdvice, computeCapacity, estimateMinutes, type Advice } from "@/lib/study/advice";
 import { computeHubMetrics, type HubMetrics } from "@/lib/study/metrics";
 import { studyOverview, type StudyOverview } from "@/lib/study/queue";
+import { requestSyncNow } from "@/lib/sync/auto";
 import { cx, timeAgo } from "@/lib/utils";
 
 interface BookSummary {
@@ -35,6 +36,11 @@ export function LearnHub() {
   const [metrics, setMetrics] = useState<HubMetrics | null>(null);
   const [advice, setAdvice] = useState<Advice | null>(null);
   const [summaries, setSummaries] = useState<BookSummary[]>([]);
+
+  // 开始学习之前：拉一轮最新进度（静默；未配置自动同步时无感）
+  useEffect(() => {
+    requestSyncNow({ silent: true });
+  }, []);
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
@@ -208,7 +214,7 @@ export function LearnHub() {
         {/* 词库列表 */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="t-h-20">我的词书</h2>
+            <h2 className="t-h-20">我的词库</h2>
             <Link href="/books" className="t-label-13 inline-flex items-center gap-1 text-blue-900 hover:underline">
               词库管理 <ArrowRight className="size-3.5" />
             </Link>

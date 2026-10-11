@@ -11,7 +11,7 @@ import { SyncAutoProvider } from "@/components/sync/SyncAutoProvider";
 
 export const metadata: Metadata = {
   title: {
-    default: "WulonVocab · 单词本工坊",
+    default: "WulonVocab · 乌龙单词",
     template: "%s · WulonVocab",
   },
   description:

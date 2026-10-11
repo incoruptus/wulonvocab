@@ -4,7 +4,7 @@ import { cloneElement, forwardRef, isValidElement, useId } from "react";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
-import { Check } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { cx } from "@/lib/utils";
 
 /* ---------------- 输入框 ---------------- */
@@ -162,7 +162,7 @@ export function Field({
   );
 }
 
-/** 开关行（标签 + 说明 + 开关） */
+/** 开关行（标签 + 说明 + 开关）；loading：等待云端确认时显示转圈并禁用 */
 export function SwitchRow({
   label,
   hint,
@@ -170,6 +170,7 @@ export function SwitchRow({
   onCheckedChange,
   disabled,
   ariaLabel,
+  loading,
 }: {
   label: string;
   hint?: string;
@@ -178,6 +179,8 @@ export function SwitchRow({
   disabled?: boolean;
   /** label 为空（如行内仅有开关）时的可访问名称 */
   ariaLabel?: string;
+  /** 同步确认中：转圈替代开关、禁止再改 */
+  loading?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between gap-3 py-0.5">
@@ -185,7 +188,18 @@ export function SwitchRow({
         <div className="t-label-14 text-gray-1000">{label}</div>
         {hint ? <div className="t-label-12 text-gray-800">{hint}</div> : null}
       </div>
-      <Switch checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} aria-label={ariaLabel ?? (label || undefined)} />
+      {loading ? (
+        <span className="grid h-5 w-9 place-items-center" aria-busy="true" aria-label="正在同步到云端">
+          <Loader2 className="size-4 animate-spin text-gray-800" />
+        </span>
+      ) : (
+        <Switch
+          checked={checked}
+          onCheckedChange={onCheckedChange}
+          disabled={disabled}
+          aria-label={ariaLabel ?? (label || undefined)}
+        />
+      )}
     </div>
   );
 }

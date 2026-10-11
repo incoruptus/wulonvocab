@@ -25,6 +25,7 @@ import { Input, SwitchRow, Textarea } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Combobox } from "@/components/ui/combobox";
 import { SyncSection } from "@/components/sync/SyncSection";
+import { useSyncCommit } from "@/components/app/useSyncCommit";
 import { AccentPicker, Badge, Card, CardTitle, EmptyState, SegmentedControl } from "@/components/ui/misc";
 import { Dialog, DialogFooter, DialogHeader } from "@/components/ui/overlay";
 import { cx, downloadText } from "@/lib/utils";
@@ -326,7 +327,7 @@ export default function SettingsPage() {
         <Card className="space-y-2">
           <CardTitle desc="版本 0.1.0 · 界面遵循 Geist 设计系统">关于 WulonVocab</CardTitle>
           <p className="t-label-13 text-gray-800">
-            WulonVocab 是一个本地优先的单词本工坊：动态字段管理、宽容的 JSON 导入、打印级 PDF/PNG 导出。
+            WulonVocab（乌龙单词）是一个本地优先的词库工坊：动态字段管理、宽容的 JSON 导入、打印级 PDF/PNG 导出。
             字段结构与数据格式属于你，随时可以导出 JSON 带走。
           </p>
           <p className="t-label-12 text-gray-700">
@@ -368,6 +369,7 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
   const updateSource = useAppStore((s) => s.updateLookupSource);
   const removeSource = useAppStore((s) => s.removeLookupSource);
   const dictionaries = useAppStore((s) => s.dictionaries);
+  const { pending: syncPending, run: runSync } = useSyncCommit();
   const [testWord, setTestWord] = useState("abandon");
   const [testing, setTesting] = useState(false);
   const [providerId, setProviderId] = useState(() => matchProviderId(source.config.baseUrl));
@@ -481,7 +483,9 @@ function SourceEditor({ source, removable }: { source: LookupSourceConfig; remov
           label=""
           ariaLabel="启用此数据源"
           checked={source.enabled}
-          onCheckedChange={(v) => updateSource(source.id, { enabled: v })}
+          loading={syncPending}
+          disabled={syncPending}
+          onCheckedChange={(v) => runSync(() => updateSource(source.id, { enabled: v }))}
         />
         {removable ? (
           <IconButton label="移除数据源" size="sm" className="text-gray-800 hover:text-red-900" onClick={() => removeSource(source.id)}>

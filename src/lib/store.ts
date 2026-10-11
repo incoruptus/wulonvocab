@@ -230,7 +230,8 @@ export interface AppStore {
   restoreEntries: (bookId: string, items: { entry: Entry; index: number }[]) => void;
 
   // 学习（SRS）
-  setStudyConfig: (bookId: string, patch: Partial<StudyConfig>) => void;
+  /** 学习参数：同步域改动会立即上云，返回云端确认 Promise（用于控件加载态） */
+  setStudyConfig: (bookId: string, patch: Partial<StudyConfig>) => Promise<boolean> | null;
   applyReview: (
     bookId: string,
     entryId: string,
@@ -254,9 +255,9 @@ export interface AppStore {
   resetExportSettings: (bookId: string) => void;
 
   // 检索源
-  addLookupSource: (source: Omit<LookupSourceConfig, "id">) => void;
-  updateLookupSource: (id: string, patch: Partial<Omit<LookupSourceConfig, "config">> & { config?: Record<string, string> }) => void;
-  removeLookupSource: (id: string) => void;
+  addLookupSource: (source: Omit<LookupSourceConfig, "id">) => Promise<boolean> | null;
+  updateLookupSource: (id: string, patch: Partial<Omit<LookupSourceConfig, "config">> & { config?: Record<string, string> }) => Promise<boolean> | null;
+  removeLookupSource: (id: string) => Promise<boolean> | null;
   /** 跨端同步：合并结果落库（lastBookId 保持本机值） */
   applySyncState: (next: SyncState) => void;
   /** 数据迁移：补齐新版本新增的默认数据源（不覆盖用户已有配置） */
@@ -267,7 +268,7 @@ export interface AppStore {
   removeDictionary: (id: string) => void;
 
   // 应用设置
-  setSettings: (patch: Partial<AppSettings>) => void;
+  setSettings: (patch: Partial<AppSettings>) => Promise<boolean> | null;
 
   // 备份
   exportBackupJson: () => string;
@@ -644,7 +645,7 @@ export const useAppStore = create<AppStore>()(
             },
           })),
         }));
-        requestSyncNow(); // 学习参数（同步域设置）改动立即上云
+        return requestSyncNow(); // 学习参数改动立即上云；返回确认 Promise 供控件加载态
       },
 
       applyReview: (bookId, entryId, rating, elapsedMs, nowMs) => {
@@ -750,7 +751,7 @@ export const useAppStore = create<AppStore>()(
 
       addLookupSource: (source) => {
         set((s) => ({ lookupSources: [...s.lookupSources, { ...source, id: uid() }] }));
-        requestSyncNow(); // 数据源增删是离散设置改动：立即上云
+        return requestSyncNow(); // 数据源增删是离散设置改动：立即上云
       },
 
       updateLookupSource: (id, patch) => {
@@ -761,15 +762,16 @@ export const useAppStore = create<AppStore>()(
               : src,
           ),
         }));
-        // 开关等离散改动：立即同步；表单文本编辑：30s 防抖合并（防逐键风暴）
-        if (Object.keys(patch).some((k) => k !== "config")) requestSyncNow();
-        else requestSyncSoon();
+        // 开关等离散改动：立即同步（返回确认 Promise）；表单文本编辑：30s 防抖合并（防逐键风暴）
+        if (Object.keys(patch).some((k) => k !== "config")) return requestSyncNow();
+        requestSyncSoon();
+        return null;
       },
 
       removeLookupSource: (id) => {
         set((s) => ({ lookupSources: s.lookupSources.filter((src) => src.id !== id) }));
         void recordTombstones([{ kind: "lookupSource", id, deletedAt: Date.now() }]);
-        requestSyncNow(); // 删除立即上云（配合墓碑传播）
+        return requestSyncNow(); // 删除立即上云（配合墓碑传播）
       },
 
       /** 跨端同步：把合并结果落库（lastBookId 与设备本地外观保持本机值；其余字段整体替换） */
@@ -797,10 +799,10 @@ export const useAppStore = create<AppStore>()(
         if (!hasSyncedSettingChange(patch)) {
           // 外观（明暗/强调色）：纯设备本地偏好——不 bump、不推送、不参与冲突
           set((s) => ({ settings: { ...s.settings, ...patch } }));
-          return;
+          return null;
         }
         set((s) => ({ settings: { ...s.settings, ...patch, updatedAt: Date.now() } }));
-        requestSyncNow(); // 设置变更立即上云（自动同步开启时；成功/失败都有轻提示）
+        return requestSyncNow(); // 设置变更立即上云；返回确认 Promise 供控件加载态
       },
 
       exportBackupJson: () => {

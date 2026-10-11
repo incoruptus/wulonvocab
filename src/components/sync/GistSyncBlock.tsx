@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { BookOpen, Cloud, Copy, KeyRound, RefreshCw } from "lucide-react";
+import { BookOpen, ChevronDown, Cloud, Copy, KeyRound, RefreshCw } from "lucide-react";
 import { loadSyncMeta, saveSyncMeta } from "@/lib/sync/meta";
 import { generatePairCode, isPairCodeWellFormed, normalizePairCode } from "@/lib/sync/crypto";
 import { markSyncIdle, markSyncOff, runGistSync, subscribeSyncStatus, type SyncStatus } from "@/lib/sync/engine";
@@ -12,7 +12,7 @@ import { Button, IconButton } from "@/components/ui/button";
 import { Input, SwitchRow } from "@/components/ui/field";
 import { Badge } from "@/components/ui/misc";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/overlay";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, cx } from "@/lib/utils";
 import { SyncGuideDialog } from "@/components/sync/SyncGuideDialog";
 
 const PHASE_META: Record<SyncStatus["phase"], { label: string; variant: "gray" | "blue" | "green" | "amber" }> = {
@@ -36,6 +36,8 @@ export function GistSyncBlock() {
   const [guideOpen, setGuideOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<null | { kind: "regen" | "newgist" }>(null);
+  /** 配置折叠：已配置好默认收起，未配置/需要修改时展开 */
+  const [showConfig, setShowConfig] = useState(true);
 
   const refresh = useCallback(async () => {
     const m = await loadSyncMeta();
@@ -52,6 +54,7 @@ export function GistSyncBlock() {
       setMeta(m);
       setTokenDraft(m.gist?.token ?? "");
       setCodeDraft(m.gist?.pairCode ?? "");
+      if (m.gist?.token && m.gist.pairCode) setShowConfig(false); // 已配置：默认收起，主界面只留状态与操作
     });
     const unsub = subscribeSyncStatus((s) => {
       setStatus(s);
@@ -120,12 +123,22 @@ export function GistSyncBlock() {
 
   return (
     <div className="space-y-3 rounded-lg bg-background-200 p-3.5">
+      {/* 头部：标题 + 状态 + 上次同步 + 向导 */}
       <div className="flex flex-wrap items-center gap-2">
         <Cloud className="size-4 text-gray-800" />
         <span className="t-label-13 font-medium text-gray-1000">自动同步 · GitHub Gist</span>
         <Badge variant={statusMeta.variant} size="sm">
           {statusMeta.label}
         </Badge>
+        <span className="t-label-12 text-gray-700">
+          {status.phase === "error" && status.message ? (
+            <span className="text-amber-900">{status.message}</span>
+          ) : meta?.lastSyncAt ? (
+            `上次同步 ${formatDateTime(meta.lastSyncAt)}`
+          ) : configured ? (
+            "还没有同步过"
+          ) : null}
+        </span>
         <div className="ml-auto flex items-center gap-2">
           <Button variant="tertiary" size="sm" onClick={() => setGuideOpen(true)}>
             <BookOpen className="size-3.5" /> 同步向导
@@ -133,43 +146,65 @@ export function GistSyncBlock() {
         </div>
       </div>
 
-      <p className="t-label-12 text-gray-700">
-        借你 GitHub 账号里的免费 Gist 当私密中转站：内容先用配对码加密再上传，中转站看到的只是密文。
-        多台设备？同一对 Token + 配对码照配一遍，几台都行。不想用 GitHub？用上面的「同步包」手动搬一次，也一样能对齐。
-        合并规则见「同步向导」：较新改动胜 · 删除有墓碑 · 明暗与强调色各设备保留。
-      </p>
+      {/* 主操作行 */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button size="sm" onClick={() => void kick(true)} loading={busy || status.phase === "syncing"} disabled={!configured}>
+          <RefreshCw className="size-3.5" /> 立即同步
+        </Button>
+        <button
+          type="button"
+          aria-expanded={showConfig}
+          onClick={() => setShowConfig((v) => !v)}
+          className="t-label-12 inline-flex items-center gap-1 text-gray-700 transition-colors hover:text-gray-1000"
+        >
+          <ChevronDown className={cx("size-3.5 transition-transform", showConfig && "rotate-180")} />
+          {showConfig ? "收起配置" : "配对码 / Token / 仓库"}
+        </button>
+        {!showConfig && configured ? (
+          <span className="t-mono-12 text-gray-700">仓库 {gist?.gistId ? `${gist.gistId.slice(0, 8)}…` : "未创建"}</span>
+        ) : null}
+      </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        {/* 配对码 */}
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-1.5">
-            <KeyRound className="size-3.5 text-gray-800" />
-            <span className="t-label-13 font-medium text-gray-900">配对码</span>
-            {codeDraft ? (
-              isPairCodeWellFormed(codeDraft) ? null : <Badge variant="amber" size="sm">格式待确认</Badge>
-            ) : (
-              <Badge variant="gray" size="sm">未设置</Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Input
-              value={codeDraft}
-              onChange={(e) => setCodeDraft(e.target.value.toUpperCase())}
-              onBlur={() => codeDraft && codeDraft !== gist?.pairCode && void patchGist({ pairCode: normalizePairCode(codeDraft) })}
-              placeholder="XXXX-XXXX-XXXX-XXXX-XXXX"
-              className="font-mono text-[13px] tracking-wide"
-            />
-            <IconButton label="复制配对码" onClick={() => void copyCode()} disabled={!codeDraft}>
-              <Copy className="size-3.5" />
-            </IconButton>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 pt-0.5">
-            <Button size="sm" variant="secondary" onClick={() => setConfirm({ kind: "regen" })}>
-              <RefreshCw className="size-3.5" /> 生成新码
-            </Button>
-            <span className="t-label-12 text-gray-700">同一串码配到每台设备——两台、三台都互解</span>
-          </div>
+      {/* 未配置提示 */}
+      {!configured ? (
+        <div className="rounded-lg bg-amber-700/10 p-2.5 t-label-12 text-amber-900">
+          还没配置——点上方「配对码 / Token / 仓库」展开填好，或打开「同步向导」手把手走一遍。内容先用配对码加密再上传，中转站看到的只是密文。
         </div>
+      ) : null}
+
+      {/* 配置区（可折叠；未配置时默认展开） */}
+      {showConfig ? (
+        <div className="grid gap-3 border-t border-gray-300 pt-3 sm:grid-cols-2">
+          {/* 配对码 */}
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <KeyRound className="size-3.5 text-gray-800" />
+              <span className="t-label-13 font-medium text-gray-900">配对码</span>
+              {codeDraft ? (
+                isPairCodeWellFormed(codeDraft) ? null : <Badge variant="amber" size="sm">格式待确认</Badge>
+              ) : (
+                <Badge variant="gray" size="sm">未设置</Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                value={codeDraft}
+                onChange={(e) => setCodeDraft(e.target.value.toUpperCase())}
+                onBlur={() => codeDraft && codeDraft !== gist?.pairCode && void patchGist({ pairCode: normalizePairCode(codeDraft) })}
+                placeholder="XXXX-XXXX-XXXX-XXXX-XXXX"
+                className="font-mono text-[13px] tracking-wide"
+              />
+              <IconButton label="复制配对码" onClick={() => void copyCode()} disabled={!codeDraft}>
+                <Copy className="size-3.5" />
+              </IconButton>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <Button size="sm" variant="secondary" onClick={() => setConfirm({ kind: "regen" })}>
+                <RefreshCw className="size-3.5" /> 生成新码
+              </Button>
+              <span className="t-label-12 text-gray-700">同一串码配到每台设备</span>
+            </div>
+          </div>
 
         {/* Token 与仓库 */}
         <div className="space-y-1.5">
@@ -208,31 +243,15 @@ export function GistSyncBlock() {
             )}
           </div>
         </div>
-      </div>
+        </div>
+      ) : null}
 
       <SwitchRow
         label="自动同步"
-        hint="打开应用、切回前台、恢复联网、每 30 分钟自动对账；除外观外的设置改动会立即同步并确认"
+        hint="打开应用 / 切回前台 / 恢复联网 / 每 30 分钟；除外观外的设置改动会立即同步并在云端确认"
         checked={Boolean(gist?.enabled)}
         onCheckedChange={(v) => void patchGist({ enabled: v })}
       />
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={() => void kick(true)} loading={busy || status.phase === "syncing"} disabled={!configured}>
-          <RefreshCw className="size-3.5" /> 立即同步
-        </Button>
-        <span className="t-label-12 text-gray-700">
-          {status.phase === "error" && status.message ? (
-            <span className="text-amber-900">{status.message}</span>
-          ) : meta?.lastSyncAt ? (
-            `上次同步 ${formatDateTime(meta.lastSyncAt)}`
-          ) : configured ? (
-            "还没有同步过"
-          ) : (
-            "配置好 Token 与配对码即可开始"
-          )}
-        </span>
-      </div>
 
       <SyncGuideDialog open={guideOpen} onOpenChange={setGuideOpen} />
 

@@ -6,8 +6,8 @@ import { AiGenerateHero } from "@/components/import/AiGenerateHero";
 import { Badge, Card } from "@/components/ui/misc";
 
 export const metadata: Metadata = {
-  title: "WulonVocab · 单词本工坊",
-  description: "你攒下的词，值得被认真对待——本地优先的单词本：动态字段、间隔重复、打印级排版。",
+  title: "WulonVocab · 乌龙单词",
+  description: "你攒下的词，值得被认真对待——本地优先的词库：动态字段、间隔重复、打印级排版。",
 };
 
 const FEATURES = [
@@ -57,6 +57,7 @@ export default function LandingPage() {
               <Coffee className="size-6" strokeWidth={2.2} />
             </span>
             <span className="t-h-24 tracking-[-0.02em]">WulonVocab</span>
+            <span className="t-label-14 text-gray-700">乌龙单词</span>
             <Badge variant="blue" size="sm">
               本地优先 · 打印级排版
             </Badge>
@@ -119,7 +120,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* AI 词表工坊（首页入口） */}
+        {/* AI 生成词库（首页入口） */}
         <section className="mt-10 rounded-2xl border border-gray-300 bg-background-100 p-6">
           <AiGenerateHero />
           <p className="t-label-12 mt-4 border-t border-gray-300 pt-3 text-gray-700">

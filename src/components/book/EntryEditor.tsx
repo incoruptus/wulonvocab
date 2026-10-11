@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Copy, ChevronLeft, Eye, EyeOff, MoreHorizontal, PenLine, Plus, Search, Sparkles, Star, Trash2 } from "lucide-react";
 import type { Entry, SectionDef, SectionType, Wordbook } from "@/lib/types";
 import { extraKeys, isValueEmpty, SECTION_TYPE_LIST, SECTIONS, sortSections } from "@/lib/sections";
@@ -11,6 +11,7 @@ import { Dialog, DialogBody, DialogFooter, DialogHeader, DropdownMenu, DropdownM
 import { SectionIcon } from "@/components/icon";
 import { ValueEditor } from "@/components/value/ValueEditor";
 import { TagsEditor } from "@/components/value/ValueEditor";
+import { requestSyncNow, requestSyncSoon } from "@/lib/sync/auto";
 import { EntryPreviewCard } from "@/components/book/EntryPreview";
 import { cx, formatDateTime } from "@/lib/utils";
 import { toast } from "sonner";
@@ -38,6 +39,18 @@ export function EntryEditor({
   const [promoteType, setPromoteType] = useState<SectionType>("text");
   /** 移动端：编辑 / 预览 双 Tab */
   const [mobileTab, setMobileTab] = useState<"edit" | "preview">("edit");
+
+  // 开始编辑之前：拉一轮最新数据（静默；未配置自动同步时无感）
+  useEffect(() => {
+    requestSyncNow({ silent: true });
+  }, []);
+  // 结束编辑（离开编辑器）：尽快把改动推上去（5s 防抖合并连续切换词条）
+  useEffect(
+    () => () => {
+      requestSyncSoon(5000);
+    },
+    [],
+  );
 
   const sections = sortSections(book.schema.sections);
   const extras = extraKeys(entry.values, sections);

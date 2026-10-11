@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-  ArrowRight, BookOpen, Brain, Download, FileDown, FileJson, Layers, MoreHorizontal, Pencil, Plus, Sparkles, Trash2, Upload,
+  ArrowRight, BookOpen, Brain, Download, FileDown, FileJson, Layers, MoreHorizontal, Pencil, Plus, Sparkles, Trash2, Upload, WandSparkles,
 } from "lucide-react";
 import type { Wordbook } from "@/lib/types";
 import { SCHEMA_PRESETS } from "@/lib/presets";
@@ -47,7 +47,7 @@ export default function BooksPage() {
         <section className="flex flex-wrap items-center gap-3">
           <div className="min-w-0">
             <h1 className="t-h-24">我的词库</h1>
-            <p className="t-label-13 mt-1 text-gray-800">每本词书都有自己的字段与进度——接着写，接着背，或者排成一本可以打印的书。</p>
+            <p className="t-label-13 mt-1 text-gray-800">每个词库都有自己的字段与进度——接着写，接着背，或者排成一本可以打印的书。</p>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <Button onClick={() => setNewOpen(true)}>
@@ -55,6 +55,9 @@ export default function BooksPage() {
             </Button>
             <Button variant="secondary" onClick={() => setImportOpen(true)}>
               <Upload className="size-4" /> 导入 JSON / CSV
+            </Button>
+            <Button variant="secondary" onClick={() => router.push("/import?panel=ai")}>
+              <WandSparkles className="size-4" /> AI 生词库
             </Button>
             <Button
               variant="tertiary"

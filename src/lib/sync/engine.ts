@@ -24,32 +24,43 @@ export interface SyncStatus {
   at: number | null;
 }
 
-let status: SyncStatus = { phase: "off", at: null };
-const listeners = new Set<(s: SyncStatus) => void>();
+/**
+ * 引擎共享状态挂 globalThis（跨模块副本单例）：status / 订阅者 / 单飞锁。
+ * Turbopack（dev）可能产生多实例——若各持一份，「状态广播收不到」「单飞失效并发跑」
+ * 都会出现（依赖注册丢失即此因之一，见 auto.ts 注释）。
+ */
+interface EngineGlobal {
+  status: SyncStatus;
+  listeners: Set<(s: SyncStatus) => void>;
+  inFlight: Promise<SyncOutcome> | null;
+}
+
+const GE = globalThis as unknown as { __wvSyncEngine?: EngineGlobal };
+const st = (GE.__wvSyncEngine ??= { status: { phase: "off", at: null }, listeners: new Set(), inFlight: null });
 
 export function getSyncStatus(): SyncStatus {
-  return status;
+  return st.status;
 }
 
 export function subscribeSyncStatus(fn: (s: SyncStatus) => void): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
+  st.listeners.add(fn);
+  return () => st.listeners.delete(fn);
 }
 
 function setStatus(next: SyncStatus): void {
-  status = next;
-  for (const fn of listeners) fn(status);
+  st.status = next;
+  for (const fn of st.listeners) fn(st.status);
 }
 
 /** UI 在「已配置但还没同步」时调用，让徽标从「未开启」过渡到「待同步」 */
 export function markSyncIdle(): void {
-  if (status.phase === "syncing") return;
-  setStatus({ phase: "idle", at: status.at });
+  if (st.status.phase === "syncing") return;
+  setStatus({ phase: "idle", at: st.status.at });
 }
 
 export function markSyncOff(): void {
-  if (status.phase === "syncing") return;
-  setStatus({ phase: "off", at: status.at });
+  if (st.status.phase === "syncing") return;
+  setStatus({ phase: "off", at: st.status.at });
 }
 
 export interface SyncDeps {
@@ -73,15 +84,13 @@ export function backoffDelayMs(streak: number): number {
   return steps[Math.min(Math.max(streak - 1, 0), steps.length - 1)];
 }
 
-let inFlight: Promise<SyncOutcome> | null = null;
-
 /** 跑一轮完整同步（拉 → 合并 → 推）。并发调用共享同一轮；manual 绕过退避。 */
 export function runGistSync(deps: SyncDeps, opts: { manual?: boolean } = {}): Promise<SyncOutcome> {
-  if (inFlight) return inFlight;
+  if (st.inFlight) return st.inFlight;
   const task = runOnce(deps, opts.manual === true).finally(() => {
-    inFlight = null;
+    st.inFlight = null;
   });
-  inFlight = task;
+  st.inFlight = task;
   return task;
 }
 

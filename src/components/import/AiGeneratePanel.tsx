@@ -150,12 +150,12 @@ export function AiGeneratePanel({
 
   return (
     <Shell className="space-y-4">
-      <div className="flex items-start gap-3">
+      <div id="ai-generate" className="flex items-start gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-purple-700/10 text-purple-700">
           <Sparkles className="size-4" />
         </span>
         <div className="min-w-0">
-          <div className={variant === "hero" ? "t-h-20" : "t-h-16"}>AI 词表工坊</div>
+          <div className={variant === "hero" ? "t-h-20" : "t-h-16"}>AI 生成词库</div>
           <p className="t-label-13 mt-0.5 text-gray-800">
             {variant === "hero"
               ? "说一句你想背什么词、想要哪些字段——AI 按 WulonVocab 规范生成，预览后一键入库。"
@@ -167,7 +167,7 @@ export function AiGeneratePanel({
       {!configured ? (
         <div className="space-y-3">
           <div className="rounded-lg bg-amber-700/10 p-3 text-[13px] text-amber-900">
-            还没有接上 AI——到「设置 → 词典数据源」选一家服务商、贴上 Key（只保存在本机），就能在这里直接生成词表；
+            还没有接上 AI——到「设置 → 词典数据源」选一家服务商、贴上 Key（只保存在本机），就能在这里直接生成词库；
             生成与词典检索共用同一份配置。
           </div>
           <Link href="/settings">

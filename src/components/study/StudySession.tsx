@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { requestSyncSoon } from "@/lib/sync/auto";
+import { requestSyncNow } from "@/lib/sync/auto";
+import { useSyncCommit } from "@/components/app/useSyncCommit";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Brain, CalendarClock, ChevronLeft, Keyboard, RotateCcw, Sparkles, Undo2, Volume2, X } from "lucide-react";
@@ -64,6 +65,11 @@ export function StudySession({ book }: { book: Wordbook }) {
   const applyReview = useAppStore((s) => s.applyReview);
   const undoReview = useAppStore((s) => s.undoReview);
   const setStudyConfig = useAppStore((s) => s.setStudyConfig);
+
+  // 开始学习之前：拉一轮最新进度（静默；未配置自动同步时无感）
+  useEffect(() => {
+    requestSyncNow({ silent: true });
+  }, []);
   const toggleStar = useAppStore((s) => s.toggleStar);
 
   const [phase, setPhase] = useState<Phase>("home");
@@ -666,10 +672,11 @@ function HomeView({
   cfg: StudyConfig;
   overview: StudyOverview & { nextDueLabel: string };
   onStart: (mode: StudyMode) => void;
-  onConfig: (patch: Partial<StudyConfig>) => void;
+  onConfig: (patch: Partial<StudyConfig>) => Promise<boolean> | null | void;
   onExit: () => void;
 }) {
   const nothingToday = overview.due === 0 && overview.newRemaining === 0;
+  const { pending: configPending, run: runConfig } = useSyncCommit();
   return (
     <div className="min-h-dvh bg-background-200">
       <div className="mx-auto w-full max-w-xl px-4 py-5 pb-10 sm:py-8">
@@ -720,13 +727,14 @@ function HomeView({
               <span className="t-label-13 text-gray-900">每日新词上限</span>
               <span className="t-mono-12 text-gray-800">{cfg.newPerDay} 个</span>
             </div>
-            <Slider min={5} max={60} step={5} value={[cfg.newPerDay]} onValueChange={([v]) => onConfig({ newPerDay: v })} />
+            <Slider min={5} max={60} step={5} value={[cfg.newPerDay]} disabled={configPending} onValueChange={([v]) => runConfig(() => onConfig({ newPerDay: v }))} />
           </div>
           <div className="space-y-1.5">
             <div className="t-label-13 text-gray-900">记忆保持率</div>
             <SegmentedControl
               value={String(cfg.retention)}
-              onValueChange={(v) => onConfig({ retention: Number(v) })}
+              disabled={configPending}
+              onValueChange={(v) => runConfig(() => onConfig({ retention: Number(v) }))}
               options={[
                 { value: "0.8", label: "0.80 轻松" },
                 { value: "0.85", label: "0.85" },
@@ -741,7 +749,8 @@ function HomeView({
             <div className="t-label-13 text-gray-900">学习模式</div>
             <SegmentedControl
               value={cfg.quizMode}
-              onValueChange={(v) => onConfig({ quizMode: v })}
+              disabled={configPending}
+              onValueChange={(v) => runConfig(() => onConfig({ quizMode: v }))}
               options={[
                 { value: "flip", label: "翻卡自评" },
                 { value: "choice", label: "选择题（看词选义）" },
@@ -757,7 +766,8 @@ function HomeView({
               <div className="t-label-13 text-gray-900">选择题推进方式</div>
               <SegmentedControl
                 value={cfg.choiceAdvance}
-                onValueChange={(v) => onConfig({ choiceAdvance: v })}
+                disabled={configPending}
+                onValueChange={(v) => runConfig(() => onConfig({ choiceAdvance: v }))}
                 options={[
                   { value: "auto", label: "自动下一题" },
                   { value: "continue", label: "按「继续」推进" },
@@ -767,7 +777,14 @@ function HomeView({
               <p className="t-label-12 text-gray-700">自动模式节奏快；「继续」模式会停留展示正误，误触更少。</p>
             </div>
           ) : null}
-          <SwitchRow label="自动发音" hint="卡片出现时用系统语音朗读单词" checked={cfg.autoSpeak} onCheckedChange={(v) => onConfig({ autoSpeak: v })} />
+          <SwitchRow
+            label="自动发音"
+            hint="卡片出现时用系统语音朗读单词"
+            checked={cfg.autoSpeak}
+            loading={configPending}
+            disabled={configPending}
+            onCheckedChange={(v) => runConfig(() => onConfig({ autoSpeak: v }))}
+          />
         </Card>
 
         <div className="t-label-12 mt-4 space-y-1 text-gray-700">
@@ -830,9 +847,9 @@ function SummaryView({
   const accuracy = stats.answered > 0 ? Math.round(((stats.answered - stats.again) / stats.answered) * 100) : 0;
   const minutes = Math.floor(durationMs / 60000);
   const seconds = Math.round((durationMs % 60000) / 1000);
-  // 会话结束：30s 后把本轮学习进度推给云端（自动同步开启时才实际发生）
+  // 会话结束：立即把本轮学习进度推给云端（静默；自动同步开启时才实际发生）
   useEffect(() => {
-    requestSyncSoon();
+    requestSyncNow({ silent: true });
   }, []);
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background-200 px-4">

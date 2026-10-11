@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileJson, FileSpreadsheet, Upload } from "lucide-react";
 import { TopNav } from "@/components/app/TopNav";
@@ -16,6 +16,19 @@ export default function ImportPage() {
   const [open, setOpen] = useState(false);
   const [seed, setSeed] = useState<{ name: string; text: string } | null>(null);
   const goBook = (id: string) => router.push(`/book?id=${id}`);
+
+  // /import?panel=ai：从「AI 生词库」等入口直达并高亮 AI 面板（静态导出下读 query 用原生方式）
+  useEffect(() => {
+    if (!window.location.search.includes("panel=ai")) return;
+    const el = document.getElementById("ai-generate");
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    const ring = ["rounded-xl", "ring-2", "ring-purple-700/40"];
+    el.classList.add(...ring);
+    const t = setTimeout(() => el.classList.remove(...ring), 2400);
+    return () => clearTimeout(t);
+  }, []);
+
   return (
     <div className="flex min-h-dvh flex-col">
       <TopNav />

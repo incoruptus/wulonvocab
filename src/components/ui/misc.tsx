@@ -127,6 +127,7 @@ export function SegmentedControl<T extends string>({
   size = "md",
   grow,
   className,
+  disabled,
 }: {
   value: T;
   onValueChange: (v: T) => void;
@@ -135,15 +136,19 @@ export function SegmentedControl<T extends string>({
   /** 撑满容器宽度，各分段等分（表单控件形态） */
   grow?: boolean;
   className?: string;
+  /** 同步确认中：整体禁用（控件级别的「未确认前不许再改」） */
+  disabled?: boolean;
 }) {
   return (
     <ToggleGroupPrimitive.Root
       type="single"
       value={value}
+      disabled={disabled}
       onValueChange={(v) => v && onValueChange(v as T)}
       className={cx(
         "inline-flex items-center gap-0.5 rounded-md bg-gray-100 p-0.5",
         grow && "flex w-full",
+        disabled && "pointer-events-none opacity-60",
         className,
       )}
     >

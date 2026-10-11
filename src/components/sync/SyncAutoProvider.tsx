@@ -3,12 +3,10 @@
 import { useEffect } from "react";
 import { loadSyncMeta } from "@/lib/sync/meta";
 import { runGistSync } from "@/lib/sync/engine";
-import { registerSyncDeps } from "@/lib/sync/auto";
+import { autoSyncState, registerSyncDeps } from "@/lib/sync/auto";
 import { syncDeps } from "@/components/sync/syncDeps";
 
 const VISIBLE_PULL_GAP_MS = 10 * 60 * 1000;
-
-let lastAutoAt = 0;
 
 /**
  * 全局自动同步调度（挂根布局，所有页面常驻）
@@ -31,7 +29,7 @@ export function SyncAutoProvider() {
         const gist = meta.gist;
         if (!gist?.enabled || !gist.token || !gist.pairCode) return;
         if (gist.backoffUntil && Date.now() < gist.backoffUntil) return;
-        lastAutoAt = Date.now();
+        autoSyncState().lastAutoAt = Date.now();
         await runGistSync(syncDeps);
       } catch {
         /* 引擎已广播错误状态并记录退避 */
@@ -40,7 +38,7 @@ export function SyncAutoProvider() {
 
     const boot = setTimeout(() => void tick(), 5000);
     const onVisible = () => {
-      if (document.visibilityState === "visible" && Date.now() - lastAutoAt > VISIBLE_PULL_GAP_MS) void tick();
+      if (document.visibilityState === "visible" && Date.now() - autoSyncState().lastAutoAt > VISIBLE_PULL_GAP_MS) void tick();
     };
     const onOnline = () => void tick();
     const interval = setInterval(() => {

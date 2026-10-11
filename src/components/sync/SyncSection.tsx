@@ -15,7 +15,7 @@ import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/
 import { GistSyncBlock } from "@/components/sync/GistSyncBlock";
 import { PeerSyncDialog } from "@/components/sync/PeerSyncDialog";
 import { requestSyncSoon } from "@/lib/sync/auto";
-import { cx, downloadText, formatDateTime } from "@/lib/utils";
+import { cx, downloadText } from "@/lib/utils";
 
 interface PendingImport {
   payload: SyncPayloadV1;
@@ -152,34 +152,34 @@ export function SyncSection() {
 
   return (
     <Card className="space-y-4">
-      <CardTitle desc="两种搬运方式：①「同步包」手动带一次（零配置）；②「自动同步」设置一次后自动对账。删除、学习进度与偏好（明暗模式与强调色除外）都会对上。">
+      <CardTitle desc="换设备接着学：设置一次自动同步，多端自动对齐；也可以用同步包或面对面直传。删除、学习进度与偏好（外观除外）都会对上。">
         <span className="inline-flex items-center gap-2">
           <Smartphone className="size-4 text-gray-800" /> 跨端同步
         </span>
       </CardTitle>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <div className="t-label-13 font-medium text-gray-900">这台设备</div>
-          <div className="flex items-center gap-2">
-            <Input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} placeholder="给设备起个名字" />
-            <Button variant="secondary" size="sm" onClick={() => void saveName()} disabled={!meta}>
-              保存
-            </Button>
-          </div>
-          <div className="t-label-12 text-gray-700">
-            设备码 {meta ? meta.device.id.slice(0, 8) : "…"} · 上次同步 {meta?.lastSyncAt ? formatDateTime(meta.lastSyncAt) : "还没有"}
-          </div>
-        </div>
+      {/* 自动同步（Gist 档 · 主入口） */}
+      <GistSyncBlock />
 
-        <div className="space-y-1.5">
-          <div className="t-label-13 font-medium text-gray-900">互传同步包</div>
-          <div className="flex flex-wrap items-center gap-2">
+      {/* 扫码直传（PeerJS · 面对面零服务器） */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="secondary" size="sm" onClick={() => setPeerOpen(true)} disabled={!meta}>
+          <QrCode className="size-3.5" /> 扫码直传（免 GitHub · 面对面）
+        </Button>
+        <span className="t-label-12 text-gray-700">一台出码、一台扫码，直连互换并合并。</span>
+      </div>
+
+      {/* 同步包（零配置 · 偶尔换机） */}
+      <div className="space-y-2 border-t border-gray-300 pt-3.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="t-label-13 font-medium text-gray-900">同步包</span>
+          <span className="t-label-12 text-gray-700">零配置的离线搬运：导出 → 传输 → 在另一台导入合并。</span>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={doExport} disabled={!meta}>
-              <Download className="size-3.5" /> 导出同步包
+              <Download className="size-3.5" /> 导出
             </Button>
             <Button size="sm" variant="secondary" onClick={() => void doShare()} disabled={!meta}>
-              <Share2 className="size-3.5" /> 分享给附近设备
+              <Share2 className="size-3.5" /> 分享
             </Button>
             <IconButton label="导入同步包" onClick={() => fileRef.current?.click()} disabled={!meta}>
               <FileUp className="size-4" />
@@ -196,22 +196,24 @@ export function SyncSection() {
               }}
             />
           </div>
-          <div className="t-label-12 text-gray-700">
-            同步包只包含这台设备的词库与进度；导入后先看合并预览，确认后才写入。
-          </div>
         </div>
       </div>
 
-      {/* 自动同步（Gist 档） */}
-      <GistSyncBlock />
-
-      {/* 扫码直传（PeerJS · 面对面零服务器） */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="secondary" size="sm" onClick={() => setPeerOpen(true)} disabled={!meta}>
-          <QrCode className="size-3.5" /> 扫码直传（免 GitHub · 面对面）
+      {/* 这台设备（信息行置底） */}
+      <div className="flex flex-wrap items-center gap-2 border-t border-gray-300 pt-3.5">
+        <span className="t-label-12 shrink-0 text-gray-700">这台设备</span>
+        <Input
+          value={nameDraft}
+          onChange={(e) => setNameDraft(e.target.value)}
+          placeholder="给设备起个名字"
+          className="h-8 w-44"
+        />
+        <Button variant="secondary" size="sm" onClick={() => void saveName()} disabled={!meta}>
+          保存
         </Button>
-        <span className="t-label-12 text-gray-700">两台设备当面互传：一台出码、一台扫码，直连互换并合并。</span>
+        <span className="t-label-12 text-gray-700">设备码 {meta ? meta.device.id.slice(0, 8) : "…"}</span>
       </div>
+
       <PeerSyncDialog
         open={peerOpen}
         onOpenChange={setPeerOpen}

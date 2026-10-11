@@ -59,7 +59,7 @@ async function exportPack(page) {
       return orig(b);
     };
   });
-  await page.getByRole("button", { name: /导出同步包/ }).click();
+  await page.getByRole("button", { name: /^导出$/ }).click();
   await page.waitForFunction(() => Boolean(window.__lastBlob), { timeout: 20000 });
   return await page.evaluate(async () => {
     const text = await window.__lastBlob.text();
