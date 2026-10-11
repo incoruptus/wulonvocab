@@ -12,7 +12,7 @@ import { hlcNow, hlcToString } from "./clock";
 import { buildEncryptedEnvelope, buildSyncPayload, parseEnvelopeWithCode, quickHash, serializeEnvelope } from "./pack";
 import { loadSyncMeta, saveSyncMeta, writeSafetySnapshot } from "./meta";
 import { mergeSync } from "./merge";
-import { gistPull, gistPush } from "./transports/gist";
+import { gistFind, gistPull, gistPush, type GistCandidate } from "./transports/gist";
 import { isPairCodeWellFormed } from "./crypto";
 import type { MergeApplied, SyncState } from "./types";
 
@@ -104,11 +104,49 @@ async function runOnce(deps: SyncDeps, manual: boolean): Promise<SyncOutcome> {
     let conflicts = 0;
     let remoteFiles: string[] | undefined;
     let remoteRevision: string | null = null;
-    const remote = await gistPull(cfg);
-    if (remote) {
+
+    let remote = cfg.gistId ? await gistPull(cfg) : null;
+    let parsed = remote ? await parseEnvelopeWithCode(remote.text, cfg.pairCode) : null;
+
+    // 中转站发现 / 迁移：账号内同一配对可能已有 Gist（另一台设备先建）
+    // ——三端实测缺陷：此前各端首同步都 POST 新建自己的 Gist（gistId 从不共享），
+    //   每台设备都在和自己的私有中转站对话。现在先"找"、找到就认领共用。
+    const candidates = await gistFind(cfg).catch((): GistCandidate[] => []);
+    if (!cfg.gistId) {
+      for (const cand of candidates) {
+        try {
+          const r = await gistPull({ ...cfg, gistId: cand.id });
+          if (!r) continue;
+          const p = await parseEnvelopeWithCode(r.text, cfg.pairCode); // 解不开 = 不是本配对的中转站
+          remote = r;
+          parsed = p;
+          await saveSyncMeta({ gist: { ...cfg, gistId: cand.id } });
+          break;
+        } catch {
+          /* 试下一个候选 */
+        }
+      }
+    } else if (remote) {
+      // 迁移/收敛：发现同为「本配对」且比自己更新的中转站 → 认领切换（旧版本的遗留 Gist 描述也可能未带标识，仅 exact 参与切换）
+      const better = candidates.find((c) => c.exact && c.id !== cfg.gistId && c.updatedAt > remote!.revision);
+      if (better) {
+        try {
+          const r = await gistPull({ ...cfg, gistId: better.id });
+          if (r) {
+            parsed = await parseEnvelopeWithCode(r.text, cfg.pairCode);
+            remote = r;
+            await saveSyncMeta({ gist: { ...cfg, gistId: better.id } });
+          }
+        } catch {
+          /* 保持原中转站 */
+        }
+      }
+    }
+
+    if (remote && parsed) {
       remoteFiles = remote.fileNames;
       remoteRevision = remote.revision;
-      const { envelope, payload } = await parseEnvelopeWithCode(remote.text, cfg.pairCode);
+      const { envelope, payload } = parsed;
       if (envelope.deviceId !== meta.device.id) {
         const res = mergeSync({
           local: deps.getState(),
@@ -150,7 +188,7 @@ async function runOnce(deps: SyncDeps, manual: boolean): Promise<SyncOutcome> {
       });
       const res = await gistPush(current, serializeEnvelope(envelope), { existingFiles: remoteFiles });
       await saveSyncMeta({
-        gist: { ...current, gistId: res.gistId, lastPushHash: payloadHash, failStreak: 0, backoffUntil: null },
+        gist: { ...current, gistId: res.gistId, lastPushHash: payloadHash, failStreak: 0, backoffUntil: null, excludeGistIds: [] },
         lastSyncAt: Date.now(),
       });
       pushed = true;

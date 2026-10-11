@@ -2,12 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   GIST_CHUNK_CHARS,
   GIST_FILE_MAIN,
+  gistFind,
   gistPull,
   gistPush,
   isChunkManifest,
   joinGistParts,
   splitEnvelopeForGist,
 } from "./transports/gist";
+import { pairIdOf } from "./crypto";
 import type { SyncGistConfig } from "./types";
 
 const CFG: SyncGistConfig = { enabled: true, token: "ghp_test", gistId: null, pairCode: "AAAA-BBBB-CCCC-DDDD-EEEE" };
@@ -49,16 +51,18 @@ describe("分片（纯函数）", () => {
 });
 
 describe("gistPush", () => {
-  it("无 gistId → POST 创建，返回新 gist id；文件内容完整", async () => {
-    let posted: { method?: string; files?: Record<string, { content: string } | null> } = {};
+  it("无 gistId → POST 创建，返回新 gist id；文件内容完整、描述带配对标识", async () => {
+    let posted: { method?: string; files?: Record<string, { content: string } | null>; description?: string } = {};
     stubFetch((_url, init) => {
-      posted = { method: init.method, files: JSON.parse(String(init.body)).files };
+      const parsed = JSON.parse(String(init.body));
+      posted = { method: init.method, files: parsed.files, description: parsed.description };
       return { status: 201, body: { id: "g123", updated_at: "2026-10-11T00:00:00Z" } };
     });
     const res = await gistPush(CFG, "short-envelope");
     expect(res).toEqual({ gistId: "g123", revision: "2026-10-11T00:00:00Z" });
     expect(posted.method).toBe("POST");
     expect(posted.files?.[GIST_FILE_MAIN]?.content).toBe("short-envelope");
+    expect(posted.description).toContain(pairIdOf(CFG.pairCode)); // 描述带配对标识：其他设备靠它发现共用中转站
   });
 
   it("有 gistId → PATCH；分片切换时清理旧 part 文件（置 null）", async () => {
@@ -75,6 +79,34 @@ describe("gistPush", () => {
     expect(patched.files?.["wulonvocab-sync.part-2"]).toBeNull(); // 旧的第 3 片被清除
     expect(patched.files?.["wulonvocab-sync.part-0"]?.content).toBeTruthy();
     expect(patched.files?.["wulonvocab-sync.part-1"]?.content).toBeTruthy();
+  });
+});
+
+describe("gistFind（中转站发现）", () => {
+  it("只认带主文件的 Gist；exact（描述带本配对标识）优先，其次按更新时间新→旧", async () => {
+    const tag = pairIdOf(CFG.pairCode);
+    stubFetch(() => ({
+      status: 200,
+      body: [
+        { id: "g_other", description: "别人的小抄", updated_at: "2026-10-11T05:00:00Z", files: { "notes.md": {} } }, // 无主文件 → 排除
+        { id: "g_legacy", description: "WulonVocab 跨端同步（密文）", updated_at: "2026-10-11T04:00:00Z", files: { [GIST_FILE_MAIN]: {} } },
+        { id: "g_exact_old", description: `WulonVocab 跨端同步 · ${tag}`, updated_at: "2026-10-11T01:00:00Z", files: { [GIST_FILE_MAIN]: {} } },
+        { id: "g_exact_new", description: `WulonVocab 跨端同步 · ${tag}`, updated_at: "2026-10-11T03:00:00Z", files: { [GIST_FILE_MAIN]: {} } },
+      ],
+    }));
+    const list = await gistFind(CFG);
+    expect(list.map((c) => c.id)).toEqual(["g_exact_new", "g_exact_old", "g_legacy"]);
+    expect(list[0].exact).toBe(true);
+    expect(list[2].exact).toBe(false);
+  });
+
+  it("excludeGistIds 的中转站被跳过（「重新创建」后不再认领旧站）", async () => {
+    const tag = pairIdOf(CFG.pairCode);
+    stubFetch(() => ({
+      status: 200,
+      body: [{ id: "g_old", description: `WulonVocab 跨端同步 · ${tag}`, updated_at: "2026-10-11T03:00:00Z", files: { [GIST_FILE_MAIN]: {} } }],
+    }));
+    expect(await gistFind({ ...CFG, excludeGistIds: ["g_old"] })).toHaveLength(0);
   });
 });
 

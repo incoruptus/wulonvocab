@@ -83,6 +83,11 @@
   （三端实测缺陷：曾挂在设置页卡片里，用户不开设置页则永不同步）；设置类变更一律走 `store.setSettings`
   （自动 bump `settings.updatedAt` 并 `requestSyncSoon()`），`settings.updatedAt` 参与冲突裁决
   （较新变更胜；双方旧数据平局按 deviceId 确定性裁决——不得绕过它直改 settings）。
+  **中转站发现（禁止退回旧逻辑）**：首同步**必须**先 `gistFind()` 在账号内按配对标识认领已有 Gist——
+  描述格式 `WulonVocab 跨端同步 · <pairId>`（`pairIdOf(pairCode)`）；迁移期旧描述的中转站也要「拉取 + 解密验证」后认领；
+  已连接的设备要收敛到「最新更新的本配对中转站」；「重新创建」经 `excludeGistIds` 跳过旧站。
+  **绝不允许「无 gistId 就 POST 新建」**——三端实测主凶：各端各建私有站，gistId 从不共享，配对也永不相遇。
+  `multidevice.test.ts`（World 模型）是此行为的回归测试，改传输层必须保持绿。
 
 ## 控件形态约定（审计结论，新代码必须遵守）
 

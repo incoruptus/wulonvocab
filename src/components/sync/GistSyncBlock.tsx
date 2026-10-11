@@ -263,7 +263,10 @@ export function GistSyncBlock() {
                 const code = generatePairCode();
                 void patchGist({ pairCode: code, lastPushHash: null }).then(() => toast.success("新配对码已生成——记得复制给每一台设备"));
               } else {
-                void patchGist({ gistId: null, lastPushHash: null }).then(() => toast.success("下次同步会创建新的 Gist"));
+                const excludes = [...(gist?.excludeGistIds ?? []), ...(gist?.gistId ? [gist.gistId] : [])];
+                void patchGist({ gistId: null, lastPushHash: null, excludeGistIds: excludes }).then(() =>
+                  toast.success("下次同步会创建新的 Gist"),
+                );
               }
             }}
           >

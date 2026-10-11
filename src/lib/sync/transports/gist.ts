@@ -8,11 +8,13 @@
 
 import { withTimeout } from "../../lookup/types";
 import { quickHash, stableJson } from "../pack";
+import { pairIdOf } from "../crypto";
 import type { SyncGistConfig } from "../types";
 
 const API = "https://api.github.com";
 export const GIST_FILE_MAIN = "wulonvocab-sync.json";
 export const GIST_CHUNK_CHARS = 460_000; // 信封为纯 ASCII（base64），字符数≈字节数
+const DESCRIPTION_PREFIX = "WulonVocab 跨端同步";
 
 export interface GistPullResult {
   text: string;
@@ -136,7 +138,10 @@ export async function gistPush(
   for (const name of opts.existingFiles ?? []) {
     if (name.startsWith("wulonvocab-sync.part-") && !keep.has(name)) files[name] = null; // 删除多余旧分片
   }
-  const body = JSON.stringify({ description: "WulonVocab 跨端同步（密文）", files });
+  const body = JSON.stringify({
+    description: `${DESCRIPTION_PREFIX} · ${pairIdOf(cfg.pairCode)}`,
+    files,
+  });
   const gist = (await request(cfg, cfg.gistId ? `/gists/${cfg.gistId}` : "/gists", {
     method: cfg.gistId ? "PATCH" : "POST",
     body,
@@ -161,4 +166,31 @@ export async function gistPull(cfg: SyncGistConfig): Promise<GistPullResult | nu
     return { text: joinGistParts(main, parts), revision: gist.updated_at, fileNames };
   }
   return { text: main, revision: gist.updated_at, fileNames };
+}
+
+export interface GistCandidate {
+  id: string;
+  updatedAt: string;
+  /** 描述带本配对的标识（本版本创建/更新过）；false = 迁移期旧中转站 */
+  exact: boolean;
+}
+
+/**
+ * 在当前账号里发现「本配对」的中转站（Gist 由任一设备创建，其余设备认领共用）。
+ * 三端实测缺陷：此前各端首同步都会 POST 新建自己的 Gist、gistId 从不共享，
+ * 导致每台设备都在和自己的私有中转站对话（手动同步也永远"没有生效"）。
+ */
+export async function gistFind(cfg: SyncGistConfig): Promise<GistCandidate[]> {
+  const list = (await request(cfg, "/gists?per_page=100")) as Array<{
+    id: string;
+    description?: string | null;
+    updated_at: string;
+    files?: Record<string, unknown> | null;
+  }>;
+  const tag = pairIdOf(cfg.pairCode);
+  const exclude = new Set(cfg.excludeGistIds ?? []);
+  return list
+    .filter((g) => g.files && GIST_FILE_MAIN in g.files && !exclude.has(g.id))
+    .map((g) => ({ id: g.id, updatedAt: g.updated_at, exact: (g.description ?? "").includes(tag) }))
+    .sort((a, b) => (a.exact !== b.exact ? (a.exact ? -1 : 1) : a.updatedAt < b.updatedAt ? 1 : -1));
 }

@@ -51,6 +51,8 @@ export interface SyncGistConfig {
   failStreak?: number;
   /** 退避截止时间戳（自动同步在该时刻前不再自动重试） */
   backoffUntil?: number | null;
+  /** 「重新创建」时排除的旧中转站 id（发现逻辑跳过；新建成功后可清空） */
+  excludeGistIds?: string[];
 }
 
 /** 同步元数据（独立 IDB key：wulonvocab-sync-v1:meta） */

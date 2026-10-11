@@ -4,27 +4,45 @@ import { createEmptyBook, makeEntry } from "../presets";
 import { newSrs } from "../study/engine";
 import { buildSyncPayload, quickHash, stableJson } from "./pack";
 import { mergeSync } from "./merge";
+import { pairIdOf } from "./crypto";
 import type { BaseHashes, SyncPayloadV1, SyncState } from "./types";
 
 /**
- * 三端仿真（只 mock 掉「Gist 上的最后一个信封」，其余走真实引擎语义）：
- * 精确复刻 src/lib/sync/engine.ts 每轮行为——拉（他端信封）→ 三方合并（base 演进）→ 推（指纹相同跳过）。
- * 覆盖三端实测暴露的问题域：主题色（设置）与学习进度（srs）是否收敛、旧远端是否会覆盖新本地。
+ * 三端仿真（World 模型：每台设备有独立的 gistId，「Gist 账号」是共享注册表）。
+ * 精确复刻 engine.ts 每轮行为：发现中转站（gistFind）→ 拉 → 三方合并（base 演进）→ 推（指纹相同跳过）。
+ *
+ * 历史缺陷（此模型可捕获）：初版各端首同步直接 POST 新建自己的 Gist、gistId 从不共享——
+ * 每台设备都在和自己的私有中转站对话，配对码相同也永远不会相遇（手动同步也「没有生效」）。
  */
 
 const T = 1_000_000;
+const PAIR = "AAAA-BBBB-CCCC-DDDD-EEEE";
+const TAG = pairIdOf(PAIR);
+
+interface WorldGist {
+  id: string;
+  description: string;
+  deviceId: string;
+  text: string;
+  updatedAt: number;
+}
+
+interface World {
+  gists: Map<string, WorldGist>;
+  clock: number;
+  nextId: number;
+}
 
 interface Device {
   id: string;
   state: SyncState;
   base: BaseHashes | null;
   lastPushHash: string | null;
+  gistId: string | null;
 }
 
-interface Gist {
-  text: string;
-  deviceId: string;
-  revision: number;
+function mkWorld(): World {
+  return { gists: new Map(), clock: 0, nextId: 1 };
 }
 
 function mkSettings(patch: Partial<AppSettings> = {}): AppSettings {
@@ -52,26 +70,31 @@ function mkBook(): Wordbook {
 function mkDevice(
   id: string,
   accent: AppSettings["accent"],
-  opts: { reviewEntry?: string; reviewAt?: number } = {},
+  opts: { reviewEntry?: string; reviewAt?: number; noBooks?: boolean } = {},
 ): Device {
-  const book = mkBook();
-  if (opts.reviewEntry) {
-    const at = opts.reviewAt ?? T;
-    const e = book.entries.find((x) => x.id === opts.reviewEntry)!;
-    e.srs = reviewedSrs(at);
-    e.status = "learning";
-    e.updatedAt = at;
+  let books: Wordbook[] = [];
+  if (!opts.noBooks) {
+    const book = mkBook();
+    if (opts.reviewEntry) {
+      const at = opts.reviewAt ?? T;
+      const e = book.entries.find((x) => x.id === opts.reviewEntry)!;
+      e.srs = reviewedSrs(at);
+      e.status = "learning";
+      e.updatedAt = at;
+    }
+    books = [book];
   }
   return {
     id,
     state: {
-      books: [book],
+      books,
       settings: mkSettings({ accent, updatedAt: accent === "blue" ? 0 : T }),
       lookupSources: [],
       dictionaries: [],
     },
     base: null,
     lastPushHash: null,
+    gistId: null,
   };
 }
 
@@ -79,11 +102,36 @@ function payloadOf(dev: Device): SyncPayloadV1 {
   return buildSyncPayload(dev.state, { mode: "snapshot", deviceId: dev.id, tombstones: [] });
 }
 
-/** 一轮同步：拉 → 合并 → 推（与 engine.ts 同语义；返回 gist 上最新的信封） */
-function sync(dev: Device, gist: Gist | null): Gist | null {
-  let next = gist;
-  if (gist && gist.deviceId !== dev.id) {
-    const remote = JSON.parse(gist.text) as SyncPayloadV1;
+/** 发现：exact（描述带本配对标识）优先，其次更新时间新→旧（对应 transports/gist.ts 的 gistFind） */
+function findCandidates(world: World): WorldGist[] {
+  return [...world.gists.values()].sort((a, b) => {
+    const ax = a.description.includes(TAG) ? 1 : 0;
+    const bx = b.description.includes(TAG) ? 1 : 0;
+    if (ax !== bx) return bx - ax;
+    return b.updatedAt - a.updatedAt;
+  });
+}
+
+/** 一轮同步：发现/认领 → 拉 → 合并 → 推（与 engine.ts 同语义） */
+function sync(dev: Device, world: World): void {
+  const candidates = findCandidates(world);
+  let target = dev.gistId ? (world.gists.get(dev.gistId) ?? null) : null;
+  if (!dev.gistId) {
+    for (const cand of candidates) {
+      target = cand;
+      dev.gistId = cand.id; // 认领（真实实现还会先试解密；单配对场景下描述已足够）
+      break;
+    }
+  } else if (target) {
+    const better = candidates.find((c) => c.description.includes(TAG) && c.id !== dev.gistId && c.updatedAt > target!.updatedAt);
+    if (better) {
+      target = better;
+      dev.gistId = better.id; // 迁移/收敛：认领同为「本配对」且更新的中转站
+    }
+  }
+
+  if (target && target.deviceId !== dev.id) {
+    const remote = JSON.parse(target.text) as SyncPayloadV1;
     const res = mergeSync({
       local: dev.state,
       remote,
@@ -99,29 +147,50 @@ function sync(dev: Device, gist: Gist | null): Gist | null {
     dev.state = res.state;
     dev.base = res.nextBase;
   }
+
   const payload = payloadOf(dev);
   const hash = quickHash(payload);
-  if (hash !== dev.lastPushHash) {
+  if (hash !== dev.lastPushHash || !dev.gistId) {
     dev.lastPushHash = hash;
-    next = { text: stableJson(payload), deviceId: dev.id, revision: (gist?.revision ?? 0) + 1 };
+    world.clock += 1;
+    if (!dev.gistId) {
+      const id = `g${world.nextId}`;
+      world.nextId += 1;
+      world.gists.set(id, {
+        id,
+        description: `WulonVocab 跨端同步 · ${TAG}`,
+        deviceId: dev.id,
+        text: stableJson(payload),
+        updatedAt: world.clock,
+      });
+      dev.gistId = id;
+    } else {
+      const g = world.gists.get(dev.gistId)!;
+      g.description = `WulonVocab 跨端同步 · ${TAG}`;
+      g.deviceId = dev.id;
+      g.text = stableJson(payload);
+      g.updatedAt = world.clock;
+    }
   }
-  return next;
 }
 
-describe("三端仿真（引擎语义：拉 → 合并 → 推）", () => {
-  it("主题色（琥珀）+ 学习进度：若干轮后三端全部对齐", () => {
+describe("三端仿真（World 模型：发现 → 拉 → 合并 → 推）", () => {
+  it("全新配对的三台设备收敛到同一个中转站（历史缺陷回归）：主题色 + 学习进度全部对齐", () => {
     const phone = mkDevice("phone", "amber", { reviewEntry: "e-1", reviewAt: T });
     const laptop = mkDevice("laptop", "blue", { reviewEntry: "e-2", reviewAt: T + 1000 });
-    const desktop = mkDevice("desktop", "blue"); // 什么都没做过
+    const desktop = mkDevice("desktop", "blue");
+    const world = mkWorld();
 
-    let gist: Gist | null = null;
     for (let c = 0; c < 4; c += 1) {
-      gist = sync(phone, gist);
-      gist = sync(laptop, gist);
-      gist = sync(desktop, gist);
+      sync(phone, world);
+      sync(laptop, world);
+      sync(desktop, world);
     }
 
+    // 核心断言：只存在一个共享中转站（旧实现会各自建站、永不相遇）
+    expect(world.gists.size).toBe(1);
     for (const dev of [phone, laptop, desktop]) {
+      expect(dev.gistId, `${dev.id} 应认领同一个中转站`).toBe("g1");
       const entries = new Map(dev.state.books[0].entries.map((e) => [e.id, e]));
       expect(entries.get("e-1")?.srs, `${dev.id} 应拿到手机的复习记录`).toBeTruthy();
       expect(entries.get("e-2")?.srs, `${dev.id} 应拿到笔记本的复习记录`).toBeTruthy();
@@ -129,33 +198,41 @@ describe("三端仿真（引擎语义：拉 → 合并 → 推）", () => {
     }
   });
 
-  it("旧远端不覆盖新本地设置（updatedAt 较新者胜），随后其余设备跟随", () => {
-    // Gist 上躺的是笔记本较早推送的信封（蓝色、updatedAt=0）
-    const laptopOld = mkDevice("laptop", "blue");
-    laptopOld.lastPushHash = "seeded";
-    const gist: Gist = { text: stableJson(payloadOf(laptopOld)), deviceId: "laptop", revision: 1 };
+  it("迁移：账号里已有旧文案的中转站（无配对标识）也会被认领——手机保住新设置并带着它回家", () => {
+    const world = mkWorld();
+    const legacy = mkDevice("laptop", "blue", { noBooks: true });
+    world.clock += 1;
+    world.gists.set("g_legacy", {
+      id: "g_legacy",
+      description: "WulonVocab 跨端同步（密文）", // 升级前创建的旧站：描述不带配对标识
+      deviceId: "laptop",
+      text: stableJson(payloadOf(legacy)),
+      updatedAt: world.clock,
+    });
 
-    const phone = mkDevice("phone", "amber");
-    const g1 = sync(phone, gist);
-    expect(g1).toBeTruthy();
+    const phone = mkDevice("phone", "amber", { noBooks: true });
+    sync(phone, world);
+    expect(phone.gistId, "旧站也要认领").toBe("g_legacy");
     expect(phone.state.settings.accent, "手机不应被旧蓝色覆盖").toBe("amber");
+    expect(world.gists.get("g_legacy")!.deviceId, "推送回到了同一站（而非新建）").toBe("phone");
 
-    const laptop = mkDevice("laptop", "blue");
-    sync(laptop, g1);
+    const laptop = mkDevice("laptop", "blue", { noBooks: true });
+    sync(laptop, world);
+    expect(laptop.gistId).toBe("g_legacy");
     expect(laptop.state.settings.accent, "笔记本应跟随手机的琥珀").toBe("amber");
+    expect(world.gists.size).toBe(1);
   });
 
   it("双方都是旧数据（均无时间戳）时按设备号确定性裁决——双方收敛到同一侧", () => {
-    const mkLegacy = (id: string, accent: AppSettings["accent"]) => {
-      const dev = mkDevice(id, accent);
-      dev.state.settings.updatedAt = 0; // 升级前的旧数据：没有时间戳
-      return dev;
-    };
-    const phone = mkLegacy("phone", "amber");
-    const laptop = mkLegacy("laptop", "blue");
-    let g: Gist | null = sync(phone, null);
-    g = sync(laptop, g);
-    sync(phone, g);
+    const world = mkWorld();
+    const phone = mkDevice("phone", "amber", { noBooks: true });
+    const laptop = mkDevice("laptop", "blue", { noBooks: true });
+    phone.state.settings.updatedAt = 0;
+    laptop.state.settings.updatedAt = 0;
+
+    sync(phone, world);
+    sync(laptop, world);
+    sync(phone, world);
     expect(phone.state.settings.accent).toBe(laptop.state.settings.accent);
     expect(phone.state.settings.accent).toBe("amber"); // "phone" > "laptop"：设备号较大者胜
   });
