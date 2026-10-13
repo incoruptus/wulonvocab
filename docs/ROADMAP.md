@@ -4,7 +4,8 @@
 
 - **开发机 A（本机）**：网页端维护 + 下方向下 M1/M2 待办逐批落地；
 - **开发机 B**：安卓线按 **`docs/ANDROID.md`** 定稿执行（Capacitor 壳 + CI APK + 自托管 OTA；IA 已定稿）；
-- 首发 Release（v0.1.0 tag + 产物）：待安卓首个 APK 就绪后一并发（产物是 release 的一部分）。
+- **发布状态**：`v0.1.0` 已发布（tag + GitHub Release，网页版首发：https://github.com/incoruptus/wulonvocab/releases/tag/v0.1.0 ）；
+  当前开发版本 **0.1.1**；安卓首个 APK 就绪后挂到 0.1.0 版本线（同一 Release 补产物或按 0.1.0 线单独发）。
 
 ## 超计划交付（2026-10 会话，未在原 M0 清单内）
 
