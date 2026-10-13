@@ -45,6 +45,8 @@ export interface StudyConfig {
   choiceConfidence: boolean;
   /** 相似词避让：形近或义近的词不紧挨着出现（易混组可用「本场允许」临时放行） */
   similarityAvoid: boolean;
+  /** 出题顺序：到期优先（默认，照顾最该复习的词）/ 随机乱序（每次会话开始时打散） */
+  queueOrder: "due" | "shuffle";
 }
 
 export const DEFAULT_STUDY_CONFIG: StudyConfig = {
@@ -57,6 +59,7 @@ export const DEFAULT_STUDY_CONFIG: StudyConfig = {
   choiceTypes: ["word2zh", "zh2word", "def2word"],
   choiceConfidence: true,
   similarityAvoid: true,
+  queueOrder: "due",
 };
 
 /** 每日学习记录（用于统计与每日限额） */

@@ -1,47 +1,50 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cx } from "@/lib/utils";
-import { ymd } from "@/lib/study/types";
-
-interface Cell {
-  date: string;
-  count: number;
-}
+import { buildHeatmapGrid, heatmapLevel, heatmapWeeksForWidth, type HeatmapColumn } from "@/lib/study/heatmap";
 
 /**
- * 复习热力图：最近 13 周 × 7 天（本地日历）
- * 输入 { "YYYY-MM-DD": 复习次数 }；网格在挂载后计算（避免渲染期读取时间）。
+ * 复习热力图（13–26 周，宽度自适应铺满容器）
+ * 输入 { "YYYY-MM-DD": 复习次数 }；网格在挂载 / 容器尺寸变化后计算（渲染期不读时间）。
+ * onRangeChange：把实际显示范围（周数 + 区间内复习合计）上报给宿主（用于「近 N 周复习」文案）。
  */
-export function Heatmap({ counts, weeks = 13 }: { counts: Record<string, number>; weeks?: number }) {
-  const [grid, setGrid] = useState<Cell[][]>([]);
+export function Heatmap({
+  counts,
+  onRangeChange,
+}: {
+  counts: Record<string, number>;
+  onRangeChange?: (range: { weeks: number; sum: number }) => void;
+}) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const [cols, setCols] = useState<HeatmapColumn[]>([]);
 
   useEffect(() => {
-    const raf = requestAnimationFrame(() => {
-      const days = weeks * 7;
-      const end = new Date(Date.now());
-      end.setHours(12, 0, 0, 0);
-      const cols: Cell[][] = [];
-      const start = new Date(end);
-      start.setDate(end.getDate() - (days - 1));
-      const startDay = (start.getDay() + 6) % 7; // 0=周一
-      start.setDate(start.getDate() - startDay);
-      const cursor = new Date(start);
-      while (cursor <= end) {
-        const col: Cell[] = [];
-        for (let d = 0; d < 7; d += 1) {
-          const key = ymd(cursor.getTime());
-          col.push({ date: key, count: counts[key] ?? 0 });
-          cursor.setDate(cursor.getDate() + 1);
-        }
-        cols.push(col);
-      }
-      setGrid(cols);
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [counts, weeks]);
+    const host = hostRef.current;
+    if (!host) return;
+    let raf = 0;
+    const rebuild = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const width = host.clientWidth;
+        const weeks = heatmapWeeksForWidth(width);
+        const next = buildHeatmapGrid(counts, Date.now(), weeks);
+        setCols(next);
+        const sum = next.flatMap((c) => c.cells).reduce((a, c) => a + c.count, 0);
+        onRangeChange?.({ weeks: next.length, sum });
+      });
+    };
+    rebuild();
+    const ro = new ResizeObserver(rebuild);
+    ro.observe(host);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+    // onRangeChange 变化不触发重建（避免宿主重渲染循环）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [counts]);
 
-  const level = (n: number) => (n <= 0 ? 0 : n < 10 ? 1 : n < 25 ? 2 : n < 50 ? 3 : 4);
   const LEVEL_CLASS = [
     "bg-gray-100",
     "bg-blue-200",
@@ -51,27 +54,44 @@ export function Heatmap({ counts, weeks = 13 }: { counts: Record<string, number>
   ];
 
   return (
-    <div className="overflow-x-auto scroll-thin">
-      <div className="flex gap-[3px] sm:gap-1">
-        {grid.map((col, ci) => (
-          <div key={ci} className="flex flex-col gap-[3px] sm:gap-1">
-            {col.map((cell) => (
-              <div
-                key={cell.date}
-                title={`${cell.date} · ${cell.count} 次复习`}
-                className={cx("size-3 rounded-[3px] sm:size-3.5", LEVEL_CLASS[level(cell.count)])}
-              />
+    <div ref={hostRef} className="select-none">
+      {cols.length ? (
+        <>
+          <div className="flex gap-[4px]">
+            {cols.map((col, ci) => (
+              <div key={ci} className="min-w-0 flex-1">
+                <span className="t-label-12 block h-4 whitespace-nowrap text-gray-700">{col.label ?? ""}</span>
+              </div>
             ))}
           </div>
-        ))}
-      </div>
-      <div className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-700">
+          <div className="mt-1 flex gap-[4px]">
+            {cols.map((col, ci) => (
+              <div key={ci} className="flex min-w-0 flex-1 flex-col gap-[4px]">
+                {col.cells.map((cell) => (
+                  <div
+                    key={cell.date}
+                    title={`${cell.date} · ${cell.count} 次复习`}
+                    className={cx(
+                      "aspect-square w-full rounded-[3px]",
+                      cell.future ? "bg-gray-100/60" : LEVEL_CLASS[heatmapLevel(cell.count)],
+                      cell.today && "ring-1 ring-blue-700/50",
+                    )}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="min-h-24" />
+      )}
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-700">
         <span>少</span>
         {LEVEL_CLASS.map((c, i) => (
-          <span key={i} className={cx("size-3 rounded-[3px] sm:size-3.5", c)} />
+          <span key={i} className={cx("size-3 rounded-[3px]", c)} />
         ))}
         <span>多</span>
-        <span className="ml-2">最近 {weeks} 周</span>
+        <span className="ml-auto">最近 {cols.length || 13} 周 · 每格一天，今天带描边</span>
       </div>
     </div>
   );

@@ -31,6 +31,22 @@ describe("buildAdvice", () => {
     expect(a.body).toContain("分批");
   });
 
+  it("小量逾期不吓人（v3 修复「540 个」事故）：不用积压语气，数字诚实", () => {
+    const a = buildAdvice({ due: 9, overdue: 5, newRemaining: 15, newPerDay: 15, capacity: 450 });
+    expect(a.tone).not.toBe("overdue");
+    expect(a.suggestedNew).toBeGreaterThan(0);
+    expect(a.body).not.toContain("别慌");
+    expect(a.body).not.toContain("分批");
+    expect(a.body).toContain("逾期"); // 温和提一句，而不是喊口号
+  });
+
+  it("批次数字永不超过真实到期数", () => {
+    const a = buildAdvice({ due: 60, overdue: 50, newRemaining: 15, newPerDay: 15, capacity: 100 });
+    expect(a.tone).toBe("overdue");
+    expect(a.body).toContain("60 个");
+    expect(a.body).not.toContain("120");
+  });
+
   it("estimateMinutes：0.4/0.8 分钟模型", () => {
     expect(estimateMinutes(10, 10)).toBe(12);
   });

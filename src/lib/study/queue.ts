@@ -2,7 +2,6 @@ import type { Entry, Wordbook } from "../types";
 import { isDue, isMastered, isNewSrs } from "./engine";
 import { bigramJaccard, editDistance, firstTranslation } from "./quiz";
 import { DEFAULT_STUDY_CONFIG, emptyDailyLog, ymd, type BookStudy, type StudyConfig, type StudyDailyLog } from "./types";
-
 /** 取（或补默认）学习配置视图，不写库 */
 export function studyOf(book: Wordbook): BookStudy {
   return book.study ?? { config: { ...DEFAULT_STUDY_CONFIG }, daily: {} };
@@ -63,7 +62,7 @@ export function buildQueue(
   book: Wordbook,
   mode: StudyMode,
   now = Date.now(),
-  opts: { allowSimilar?: boolean } = {},
+  opts: { allowSimilar?: boolean; order?: StudyConfig["queueOrder"]; rng?: () => number } = {},
 ): QueueItem[] {
   const cfg = studyConfigOf(book);
   const daily = dailyLogOf(book, now);
@@ -82,8 +81,29 @@ export function buildQueue(
     const newEntries = book.entries.filter((e) => isNewSrs(e.srs)).slice(0, remaining);
     for (const e of newEntries) items.push({ entryId: e.id, isNew: true });
   }
+  const order = opts.order ?? cfg.queueOrder;
+  if (order === "shuffle") return avoidSimilarIfNeeded(book.entries, shuffleItems(items, opts.rng), cfg, opts);
+  return avoidSimilarIfNeeded(book.entries, items, cfg, opts);
+}
+
+function avoidSimilarIfNeeded(
+  entries: Entry[],
+  items: QueueItem[],
+  cfg: StudyConfig,
+  opts: { allowSimilar?: boolean },
+): QueueItem[] {
   if (!cfg.similarityAvoid || opts.allowSimilar) return items;
-  return avoidSimilarNeighbors(book.entries, items);
+  return avoidSimilarNeighbors(entries, items);
+}
+
+/** Fisher–Yates；rng 注入以便单测确定性（默认 Math.random，每次会话开始打散一次） */
+export function shuffleItems(items: QueueItem[], rng: () => number = Math.random): QueueItem[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
 }
 
 /* ---------------- 相似词避让（T3 · 依据 docs/research/learning-science-2026-10.md） ---------------- */

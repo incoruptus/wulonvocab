@@ -254,6 +254,8 @@ export interface AppStore {
     elapsedMs: number,
     /** 与 applyReview 返回的 dayKey 一致（跨午夜撤销不错记） */
     dayKey?: string,
+    /** 撤销时刻（与预览共享同一 now；缺省 Date.now()）——同时作为合并信号写入 srs.lastReview */
+    nowMs?: number,
   ) => void;
   resetEntrySrs: (bookId: string, entryId: string) => void;
 
@@ -785,14 +787,22 @@ export const useAppStore = create<AppStore>()(
         }
       },
 
-      undoReview: (bookId, entryId, before, rating, elapsedMs, dayKey) => {
+      undoReview: (bookId, entryId, before, rating, elapsedMs, dayKey, nowMs) => {
         const endHist = historyOf(api)?.suppress();
         try {
+        /*
+         * 撤销的「合并信号」：撤销 = 把词恢复到评分前的 srs，
+         * 但同步合并按 lastReview 晚者胜（见 sync/merge.ts pickSrs）——
+         * 若原样恢复旧 lastReview，云端已推送的新状态会在下轮合并里把撤销倒灌掉。
+         * 因此：恢复到已有 srs 时把 lastReview 提升到撤销时刻（调度状态不变，仅合并语义更新）；
+         * 恢复到未学态（无 srs）时 bump updatedAt —— 合并引擎把它识别为「显式重置」（localReset 条件）。
+         */
+        const undoAt = nowMs ?? Date.now();
         set((s) => ({
           books: patchBook(s.books, bookId, (b) => {
             const daily = { ...(b.study?.daily ?? {}) };
             // 与 applyReview 同源的日键：跨午夜撤销不会记错日期
-            const key = dayKey ?? ymd(Date.now());
+            const key = dayKey ?? ymd(undoAt);
             if (daily[key]) {
               const log = { ...daily[key] };
               log.reviewed = Math.max(0, log.reviewed - 1);
@@ -806,10 +816,16 @@ export const useAppStore = create<AppStore>()(
               ...b,
               entries: b.entries.map((e) => {
                 if (e.id !== entryId) return e;
-                if (before) return { ...e, srs: before, status: deriveStatusFromSrs(before) };
+                if (before) {
+                  return {
+                    ...e,
+                    srs: { ...before, lastReview: Math.max(before.lastReview ?? 0, undoAt) },
+                    status: deriveStatusFromSrs(before),
+                  };
+                }
                 const { srs: _drop, ...rest } = e;
                 void _drop;
-                return { ...rest, status: "new" as const };
+                return { ...rest, status: "new" as const, updatedAt: undoAt };
               }),
             };
           }),

@@ -7,8 +7,8 @@ import {
   isMastered,
   isNewSrs,
   newSrs,
-  needsSessionRequeue,
   previewGrades,
+  shouldRequeueInSession,
   RATING_AGAIN,
   RATING_EASY,
   RATING_GOOD,
@@ -73,15 +73,30 @@ describe("applyGrade（FSRS 行为）", () => {
   });
 });
 
-describe("isDue / isMastered / needsSessionRequeue", () => {
+describe("isDue / isMastered / shouldRequeueInSession", () => {
   it("状态判定", () => {
     expect(isNewSrs(undefined)).toBe(true);
     const learning = applyGrade(undefined, RATING_GOOD, 0.9, T0);
     expect(isNewSrs(learning)).toBe(false);
     expect(isDue(learning, T0 + 60 * 60 * 1000)).toBe(true);
     expect(isDue(learning, T0 + 1000)).toBe(false);
-    expect(needsSessionRequeue(learning, T0 + 60 * 1000)).toBe(true);
     expect(isMastered({ ...learning, state: 2, scheduledDays: 30 })).toBe(true);
+  });
+
+  it("回炉只在「忘记」且仍处于学习/重学步时发生（模糊/记得即本轮通过）", () => {
+    const learning = applyGrade(undefined, RATING_GOOD, 0.9, T0);
+    expect(shouldRequeueInSession(learning, RATING_AGAIN)).toBe(true);
+    expect(shouldRequeueInSession(learning, 2)).toBe(false);
+    expect(shouldRequeueInSession(learning, RATING_GOOD)).toBe(false);
+    // 复习态忘记 → 进入重学（Relearning）→ 同样回炉（用真实状态链构造，避免伪造卡片的自洽性问题）
+    const learned = applyGrade(undefined, RATING_GOOD, 0.9, T0);
+    const review = applyGrade(learned, RATING_GOOD, 0.9, learned.due);
+    expect(review.state).toBe(2); // Review
+    const relearn = applyGrade(review, RATING_AGAIN, 0.9, review.due);
+    expect(relearn.state).toBe(3); // Relearning
+    expect(shouldRequeueInSession(relearn, RATING_AGAIN)).toBe(true);
+    // 复习态（稳定）非忘记：不回炉
+    expect(shouldRequeueInSession(review, RATING_GOOD)).toBe(false);
   });
 });
 
@@ -126,6 +141,21 @@ describe("buildQueue / studyOverview", () => {
     book.study.daily[ymd(T0)] = { added: 2, reviewed: 2, again: 0, hard: 0, good: 2, easy: 0, ms: 0 };    const ov = studyOverview(book as never, T0);
     expect(ov.newRemaining).toBe(0);
     expect(buildQueue(book as never, "new", T0)).toHaveLength(0);
+  });
+
+  it("随机乱序（order=shuffle）：rng 注入可复现、不丢项", () => {
+    const entries = ["a", "b", "c", "d", "e", "f"].map((h) => makeEntry({ headword: h }));
+    const base = makeBook(entries);
+    const book = { ...base, study: { config: { ...base.study.config, newPerDay: 6 }, daily: {} as Record<string, StudyDailyLog> } };
+    const seq = [0.9, 0.1, 0.5, 0.3, 0.7, 0.2];
+    const run = () => {
+      let i = 0;
+      return buildQueue(book as never, "new", T0, { order: "shuffle", rng: () => seq[i++ % seq.length] }).map((x) => x.entryId);
+    };
+    const a = run();
+    const b = run();
+    expect(a).toEqual(b); // 相同 rng 序列 → 相同顺序（可复现）
+    expect(new Set(a).size).toBe(6); // 不丢项
   });
 });
 

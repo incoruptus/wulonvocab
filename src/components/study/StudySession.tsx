@@ -1,18 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { requestSyncNow } from "@/lib/sync/auto";
+import { requestSyncNow, requestSyncSoon } from "@/lib/sync/auto";
 import { useSyncCommit } from "@/components/app/useSyncCommit";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Brain, CalendarClock, ChevronLeft, Keyboard, RotateCcw, Sparkles, Undo2, Volume2, X } from "lucide-react";
+import { Brain, CalendarClock, ChevronLeft, Keyboard, PauseCircle, RotateCcw, Sparkles, Undo2, Volume2, X } from "lucide-react";
 import type { Entry, Wordbook } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
 import {
   formatInterval,
   isNewSrs,
-  needsSessionRequeue,
   previewGrades,
+  shouldRequeueInSession,
   type GradePreview,
   type GradeValue,
 } from "@/lib/study/engine";
@@ -95,7 +95,12 @@ export function StudySession({ book }: { book: Wordbook }) {
   const [revealed, setRevealed] = useState(false);
   const [previews, setPreviews] = useState<GradePreview[]>([]);
   const [stats, setStats] = useState<SessionStats>(EMPTY_STATS);
-  const [undo, setUndo] = useState<{ entryId: string; before?: StudySrs; rating: GradeValue; elapsedMs: number; isNew: boolean; dayKey?: string } | null>(null);
+  /** 可撤销的作答层数（镜像 sessionGradesRef；驱动「撤销」入口的显隐） */
+  const [undoDepth, setUndoDepth] = useState(0);
+  /** 最近一次作答评级（总结页撤销按钮的文案用） */
+  const [lastRating, setLastRating] = useState<GradeValue | null>(null);
+  /** 本场各词「忘记」次数（驱动「先放下」出口的出现与提示） */
+  const [againCounts, setAgainCounts] = useState<Record<string, number>>({});
   const [confirmExit, setConfirmExit] = useState(false);
   const [overview, setOverview] = useState<StudyOverview & { nextDueLabel: string }>({
     due: 0,
@@ -108,7 +113,7 @@ export function StudySession({ book }: { book: Wordbook }) {
   /** 预览与评分共享的复习时刻（保证 fuzz 播放一致） */
   const reviewNowRef = useRef(0);
   /** 已提交但尚未推进队列的评分（选择题反馈期间） */
-  const gradedRef = useRef<{ entryId: string; isNew: boolean; next: StudySrs } | null>(null);
+  const gradedRef = useRef<{ entryId: string; isNew: boolean; next: StudySrs; rating: GradeValue } | null>(null);
   const autoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** 答题后的输入锁定（防连发/误触），值为解锁时间戳 */
   const inputLockRef = useRef(0);
@@ -118,12 +123,10 @@ export function StudySession({ book }: { book: Wordbook }) {
   const [judged, setJudged] = useState(false);
   /** 本次会话跳过的词（未作答，F 返回用；上限 50 条） */
   const skippedRef = useRef<QueueItem[]>([]);
-  /** 本轮已提交评分的快照（「放弃进度并退出」按逆序回滚） */
+  /** 本轮已提交评分的快照（「放弃进度并退出」按逆序回滚；U 逐层撤回） */
   const sessionGradesRef = useRef<
     { entryId: string; before?: StudySrs; rating: GradeValue; elapsedMs: number; dayKey?: string }[]
   >([]);
-  /** 本场已回炉过的词（研究反模式 #2：每词每 session 回炉上限 1 次，禁止无上限打转） */
-  const sessionRequeuedRef = useRef<Set<string>>(new Set());
   /** 放弃进度的二次确认（对话框内两段式） */
   const [abandonArmed, setAbandonArmed] = useState(false);
   /** 快捷键帮助弹窗 */
@@ -212,6 +215,7 @@ export function StudySession({ book }: { book: Wordbook }) {
       cancelSpeech(); // 清掉上一局可能还在播的语音
       const items = buildQueue(useAppStore.getState().books.find((b) => b.id === book.id) ?? book, mode, Date.now(), {
         allowSimilar,
+        order: cfg.queueOrder,
       });
       if (!items.length) {
         toast.info(mode === "new" ? "今日新词已学完" : "今天没有要复习的词");
@@ -220,7 +224,8 @@ export function StudySession({ book }: { book: Wordbook }) {
       setQueue(items);
       setTotalPlanned(items.length);
       setStats({ ...EMPTY_STATS, startedAt: Date.now() });
-      setUndo(null);
+      setUndoDepth(0);
+      setLastRating(null);
       gradedRef.current = null;
       clearAutoTimer();
       setRevealed(false);
@@ -230,14 +235,14 @@ export function StudySession({ book }: { book: Wordbook }) {
       setPendingConfidence(false);
       skippedRef.current = [];
       sessionGradesRef.current = [];
-      sessionRequeuedRef.current = new Set();
+      setAgainCounts({});
       cardStartRef.current = Date.now();
       setPhase("session");
       const first = entryById(book, items[0].entryId);
       // 选择题在选定题型前无法判断是否隐藏词头（朗读会泄底），统一改为「作答后朗读」
       if (cfg.autoSpeak && cfg.quizMode !== "choice" && first) speakWord(first.headword, pronLang(first));
     },
-    [book, cfg.autoSpeak, cfg.quizMode, allowSimilar, clearAutoTimer],
+    [book, cfg.autoSpeak, cfg.quizMode, cfg.queueOrder, allowSimilar, clearAutoTimer],
   );
 
   /** 提交评分（写库 + 统计 + 记撤销快照），不含队列推进 */
@@ -260,47 +265,51 @@ export function StudySession({ book }: { book: Wordbook }) {
         good: st.good + (rating === 3 ? 1 : 0),
         easy: st.easy + (rating === 4 ? 1 : 0),
       }));
-      setUndo({ entryId: current.id, before: res.before, rating, elapsedMs: elapsed, isNew: isNewSrs(res.before), dayKey: res.dayKey });
+      if (rating === 1) setAgainCounts((m) => ({ ...m, [current.id]: (m[current.id] ?? 0) + 1 }));
+      setUndoDepth((d) => d + 1);
+      setLastRating(rating);
       sessionGradesRef.current.push({ entryId: current.id, before: res.before, rating, elapsedMs: elapsed, dayKey: res.dayKey });
-      gradedRef.current = { entryId: current.id, isNew: isNewSrs(res.before), next: res.next };
+      gradedRef.current = { entryId: current.id, isNew: isNewSrs(res.before), next: res.next, rating };
       inputLockRef.current = Date.now() + 180;
       return true;
     },
     [book.id, current, applyReview],
   );
 
-  /** 推进队列（含学习步回炉） */
-  const advanceCard = useCallback(() => {
-    const graded = gradedRef.current;
-    if (!graded) return;
-    gradedRef.current = null;
-    clearAutoTimer();
-    setPendingConfidence(false);
-    // 已评分的词不再参与 F 返回
-    skippedRef.current = skippedRef.current.filter((x) => x.entryId !== graded.entryId);
-    const rest = queue.slice(1);
-    if (needsSessionRequeue(graded.next, Date.now()) && !sessionRequeuedRef.current.has(graded.entryId)) {
-      sessionRequeuedRef.current.add(graded.entryId);
-      const insertAt =
-        cfg.similarityAvoid && !allowSimilar
-          ? requeueInsertIndex(book.entries, rest, graded.entryId)
-          : Math.min(rest.length, 4);
-      rest.splice(Math.min(insertAt, rest.length), 0, { entryId: graded.entryId, isNew: false });
-    }
-    setQueue(rest);
-    setRevealed(false);
-    setPreviews([]);
-    setChosen(null);
-    setJudged(false);
-    if (rest.length === 0) {
-      setStats((st) => ({ ...st, endedAt: Date.now() }));
-      setPhase("summary");
-    } else {
-      const next = entryById(book, rest[0].entryId);
-      if (cfg.autoSpeak && cfg.quizMode !== "choice" && next) speakWord(next.headword, pronLang(next));
-      cardStartRef.current = Date.now();
-    }
-  }, [queue, book, cfg.autoSpeak, cfg.quizMode, cfg.similarityAvoid, allowSimilar, clearAutoTimer]);
+  /** 推进队列（含学习步回炉；opts.park = 显式「先放下」，本轮不再回炉） */
+  const advanceCard = useCallback(
+    (opts?: { park?: boolean }) => {
+      const graded = gradedRef.current;
+      if (!graded) return;
+      gradedRef.current = null;
+      clearAutoTimer();
+      setPendingConfidence(false);
+      // 已评分的词不再参与 F 返回
+      skippedRef.current = skippedRef.current.filter((x) => x.entryId !== graded.entryId);
+      const rest = queue.slice(1);
+      if (!opts?.park && shouldRequeueInSession(graded.next, graded.rating)) {
+        const insertAt =
+          cfg.similarityAvoid && !allowSimilar
+            ? requeueInsertIndex(book.entries, rest, graded.entryId)
+            : Math.min(rest.length, 4);
+        rest.splice(Math.min(insertAt, rest.length), 0, { entryId: graded.entryId, isNew: false });
+      }
+      setQueue(rest);
+      setRevealed(false);
+      setPreviews([]);
+      setChosen(null);
+      setJudged(false);
+      if (rest.length === 0) {
+        setStats((st) => ({ ...st, endedAt: Date.now() }));
+        setPhase("summary");
+      } else {
+        const next = entryById(book, rest[0].entryId);
+        if (cfg.autoSpeak && cfg.quizMode !== "choice" && next) speakWord(next.headword, pronLang(next));
+        cardStartRef.current = Date.now();
+      }
+    },
+    [queue, book, cfg.autoSpeak, cfg.quizMode, cfg.similarityAvoid, allowSimilar, clearAutoTimer],
+  );
 
   /**
    * 选择题词间导航（可不作答自由浏览）：
@@ -404,34 +413,78 @@ export function StudySession({ book }: { book: Wordbook }) {
     [current, question, judged, commitGrade, cfg.choiceAdvance, cfg.choiceConfidence, speakEntry, advanceCard, clearAutoTimer],
   );
 
+  /**
+   * 撤销上一次作答（会话中与结束页通用，逐层可撤）：
+   * - 写库撤销走 store.undoReview（含合并信号，见 store 内注释）；
+   * - 快照来源 sessionGradesRef（与「放弃本轮进度」同一账本，两者永不脱节）；
+   * - 结束页调用时回到会话并重新出示该词，让手滑的评分可以重新给出。
+   */
   const onUndo = useCallback(() => {
-    if (!undo || phase !== "session") return;
+    // 「稳/猜」待确认期间：当前作答尚未落账，撤销会误伤上一张 → 先挡住
+    if (pendingConfidence) return;
+    const g = sessionGradesRef.current.pop();
+    if (!g) return;
     clearAutoTimer();
     setPendingConfidence(false);
-    undoReview(book.id, undo.entryId, undo.before, undo.rating, undo.elapsedMs, undo.dayKey);
+    const now = Date.now();
+    undoReview(book.id, g.entryId, g.before, g.rating, g.elapsedMs, g.dayKey, now);
+    if (g.rating === 1) {
+      setAgainCounts((m) => {
+        const next = { ...m };
+        const left = (next[g.entryId] ?? 1) - 1;
+        if (left <= 0) delete next[g.entryId];
+        else next[g.entryId] = left;
+        return next;
+      });
+    }
     setStats((st) => ({
       ...st,
       answered: Math.max(0, st.answered - 1),
-      again: st.again - (undo.rating === 1 ? 1 : 0),
-      hard: st.hard - (undo.rating === 2 ? 1 : 0),
-      good: st.good - (undo.rating === 3 ? 1 : 0),
-      easy: st.easy - (undo.rating === 4 ? 1 : 0),
+      again: st.again - (g.rating === 1 ? 1 : 0),
+      hard: st.hard - (g.rating === 2 ? 1 : 0),
+      good: st.good - (g.rating === 3 ? 1 : 0),
+      easy: st.easy - (g.rating === 4 ? 1 : 0),
     }));
-    setQueue((q) => [{ entryId: undo.entryId, isNew: undo.isNew }, ...q.filter((x) => x.entryId !== undo.entryId)]);
+    setUndoDepth((d) => Math.max(0, d - 1));
+    setLastRating(sessionGradesRef.current.at(-1)?.rating ?? null);
+    setQueue((q) => [{ entryId: g.entryId, isNew: isNewSrs(g.before) }, ...q.filter((x) => x.entryId !== g.entryId)]);
     gradedRef.current = null;
-    setUndo(null);
     setChosen(null);
     setJudged(false);
-    const now = Date.now();
+    setPhase((p) => (p === "summary" ? "session" : p));
     reviewNowRef.current = now;
-    if (effectiveMode === "flip") {
+    if (cfg.quizMode === "flip") {
+      // 预览要与撤销后的存储状态同构（store 会把 lastReview 提到 now）
+      const stamped = g.before ? { ...g.before, lastReview: Math.max(g.before.lastReview ?? 0, now) } : undefined;
       setRevealed(true);
-      setPreviews(previewGrades(undo.before, cfg.retention, now));
+      setPreviews(previewGrades(stamped, cfg.retention, now));
     } else {
       setRevealed(false);
     }
     cardStartRef.current = now;
-  }, [undo, phase, book, undoReview, cfg.retention, effectiveMode, clearAutoTimer]);
+    // 撤销结果尽快覆盖云端旧状态（未配置自动同步时静默）
+    requestSyncSoon(3000);
+  }, [book.id, undoReview, cfg.retention, cfg.quizMode, clearAutoTimer, pendingConfidence]);
+
+  /** 当前词的「忘记」次数（驱动「先放下」） */
+  const againCount = current ? (againCounts[current.id] ?? 0) : 0;
+  const parkEligible = againCount >= 1;
+
+  /**
+   * 先放下这个词：记下「忘记」（如果还没记）并结束本轮回炉。
+   * 语义：记忆状态如实记录（Again），改变的只是本场的练习安排——不再回炉、下次优先复习。
+   */
+  const onPark = useCallback(() => {
+    if (!current || !parkEligible) return;
+    if (effectiveMode === "flip") {
+      if (!revealed) return;
+      if (!commitGrade(1)) return;
+    } else {
+      if (!judged || !question || chosen === null || chosen === question.correctIndex) return;
+    }
+    advanceCard({ park: true });
+    toast.info("已先放下这个词", { description: "本轮不再出现；下次学习时它会排在前面。" });
+  }, [current, parkEligible, effectiveMode, revealed, commitGrade, advanceCard, judged, question, chosen]);
 
   const requestExit = useCallback(() => {
     clearAutoTimer();
@@ -525,6 +578,9 @@ export function StudySession({ book }: { book: Wordbook }) {
             navigateCard(1);
             return;
           }
+        } else if ((ev.key === "x" || ev.key === "X") && parkEligible) {
+          ev.preventDefault();
+          onPark();
         } else if (ev.key === " " || ev.key === "Enter") {
           ev.preventDefault();
           if (pendingConfidence) {
@@ -540,6 +596,11 @@ export function StudySession({ book }: { book: Wordbook }) {
       }
 
       // 翻卡模式
+      if ((ev.key === "x" || ev.key === "X") && revealed && parkEligible && Date.now() >= inputLockRef.current) {
+        ev.preventDefault();
+        onPark();
+        return;
+      }
       if (ev.key === " ") {
         ev.preventDefault();
         // Anki 习惯：未揭示 → 显示答案；已揭示 → 记为「记得」
@@ -557,7 +618,23 @@ export function StudySession({ book }: { book: Wordbook }) {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [phase, revealed, effectiveMode, question, judged, chosen, current, helpOpen, confirmExit, onReveal, onUndo, onGrade, onChoose, advanceCard, navigateCard, requestExit, cfg.choiceAdvance, pendingConfidence, resolveConfidence, toggleStar, book.id, choiceKeys]);
+  }, [phase, revealed, effectiveMode, question, judged, chosen, current, helpOpen, confirmExit, onReveal, onUndo, onGrade, onChoose, advanceCard, navigateCard, requestExit, cfg.choiceAdvance, pendingConfidence, resolveConfidence, toggleStar, book.id, choiceKeys, parkEligible, onPark]);
+
+  // 结束页：U 也能撤销上一次作答（手滑救回），撤销后回到会话重新出示该词
+  useEffect(() => {
+    if (phase !== "summary") return;
+    const handler = (ev: KeyboardEvent) => {
+      if (ev.repeat || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      const tag = (ev.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (ev.key === "u" || ev.key === "U") {
+        ev.preventDefault();
+        onUndo();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [phase, onUndo]);
 
   const doneCount = totalPlanned; // 计划总数（用于未来的进度文案扩展）
   void doneCount;
@@ -588,6 +665,8 @@ export function StudySession({ book }: { book: Wordbook }) {
         book={book}
         stats={stats}
         durationMs={duration}
+        undoLast={undoDepth > 0 && lastRating ? { rating: lastRating } : null}
+        onUndoLast={onUndo}
         onRestart={() => startSession("mixed")}
         onHome={() => setPhase("home")}
         onExit={exitStudy}
@@ -611,7 +690,7 @@ export function StudySession({ book }: { book: Wordbook }) {
             <span className="t-label-12 tabular-nums text-gray-800">剩余 {remaining}</span>
             <span className="text-gray-500">·</span>
             <span className="t-label-12 tabular-nums text-gray-800">已答 {stats.answered}</span>
-            {undo ? (
+            {undoDepth > 0 ? (
               <button
                 type="button"
                 onClick={onUndo}
@@ -709,8 +788,18 @@ export function StudySession({ book }: { book: Wordbook }) {
                   </span>
                 )}
               </div>
+              {parkEligible && choiceCorrect === false ? (
+                <button
+                  type="button"
+                  onClick={onPark}
+                  className="t-label-12 inline-flex h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-gray-800 transition-colors hover:bg-gray-100"
+                >
+                  <PauseCircle className="size-3.5" /> 先放下
+                  <Kbd className="wv-desktop-only hidden sm:inline-flex">X</Kbd>
+                </button>
+              ) : null}
               {!choiceCorrect || cfg.choiceAdvance === "continue" ? (
-                <Button size="md" className="h-11 shrink-0 gap-2 px-5" onClick={advanceCard}>
+                <Button size="md" className="h-11 shrink-0 gap-2 px-5" onClick={() => advanceCard()}>
                   继续 <Kbd className="wv-desktop-only hidden border-white/25 bg-white/15 text-white shadow-none sm:inline-flex">空格</Kbd>
                 </Button>
               ) : null}
@@ -739,7 +828,22 @@ export function StudySession({ book }: { book: Wordbook }) {
             显示释义 <Kbd className="wv-desktop-only hidden border-white/25 bg-white/15 text-white shadow-none sm:inline-flex">空格</Kbd>
           </button>
         ) : (
-          <div className="mx-auto grid max-w-xl grid-cols-2 gap-2 sm:grid-cols-4">
+          <>
+            {parkEligible ? (
+              <div className="mx-auto mb-1 flex max-w-xl justify-center">
+                <button
+                  type="button"
+                  onClick={onPark}
+                  className="t-label-12 inline-flex items-center gap-1 rounded-full px-3 py-1 text-gray-800 transition-colors hover:bg-gray-100"
+                >
+                  <PauseCircle className="size-3.5" />
+                  先放下{againCount >= 2 ? `（已忘 ${againCount} 次）` : ""}
+                  <span className="hidden text-gray-700 sm:inline">· 本轮不再出现</span>
+                  <Kbd className="wv-desktop-only hidden sm:inline-flex">X</Kbd>
+                </button>
+              </div>
+            ) : null}
+            <div className="mx-auto grid max-w-xl grid-cols-2 gap-2 sm:grid-cols-4">
             {([1, 2, 3, 4] as GradeValue[]).map((rating) => {
               const pv = previews.find((p) => p.rating === rating);
               return (
@@ -762,7 +866,8 @@ export function StudySession({ book }: { book: Wordbook }) {
                 </button>
               );
             })}
-          </div>
+            </div>
+          </>
         )}
       </footer>
 
@@ -1007,6 +1112,20 @@ function HomeView({
               </div>
             </div>
           ) : null}
+          <div className="space-y-1.5 border-t border-gray-300 pt-3">
+            <div className="t-label-13 text-gray-900">出题顺序</div>
+            <SegmentedControl
+              value={cfg.queueOrder}
+              disabled={configPending}
+              onValueChange={(v) => runConfig(() => onConfig({ queueOrder: v as "due" | "shuffle" }))}
+              options={[
+                { value: "due", label: "到期优先" },
+                { value: "shuffle", label: "随机乱序" },
+              ]}
+              grow
+            />
+            <p className="t-label-12 text-gray-700">到期优先先照顾最该复习的词；随机乱序打散顺序，减少位置记忆。</p>
+          </div>
           <SwitchRow
             label="相似词避让"
             hint="形近、义近的词分开放，减少互相干扰（依据间隔学习研究）"
@@ -1077,6 +1196,8 @@ function SummaryView({
   book,
   stats,
   durationMs,
+  undoLast,
+  onUndoLast,
   onRestart,
   onHome,
   onExit,
@@ -1084,6 +1205,9 @@ function SummaryView({
   book: Wordbook;
   stats: SessionStats;
   durationMs: number;
+  /** 可撤回的最后一次评分（结束页手滑救回）；null = 无可撤回 */
+  undoLast: { rating: GradeValue } | null;
+  onUndoLast: () => void;
   onRestart: () => void;
   onHome: () => void;
   onExit: () => void;
@@ -1113,6 +1237,12 @@ function SummaryView({
           <SummaryRow label="模糊 / 忘记" value={`${stats.hard} / ${stats.again}`} />
         </div>
         <div className="grid grid-cols-1 gap-2.5 border-t border-gray-300 pt-5">
+          {undoLast ? (
+            <Button variant="tertiary" onClick={onUndoLast}>
+              <Undo2 className="size-4" /> 撤销最后一张的「{GRADE_LABEL[undoLast.rating]}」
+              <Kbd className="wv-desktop-only hidden sm:inline-flex">U</Kbd>
+            </Button>
+          ) : null}
           <Button onClick={onRestart}>
             <RotateCcw className="size-4" /> 再来一轮
           </Button>

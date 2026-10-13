@@ -35,7 +35,8 @@ export const KEYMAP_COMMON: KeyBinding[] = [
   { label: "继续", keys: ["空格", "Enter"] },
   { label: "朗读单词", keys: ["R"] },
   { label: "星标单词", keys: ["S"], desc: "加入星标，稍后在词库中筛选" },
-  { label: "撤销上一次作答", keys: ["U"] },
+  { label: "撤销上一次作答", keys: ["U"], desc: "会话中与结束页都可用" },
+  { label: "先放下这个词", keys: ["X"], desc: "忘过至少一次后可用：本轮不再回炉，下次优先复习" },
   { label: "退出学习", keys: ["Esc"] },
   { label: "快捷键帮助", keys: ["?"] },
 ];

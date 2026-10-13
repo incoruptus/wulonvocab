@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, BookOpen, Brain, CalendarClock, Flame, Sparkles, Timer } from "lucide-react";
 import type { Wordbook } from "@/lib/types";
@@ -36,6 +36,11 @@ export function LearnHub() {
   const [metrics, setMetrics] = useState<HubMetrics | null>(null);
   const [advice, setAdvice] = useState<Advice | null>(null);
   const [summaries, setSummaries] = useState<BookSummary[]>([]);
+  /** 热力图实际显示范围（周数 + 区间复习合计；由 Heatmap 上报） */
+  const [heatRange, setHeatRange] = useState<{ weeks: number; sum: number }>({ weeks: 13, sum: 0 });
+  const onHeatRange = useCallback((range: { weeks: number; sum: number }) => {
+    setHeatRange((prev) => (prev.weeks === range.weeks && prev.sum === range.sum ? prev : range));
+  }, []);
 
   // 开始学习之前：拉一轮最新进度（静默；未配置自动同步时无感）
   useEffect(() => {
@@ -171,54 +176,57 @@ export function LearnHub() {
         {m ? (
           <Card className="space-y-3">
             <div className="t-h-14">未来 7 天要复习的词</div>
-            <div className="flex items-end gap-2" style={{ height: 84 }}>
-              {m.due7.map((v, i) => {
-                const max = Math.max(1, ...m.due7);
-                const h = Math.max(4, Math.round((v / max) * 72));
-                return (
-                  <div key={i} className="flex flex-1 flex-col items-center gap-1">
-                    <span className="t-mono-12 text-gray-800">{v || ""}</span>
-                    <div className="w-full rounded-t-md bg-blue-700/70" style={{ height: h }} />
-                    <span className="t-label-12 text-gray-700">{i === 0 ? "今天" : `+${i} 天`}</span>
-                  </div>
-                );
-              })}
-            </div>
+            {m.due7.some((v) => v > 0) ? (
+              <div className="flex items-end gap-2" style={{ height: 128 }}>
+                {m.due7.map((v, i) => {
+                  const max = Math.max(1, ...m.due7);
+                  const h = Math.max(4, Math.round((v / max) * 84));
+                  return (
+                    <div key={i} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
+                      <span className="t-mono-12 h-4 text-gray-800">{v || ""}</span>
+                      <div
+                        className={cx("w-full rounded-t-md", i === 0 ? "bg-blue-700/80" : "bg-blue-700/60")}
+                        style={{ height: h }}
+                      />
+                      <span className="t-label-12 h-4 text-gray-700">{i === 0 ? "今天" : `+${i} 天`}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="t-label-12 text-gray-700">接下来 7 天没有安排复习，专心学新词就好。</p>
+            )}
           </Card>
         ) : null}
 
-        {/* 热力图 + 健康指标 */}
+        {/* 热力图（宽度自适应铺满）+ 健康指标 */}
         {m ? (
           <Card className="space-y-3">
-            <div className="t-h-14">复习热力图</div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-6">
-              <div className="min-w-0">
-                <Heatmap counts={m.heatmap} />
-              </div>
-              <div className="order-first flex flex-wrap gap-x-5 gap-y-1 t-label-12 text-gray-800 sm:order-none sm:ml-auto sm:flex-col sm:items-end sm:gap-y-2 sm:pt-0.5 sm:text-right">
-                {m.streak > 0 ? (
-                  <span>
-                    连续学习：<span className="tabular-nums">{m.streak} 天</span>
-                  </span>
-                ) : null}
-                <span>
-                  近 13 周复习：
-                  <span className="tabular-nums">{Object.values(m.heatmap).reduce((a, b) => a + b, 0)}</span> 次
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <div className="t-h-14">复习热力图</div>
+              {m.streak > 0 ? (
+                <span className="t-label-12 text-gray-800">
+                  连续学习：<span className="tabular-nums">{m.streak}</span> 天
                 </span>
-                {m.accuracy30 !== null ? (
-                  <span>
-                    近 30 天正确率 ≈{" "}
-                    <span className="tabular-nums">{Math.round(m.accuracy30 * 100)}%</span>
-                    <span className="text-gray-700">（目标 90%）</span>
-                  </span>
-                ) : null}
-                {m.medianStability !== null ? (
-                  <span>
-                    记忆能撑多久（中位）：<span className="tabular-nums">{Math.round(m.medianStability)} 天</span>
-                  </span>
-                ) : null}
-              </div>
+              ) : null}
             </div>
+            <div className="flex flex-wrap gap-x-5 gap-y-1 t-label-12 text-gray-800">
+              <span>
+                近 {heatRange.weeks} 周复习：<span className="tabular-nums">{heatRange.sum}</span> 次
+              </span>
+              {m.accuracy30 !== null ? (
+                <span>
+                  近 30 天正确率 ≈ <span className="tabular-nums">{Math.round(m.accuracy30 * 100)}%</span>
+                  <span className="text-gray-700">（目标 90%）</span>
+                </span>
+              ) : null}
+              {m.medianStability !== null ? (
+                <span>
+                  记忆能撑多久（中位）：<span className="tabular-nums">{Math.round(m.medianStability)}</span> 天
+                </span>
+              ) : null}
+            </div>
+            <Heatmap counts={m.heatmap} onRangeChange={onHeatRange} />
           </Card>
         ) : null}
 
@@ -251,15 +259,15 @@ export function LearnHub() {
                         今天已完成
                       </Badge>
                     ) : null}
+                    <span className="t-label-12 text-gray-700">{timeAgo(book.updatedAt)}更新</span>
                   </div>
                   <div className="mt-1.5 flex items-center gap-2">
                     <div className="h-1.5 w-full max-w-56 overflow-hidden rounded-full bg-gray-200">
                       <div className="h-full rounded-full bg-green-700/80" style={{ width: `${Math.round(progress * 100)}%` }} />
                     </div>
-                    <span className="t-label-12 tabular-nums text-gray-800">
+                    <span className="t-label-12 shrink-0 tabular-nums text-gray-800">
                       {overview.mastered + overview.learning}/{book.entries.length}
                     </span>
-                    <span className="t-label-12 text-gray-700">· {timeAgo(book.updatedAt)}更新</span>
                   </div>
                 </div>
                 <Link href={`/study?id=${book.id}`} className="shrink-0">

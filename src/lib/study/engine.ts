@@ -94,9 +94,15 @@ export function deriveStatusFromSrs(srs: StudySrs | undefined): EntryStatus {
   return "learning";
 }
 
-/** 会话内需要再练：处于学习/重学态且短期内到期 */
-export function needsSessionRequeue(srs: StudySrs, now: number, horizonMs = 20 * 60 * 1000): boolean {
-  return (srs.state === State.Learning || srs.state === State.Relearning) && srs.due - now <= horizonMs;
+/**
+ * 会话内是否回炉：仅「忘记」（Again）触发，且卡片仍在学习/重学步。
+ * 语义（用户实测拍板，2026-10-13）：
+ * - 连续忘记 → 持续回炉，直到用户给出「模糊/记得/轻松」，本轮才算通过；
+ * - 不设静默次数上限（曾试「每场 1 次」上限，用户实测为"学了几次就停了"，体验不可接受）；
+ * - 出口是会话内显式的「先放下」（StudySession 的 park），而不是隐藏的计数器。
+ */
+export function shouldRequeueInSession(next: StudySrs, rating: GradeValue): boolean {
+  return rating === 1 && (next.state === State.Learning || next.state === State.Relearning);
 }
 
 export interface GradePreview {
