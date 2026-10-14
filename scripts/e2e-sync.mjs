@@ -48,7 +48,7 @@ async function createBook(page, words) {
 }
 
 async function exportPack(page) {
-  await page.goto(`${BASE}/settings`, { waitUntil: "networkidle" });
+  await page.goto(`${BASE}/settings/sync`, { waitUntil: "networkidle" });
   await sleep(2000);
   await page.evaluate(() => {
     if (window.__wvPatched) return;
@@ -69,7 +69,7 @@ async function exportPack(page) {
 }
 
 async function importPack(page, text) {
-  await page.goto(`${BASE}/settings`, { waitUntil: "networkidle" });
+  await page.goto(`${BASE}/settings/sync`, { waitUntil: "networkidle" });
   await sleep(2000);
   await page.evaluate((t) => {
     const input = document.querySelector('input[type="file"][accept*=".wulonsync"]');

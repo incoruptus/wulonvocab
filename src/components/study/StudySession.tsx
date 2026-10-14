@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { requestSyncNow, requestSyncSoon } from "@/lib/sync/auto";
 import { useSyncCommit } from "@/components/app/useSyncCommit";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Brain, CalendarClock, ChevronLeft, Keyboard, PauseCircle, RotateCcw, Sparkles, Undo2, Volume2, X } from "lucide-react";
+import { Brain, CalendarClock, ChevronLeft, ChevronRight, Keyboard, PauseCircle, RotateCcw, Sparkles, Undo2, Volume2, X } from "lucide-react";
 import type { Entry, Wordbook } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
 import {
@@ -21,7 +22,7 @@ import { buildQuizQuestion, type QuizQuestion } from "@/lib/study/quiz";
 import { KEYMAP_CHOICE, KEYMAP_COMMON, KEYMAP_FLIP, type KeyBinding } from "@/lib/study/keymap";
 import type { StudyConfig, StudySrs } from "@/lib/study/types";
 import { speakWord, cancelSpeech } from "@/lib/study/tts";
-import { choiceKeyPresetOf, CHOICE_KEY_PRESETS, normalizeChoiceKeys, type ChoiceKeys } from "@/lib/study/keys";
+import { normalizeChoiceKeys, type ChoiceKeys } from "@/lib/study/keys";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, Kbd, KbdGroup, SegmentedControl } from "@/components/ui/misc";
 import { Slider, SwitchRow } from "@/components/ui/field";
@@ -66,13 +67,12 @@ export function StudySession({ book }: { book: Wordbook }) {
   const applyReview = useAppStore((s) => s.applyReview);
   const undoReview = useAppStore((s) => s.undoReview);
   const setStudyConfig = useAppStore((s) => s.setStudyConfig);
-  const setAppSettings = useAppStore((s) => s.setSettings);
 
   /** 选择题直选键位（可切换 WEIO / ABCD / 自定义；读取经容错归一化） */
   const rawChoiceKeys = useAppStore((s) => s.settings.choiceKeys);
   const choiceKeys = useMemo(() => normalizeChoiceKeys(rawChoiceKeys), [rawChoiceKeys]);
 
-  /** 关闭学习会话后的去向（设置 → 学习偏好：词库页 / 学习中心 / 返回上一页） */
+  /** 关闭学习会话后的去向（设置 → 学习：词库页 / 学习中心 / 返回上一页） */
   const exitStudy = useCallback(() => {
     cancelSpeech();
     const dest = useAppStore.getState().settings.studyExit ?? "book";
@@ -651,8 +651,6 @@ export function StudySession({ book }: { book: Wordbook }) {
         onConfig={(patch) => setStudyConfig(book.id, patch)}
         allowSimilar={allowSimilar}
         onAllowSimilar={setAllowSimilar}
-        choicePreset={choiceKeyPresetOf(choiceKeys)}
-        onChoicePreset={(p) => setAppSettings({ choiceKeys: [...CHOICE_KEY_PRESETS[p]] })}
         onExit={exitStudy}
       />
     );
@@ -940,8 +938,6 @@ function HomeView({
   onConfig,
   allowSimilar,
   onAllowSimilar,
-  choicePreset,
-  onChoicePreset,
   onExit,
 }: {
   book: Wordbook;
@@ -951,8 +947,6 @@ function HomeView({
   onConfig: (patch: Partial<StudyConfig>) => Promise<boolean> | null | void;
   allowSimilar: boolean;
   onAllowSimilar: (v: boolean) => void;
-  choicePreset: "weio" | "abcd" | "custom";
-  onChoicePreset: (p: "weio" | "abcd") => void;
   onExit: () => void;
 }) {
   const nothingToday = overview.due === 0 && overview.newRemaining === 0;
@@ -1010,22 +1004,6 @@ function HomeView({
             <Slider min={5} max={60} step={5} value={[cfg.newPerDay]} disabled={configPending} onValueChange={([v]) => runConfig(() => onConfig({ newPerDay: v }))} />
           </div>
           <div className="space-y-1.5">
-            <div className="t-label-13 text-gray-900">记忆保持率</div>
-            <SegmentedControl
-              value={String(cfg.retention)}
-              disabled={configPending}
-              onValueChange={(v) => runConfig(() => onConfig({ retention: Number(v) }))}
-              options={[
-                { value: "0.8", label: "0.80 轻松" },
-                { value: "0.85", label: "0.85" },
-                { value: "0.9", label: "0.90 推荐" },
-                { value: "0.95", label: "0.95 严格" },
-              ]}
-              grow
-            />
-            <p className="t-label-12 text-gray-700">保持率越高，复习越频繁、记得越牢；0.90 适合大多数情况。</p>
-          </div>
-          <div className="space-y-1.5">
             <div className="t-label-13 text-gray-900">学习模式</div>
             <SegmentedControl
               value={cfg.quizMode}
@@ -1041,77 +1019,6 @@ function HomeView({
               翻卡：先回忆，再翻面对照评级；选择题：按题型设置出题，选项凑不够的词会回到翻卡。
             </p>
           </div>
-          {cfg.quizMode === "choice" ? (
-            <div className="space-y-1.5">
-              <div className="t-label-13 text-gray-900">选择题推进方式</div>
-              <SegmentedControl
-                value={cfg.choiceAdvance}
-                disabled={configPending || cfg.choiceConfidence}
-                onValueChange={(v) => runConfig(() => onConfig({ choiceAdvance: v }))}
-                options={[
-                  { value: "auto", label: "自动下一题" },
-                  { value: "continue", label: "按「继续」推进" },
-                ]}
-                grow
-              />
-              <p className="t-label-12 text-gray-700">
-                {cfg.choiceConfidence
-                  ? "开启「稳 / 猜」确认后，答对会等你确认一次，自动推进暂不可用。"
-                  : "自动模式节奏快；「继续」模式会停留展示正误，误触更少。"}
-              </p>
-            </div>
-          ) : null}
-          {cfg.quizMode === "choice" ? (
-            <div className="space-y-0.5 border-t border-gray-300 pt-3">
-              <div className="t-label-13 font-medium text-gray-900">选择题题型</div>
-              {(
-                [
-                  { k: "word2zh", label: "看词选义", hint: "显示单词，四选中文释义" },
-                  { k: "zh2word", label: "看义选词", hint: "显示中文释义，四选单词（正面不显示词，作答后朗读）" },
-                  { k: "def2word", label: "看释义选词", hint: "显示英英释义，四选单词（词条需带英文释义，缺了自动跳过）" },
-                ] as const
-              ).map(({ k, label, hint }) => (
-                <SwitchRow
-                  key={k}
-                  label={label}
-                  hint={hint}
-                  checked={cfg.choiceTypes.includes(k)}
-                  loading={configPending}
-                  disabled={configPending || (cfg.choiceTypes.length === 1 && cfg.choiceTypes.includes(k))}
-                  onCheckedChange={(v) =>
-                    runConfig(() =>
-                      onConfig({ choiceTypes: v ? [...cfg.choiceTypes, k] : cfg.choiceTypes.filter((x) => x !== k) }),
-                    )
-                  }
-                />
-              ))}
-              <SwitchRow
-                label="答对后询问「稳 / 猜」"
-                hint="选中「猜」记「模糊」，比一律记「记得」更贴近真实记忆"
-                checked={cfg.choiceConfidence}
-                loading={configPending}
-                disabled={configPending}
-                onCheckedChange={(v) => runConfig(() => onConfig({ choiceConfidence: v }))}
-              />
-              <div className="space-y-1.5 border-t border-gray-300 pt-3">
-                <div className="t-label-13 text-gray-900">直选键位（网页端）</div>
-                <SegmentedControl
-                  value={choicePreset === "custom" ? "" : choicePreset}
-                  onValueChange={(v) => onChoicePreset(v as "weio" | "abcd")}
-                  options={[
-                    { value: "weio", label: "WEIO" },
-                    { value: "abcd", label: "ABCD" },
-                  ]}
-                  grow
-                />
-                <p className="t-label-12 text-gray-700">
-                  {choicePreset === "custom"
-                    ? "当前为自定义键位，到「设置 → 学习偏好」里编辑。"
-                    : "想换成别的键位？到「设置 → 学习偏好」自定义，会帮你检查冲突。"}
-                </p>
-              </div>
-            </div>
-          ) : null}
           <div className="space-y-1.5 border-t border-gray-300 pt-3">
             <div className="t-label-13 text-gray-900">出题顺序</div>
             <SegmentedControl
@@ -1127,14 +1034,6 @@ function HomeView({
             <p className="t-label-12 text-gray-700">到期优先先照顾最该复习的词；随机乱序打散顺序，减少位置记忆。</p>
           </div>
           <SwitchRow
-            label="相似词避让"
-            hint="形近、义近的词分开放，减少互相干扰（依据间隔学习研究）"
-            checked={cfg.similarityAvoid}
-            loading={configPending}
-            disabled={configPending}
-            onCheckedChange={(v) => runConfig(() => onConfig({ similarityAvoid: v }))}
-          />
-          <SwitchRow
             label="本场允许相似词"
             hint="只对这次会话生效、不保存；专门练易混词组时打开"
             checked={allowSimilar}
@@ -1148,6 +1047,15 @@ function HomeView({
             disabled={configPending}
             onCheckedChange={(v) => runConfig(() => onConfig({ autoSpeak: v }))}
           />
+          <Link
+            href={`/settings/study?book=${book.id}`}
+            className="flex items-center justify-between gap-2 rounded-lg bg-background-100 px-3 py-2.5 shadow-geist-border transition-colors hover:bg-gray-100"
+          >
+            <span className="t-label-13 text-gray-900">更多学习设置</span>
+            <span className="inline-flex items-center gap-0.5 t-label-12 text-gray-700">
+              保持率、题型与键位 <ChevronRight className="size-3.5" />
+            </span>
+          </Link>
         </Card>
 
         <div className="t-label-12 mt-4 space-y-1 text-gray-700">

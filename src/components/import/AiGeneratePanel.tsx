@@ -167,10 +167,10 @@ export function AiGeneratePanel({
       {!configured ? (
         <div className="space-y-3">
           <div className="rounded-lg bg-amber-700/10 p-3 text-[13px] text-amber-900">
-            还没有接上 AI。到「设置 → 词典数据源」选一家服务商、贴上 Key（只保存在本机），就能在这里直接生成词库；
+            还没有接上 AI。到「设置 → 检索数据源」选一家服务商、贴上 Key（只保存在本机），就能在这里直接生成词库；
             生成与词典检索共用同一份配置。
           </div>
-          <Link href="/settings">
+          <Link href="/settings/sources">
             <Button variant="secondary" size="sm">
               <Settings2 className="size-3.5" /> 去配置 AI 数据源
             </Button>
