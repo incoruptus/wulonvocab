@@ -295,7 +295,7 @@ function SortableFieldRow({
           {!section.visible ? <span className="text-[10px] text-amber-900">隐藏</span> : null}
         </div>
         <div className="t-label-12 truncate text-gray-700">
-          {def.label} · {section.key} · {filled}/{book.entries.length} 已填
+          {section.type === "divider" ? `${def.label} · ${section.key}` : `${def.label} · ${section.key} · ${filled}/${book.entries.length} 已填`}
         </div>
       </div>
       {/* 右侧控件组：开关与更多菜单共用一条中线；flex 包裹避免基线盒垫高开关 */}
@@ -584,7 +584,7 @@ function FieldConfig({
       </Card>
 
       <div className="t-label-12 text-gray-700">
-        已填写 {filled} / {book.entries.length} 个词条
+        {section.type === "divider" ? "装饰字段：不参与数据统计" : `已填写 ${filled} / ${book.entries.length} 个词条`}
       </div>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>

@@ -71,11 +71,11 @@ export default function BooksPage() {
               variant="tertiary"
               onClick={() => {
                 const b = addSampleBook();
-                toast.success("示例已建好：3 个词、10 个字段，直接看效果");
+                toast.success("示例已建好：10 个词、14 种字段，直接看效果");
                 router.push(`/book?id=${b.id}`);
               }}
             >
-              <Sparkles className="size-4" /> 创建示例（3 词）
+              <Sparkles className="size-4" /> 创建示例（10 词）
             </Button>
           </div>
         </section>
@@ -102,7 +102,7 @@ export default function BooksPage() {
               <EmptyState
                 icon={<BookOpen className="size-4" />}
                 title="书架还是空的"
-                desc="新建一本开始写，或导入现成词表；想先看效果，就点「创建示例（3 词）」，完整词卡一眼就能看到。"
+                desc="新建一本开始写，或导入现成词表；想先看效果，就点「创建示例（10 词）」，完整词卡一眼就能看到。"
                 action={
                   <div className="flex gap-2">
                     <Button size="sm" onClick={() => setNewOpen(true)}>
@@ -116,7 +116,7 @@ export default function BooksPage() {
                         router.push(`/book?id=${b.id}`);
                       }}
                     >
-                      创建示例（3 词）
+                      创建示例（10 词）
                     </Button>
                   </div>
                 }
