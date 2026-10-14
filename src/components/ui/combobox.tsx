@@ -121,7 +121,9 @@ export function Combobox({
             className,
           )}
         >
-          <span className={cx("truncate", !value && "text-gray-700")}>{value || placeholder}</span>
+          <span className={cx("truncate", !value && "text-gray-700")}>
+            {value ? (options.find((o) => o.value === value)?.label ?? value) : placeholder}
+          </span>
           <ChevronDown className="size-4 shrink-0 text-gray-800" />
         </button>
       </PopoverTrigger>

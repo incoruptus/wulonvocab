@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -91,13 +91,39 @@ function sampleValueFor(section: SectionDef): unknown {
   }
 }
 
+/** lg 断点检测：桌面双栏「左选右编」；窄屏列表占满、点按进入全屏编辑 */
+function useIsLg() {
+  const [isLg, setIsLg] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    // rAF 回调内 setState，规避「effect 内同步 setState」
+    const raf = requestAnimationFrame(() => setIsLg(mq.matches));
+    const onChange = (e: MediaQueryListEvent) => setIsLg(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => {
+      cancelAnimationFrame(raf);
+      mq.removeEventListener("change", onChange);
+    };
+  }, []);
+  return isLg;
+}
+
 export function SchemaDesigner({ book }: { book: Wordbook }) {
   const addSection = useAppStore((s) => s.addSection);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
   const [presetOpen, setPresetOpen] = useState(false);
+  const isLg = useIsLg();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const sections = sortSections(book.schema.sections);
   const selected = sections.find((s) => s.id === selectedId) ?? null;
+  const editing = sections.find((s) => s.id === editId) ?? null;
+
+  /** 桌面：选中进右栏；窄屏：点入全屏编辑 */
+  const selectField = (id: string) => {
+    setSelectedId(id);
+    if (!isLg) setEditId(id);
+  };
 
   const onDragEnd = (e: DragEndEvent) => {
     const { active, over } = e;
@@ -110,8 +136,8 @@ export function SchemaDesigner({ book }: { book: Wordbook }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col lg:flex-row">
-      {/* 字段列表 */}
-      <div className="flex max-h-[45vh] w-full shrink-0 flex-col border-b border-gray-300 lg:h-full lg:max-h-none lg:w-[380px] lg:border-b-0 lg:border-r">
+      {/* 字段列表：窄屏占满整屏（点按进编辑），桌面为左栏 */}
+      <div className="flex min-h-0 w-full flex-1 flex-col lg:h-full lg:w-[380px] lg:flex-none lg:border-r lg:border-gray-300">
         <div className="flex items-center gap-2 border-b border-gray-300 p-3">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -128,7 +154,7 @@ export function SchemaDesigner({ book }: { book: Wordbook }) {
                     key={t}
                     onSelect={() => {
                       const sec = addSection(book.id, { type: t as SectionType });
-                      if (sec) setSelectedId(sec.id);
+                      if (sec) selectField(sec.id);
                     }}
                   >
                     <SectionIcon name={def.icon} className="size-3.5 shrink-0" />
@@ -154,7 +180,7 @@ export function SchemaDesigner({ book }: { book: Wordbook }) {
                   section={section}
                   book={book}
                   active={section.id === selectedId}
-                  onSelect={() => setSelectedId(section.id)}
+                  onSelect={() => selectField(section.id)}
                 />
               ))}
             </SortableContext>
@@ -174,8 +200,8 @@ export function SchemaDesigner({ book }: { book: Wordbook }) {
         </div>
       </div>
 
-      {/* 字段配置 */}
-      <div className="min-w-0 flex-1 overflow-y-auto scroll-thin">
+      {/* 字段配置（桌面右栏；窄屏走全屏编辑对话框） */}
+      <div className="hidden min-w-0 flex-1 overflow-y-auto scroll-thin lg:block">
         {selected ? (
           <FieldConfig key={selected.id} book={book} section={selected} onDeleted={() => setSelectedId(null)} />
         ) : (
@@ -186,6 +212,33 @@ export function SchemaDesigner({ book }: { book: Wordbook }) {
           />
         )}
       </div>
+
+      {/* 窄屏：点入全屏编辑 */}
+      <Dialog
+        open={Boolean(editing)}
+        onOpenChange={(v) => {
+          if (!v) setEditId(null);
+        }}
+        mobileFull
+      >
+        {editing ? (
+          <>
+            <DialogHeader title={editing.label} desc={SECTIONS[editing.type].hint} />
+            <DialogBody className="space-y-5 px-4 py-4 sm:px-5">
+              <FieldConfig
+                key={editing.id}
+                book={book}
+                section={editing}
+                embedded
+                onDeleted={() => {
+                  setSelectedId(null);
+                  setEditId(null);
+                }}
+              />
+            </DialogBody>
+          </>
+        ) : null}
+      </Dialog>
 
       <PresetDialog book={book} open={presetOpen} onOpenChange={setPresetOpen} />
     </div>
@@ -216,7 +269,7 @@ function SortableFieldRow({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cx(
-        "group flex items-center gap-1.5 rounded-lg p-2 transition-colors",
+        "group flex items-center gap-1 rounded-lg px-3 py-2 transition-colors",
         active ? "bg-blue-100/80" : "hover:bg-gray-100/80",
         isDragging && "z-10 opacity-90 shadow-geist-lg",
       )}
@@ -225,13 +278,17 @@ function SortableFieldRow({
       <button
         type="button"
         aria-label="拖动排序"
-        className="cursor-grab text-gray-600 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 active:cursor-grabbing"
+        className={cx(
+          // xs 规格（24px）的拖动柄：紧凑行内工具、触屏可抓；桌面悬停/聚焦或触屏常显
+          "grid size-6 shrink-0 cursor-grab place-items-center rounded-md text-gray-600 transition-opacity active:cursor-grabbing",
+          "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100",
+        )}
         {...attributes}
         {...listeners}
       >
         <GripVertical className="size-3.5" />
       </button>
-      <SectionIcon name={section.icon} className="size-3.5 shrink-0 text-gray-900" />
+      <SectionIcon name={section.icon} className="ml-0.5 size-3.5 shrink-0 text-gray-900" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="t-label-14 truncate font-medium text-gray-1000">{section.label}</span>
@@ -241,40 +298,59 @@ function SortableFieldRow({
           {def.label} · {section.key} · {filled}/{book.entries.length} 已填
         </div>
       </div>
-      <div onClick={(e) => e.stopPropagation()}>
-        <Switch
-          checked={section.visible}
-          onCheckedChange={(v) => useAppStore.getState().updateSection(book.id, section.id, { visible: v })}
-        />
+      {/* 右侧控件组：开关与更多菜单共用一条中线；flex 包裹避免基线盒垫高开关 */}
+      <div className="ml-2 flex shrink-0 items-center gap-2">
+        <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+          <Switch
+            checked={section.visible}
+            onCheckedChange={(v) => useAppStore.getState().updateSection(book.id, section.id, { visible: v })}
+          />
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <IconButton
+              label="字段操作"
+              size="xs"
+              className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <span className="text-[14px] leading-none">⋯</span>
+            </IconButton>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => useAppStore.getState().duplicateSection(book.id, section.id)}>
+              <Copy className="size-3.5" /> 复制字段
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              danger
+              onSelect={() => {
+                useAppStore.getState().removeSection(book.id, section.id);
+                toast.success(`已删除字段「${section.label}」`, { description: "词条中的数据仍保留在「未定义字段」中，可随时提升回来。" });
+              }}
+            >
+              <Trash2 className="size-3.5" /> 删除字段
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <IconButton label="字段操作" size="xs" className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-sm:opacity-100" onClick={(e) => e.stopPropagation()}>
-            <span className="text-[14px] leading-none">⋯</span>
-          </IconButton>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => useAppStore.getState().duplicateSection(book.id, section.id)}>
-            <Copy className="size-3.5" /> 复制字段
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            danger
-            onSelect={() => {
-              useAppStore.getState().removeSection(book.id, section.id);
-              toast.success(`已删除字段「${section.label}」`, { description: "词条中的数据仍保留在「未定义字段」中，可随时提升回来。" });
-            }}
-          >
-            <Trash2 className="size-3.5" /> 删除字段
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
     </div>
   );
 }
 
 /* ---------------- 字段配置面板 ---------------- */
 
-function FieldConfig({ book, section, onDeleted }: { book: Wordbook; section: SectionDef; onDeleted: () => void }) {
+function FieldConfig({
+  book,
+  section,
+  onDeleted,
+  embedded = false,
+}: {
+  book: Wordbook;
+  section: SectionDef;
+  onDeleted: () => void;
+  /** 全屏编辑（DialogBody 内）模式：标题由 DialogHeader 承担，本组件不再重复 */
+  embedded?: boolean;
+}) {
   const previewSettings = useMemo(() => normalizeExportSettings(book.exportSettings), [book.exportSettings]);
   const demoEntry: Entry = useMemo(
     () => ({
@@ -300,12 +376,10 @@ function FieldConfig({ book, section, onDeleted }: { book: Wordbook; section: Se
   const filled = book.entries.filter((e) => !isValueEmpty(section.type, e.values[section.key])).length;
 
   return (
-    <div className="space-y-5 p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+    <div className={cx("space-y-5", embedded ? "p-0" : "p-5")}>
+      {embedded ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <SectionIcon name={section.icon} className="size-4 text-gray-900" />
-            <h2 className="t-h-16">{section.label}</h2>
             <Badge variant="blue" size="sm">
               {def.label}
             </Badge>
@@ -315,12 +389,32 @@ function FieldConfig({ book, section, onDeleted }: { book: Wordbook; section: Se
               </Badge>
             ) : null}
           </div>
-          <p className="t-label-13 mt-1 text-gray-800">{def.hint}</p>
+          <Button variant="secondary" size="sm" className="text-red-900" onClick={() => setDeleteOpen(true)}>
+            <Trash2 className="size-3.5" /> 删除
+          </Button>
         </div>
-        <Button variant="secondary" size="sm" className="text-red-900" onClick={() => setDeleteOpen(true)}>
-          <Trash2 className="size-3.5" /> 删除
-        </Button>
-      </div>
+      ) : (
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <SectionIcon name={section.icon} className="size-4 text-gray-900" />
+              <h2 className="t-h-16">{section.label}</h2>
+              <Badge variant="blue" size="sm">
+                {def.label}
+              </Badge>
+              {section.builtin ? (
+                <Badge variant="gray" size="sm">
+                  模板内置
+                </Badge>
+              ) : null}
+            </div>
+            <p className="t-label-13 mt-1 text-gray-800">{def.hint}</p>
+          </div>
+          <Button variant="secondary" size="sm" className="text-red-900" onClick={() => setDeleteOpen(true)}>
+            <Trash2 className="size-3.5" /> 删除
+          </Button>
+        </div>
+      )}
 
       <Card className="space-y-3">
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">

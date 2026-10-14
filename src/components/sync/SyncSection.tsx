@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Download, FileUp, QrCode, Share2, Smartphone } from "lucide-react";
+import { Download, FileUp, QrCode, Share2 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { loadSyncMeta, saveSyncMeta, writeSafetySnapshot } from "@/lib/sync/meta";
 import { exportSyncFile, importSyncFile } from "@/lib/sync/transports/file";
@@ -10,7 +10,7 @@ import { mergeSync } from "@/lib/sync/merge";
 import type { MergeResult, SyncMeta, SyncPayloadV1 } from "@/lib/sync/types";
 import { Button, IconButton } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
-import { Badge, Card, CardTitle } from "@/components/ui/misc";
+import { Badge, Card } from "@/components/ui/misc";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/overlay";
 import { GistSyncBlock } from "@/components/sync/GistSyncBlock";
 import { PeerSyncDialog } from "@/components/sync/PeerSyncDialog";
@@ -152,11 +152,6 @@ export function SyncSection() {
 
   return (
     <Card className="space-y-4">
-      <CardTitle desc="换设备接着学：设置一次自动同步，多端自动对齐；也可以用同步包或面对面直传。删除、学习进度与偏好（外观除外）都会对上。">
-        <span className="inline-flex items-center gap-2">
-          <Smartphone className="size-4 text-gray-800" /> 跨端同步
-        </span>
-      </CardTitle>
 
       {/* 自动同步（Gist 档 · 主入口） */}
       <GistSyncBlock />

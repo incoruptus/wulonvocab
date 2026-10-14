@@ -16,9 +16,11 @@ export interface DialogProps {
   className?: string;
   /** 内容最大宽度 class，如 max-w-2xl */
   widthClass?: string;
+  /** 窄屏满屏（移动端点入编辑等沉浸场景；≥sm 恢复常规弹窗） */
+  mobileFull?: boolean;
 }
 
-export function Dialog({ open, onOpenChange, children, className, widthClass = "max-w-xl" }: DialogProps) {
+export function Dialog({ open, onOpenChange, children, className, widthClass = "max-w-xl", mobileFull = false }: DialogProps) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
@@ -27,6 +29,8 @@ export function Dialog({ open, onOpenChange, children, className, widthClass = "
           className={cx(
             "fixed left-1/2 top-[10%] z-50 w-[92vw] -translate-x-1/2 rounded-xl bg-background-100 shadow-geist-modal focus:outline-none",
             "max-h-[82vh] overflow-hidden flex flex-col transition-all duration-200 ease-swift data-[state=closed]:scale-[.97] data-[state=closed]:opacity-0",
+            mobileFull &&
+              "max-sm:left-0 max-sm:top-0 max-sm:h-dvh max-sm:max-h-dvh max-sm:w-full max-sm:max-w-none max-sm:translate-x-0 max-sm:rounded-none max-sm:pb-[env(safe-area-inset-bottom)]",
             widthClass,
             className,
           )}

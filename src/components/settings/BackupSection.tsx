@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Archive, DownloadCloud, Trash2, Upload } from "lucide-react";
+import { DownloadCloud, Trash2, Upload } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { Card, CardTitle } from "@/components/ui/misc";
+import { Card } from "@/components/ui/misc";
 import { Dialog, DialogFooter, DialogHeader } from "@/components/ui/overlay";
 import { downloadText } from "@/lib/utils";
 
@@ -18,11 +18,6 @@ export function BackupSection() {
   return (
     <>
       <Card className="space-y-4">
-        <CardTitle desc="词库、字段表、检索配置打包成一个 JSON；换电脑、重装浏览器，原样恢复。">
-          <span className="inline-flex items-center gap-2">
-            <Archive className="size-4 text-gray-800" /> 备份与恢复
-          </span>
-        </CardTitle>
         <div className="flex flex-wrap gap-2">
           <Button
             variant="secondary"

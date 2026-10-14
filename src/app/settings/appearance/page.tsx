@@ -2,7 +2,7 @@
 
 import { useAppStore } from "@/lib/store";
 import { SettingsShell } from "@/components/settings/SettingsShell";
-import { AccentPicker, Card, CardTitle, SegmentedControl } from "@/components/ui/misc";
+import { AccentPicker, Card, SegmentedControl } from "@/components/ui/misc";
 
 export default function AppearanceSettingsPage() {
   const settings = useAppStore((s) => s.settings);
@@ -10,7 +10,6 @@ export default function AppearanceSettingsPage() {
   return (
     <SettingsShell title="外观" desc="明暗模式与强调色是本机偏好，不会随跨端同步改动其他设备。">
       <Card className="space-y-4">
-        <CardTitle desc="界面主题与强调色">主题</CardTitle>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <div className="t-label-13 font-medium text-gray-900">明暗模式</div>

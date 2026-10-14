@@ -8,7 +8,7 @@ import { BUILTIN_DICTS, downloadBuiltinDict, type BuiltinDict } from "@/lib/look
 import { parseImportText } from "@/lib/importer";
 import { useAppStore } from "@/lib/store";
 import { Button, IconButton } from "@/components/ui/button";
-import { Badge, Card, CardTitle, EmptyState } from "@/components/ui/misc";
+import { Badge, Card, EmptyState } from "@/components/ui/misc";
 
 const now = () => Date.now();
 
@@ -76,60 +76,49 @@ export function DictionarySection() {
 
   return (
     <Card className="space-y-4">
-      <CardTitle
-        desc="先一键内置离线词典（ECDICT 精要 / 标准），或导入 OALD / ECDICT 等数据集（JSON / CSV）。内置包按词频与考纲挑过一遍，下载后完全离线。"
-        right={
-          <div>
-            <Button size="sm" variant="secondary" loading={dictBusy} onClick={() => dictFileRef.current?.click()}>
-              <Upload className="size-3.5" /> 导入词库文件
-            </Button>
-            <input
-              ref={dictFileRef}
-              type="file"
-              accept=".json,.csv,.tsv,.txt"
-              className="hidden"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (file) await importDictionary(file);
-                e.target.value = "";
-              }}
-            />
-          </div>
-        }
-      >
-        <span className="inline-flex items-center gap-2">
-          <Database className="size-4 text-gray-800" /> 本地词库
-        </span>
-      </CardTitle>
-      <div className="space-y-2 rounded-lg bg-background-200 p-3 shadow-geist-border">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span className="t-label-13 font-medium text-gray-900">内置词典 · 一键离线</span>
-          <span className="t-label-12 text-gray-700">ECDICT 子集（MIT）· 下载后不联网、查词 &lt;10ms</span>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="t-label-14 font-medium text-gray-900">内置词典 · 一键离线</div>
+          <p className="t-label-12 mt-0.5 text-gray-700">ECDICT 子集（MIT）· 下载后不联网、查词 &lt;10ms</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {BUILTIN_DICTS.map((d) => (
-            <Button
-              key={d.id}
-              size="sm"
-              variant="secondary"
-              loading={builtinBusy === d.id}
-              disabled={Boolean(builtinBusy)}
-              onClick={() => importBuiltin(d)}
-            >
-              <DownloadCloud className="size-3.5" /> {d.name} · {Math.round(d.words / 1000)}k 词（
-              {(d.gzipBytes / 1048576).toFixed(1)}MB）
-            </Button>
-          ))}
-        </div>
-        {builtinBusy ? (
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
-            <div
-              className="h-full rounded-full bg-blue-700 transition-[width]"
-              style={{ width: `${Math.round(builtinProgress * 100)}%` }}
-            />
-          </div>
-        ) : null}
+        <Button size="sm" variant="secondary" loading={dictBusy} onClick={() => dictFileRef.current?.click()}>
+          <Upload className="size-3.5" /> 导入词库文件
+        </Button>
+        <input
+          ref={dictFileRef}
+          type="file"
+          accept=".json,.csv,.tsv,.txt"
+          className="hidden"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (file) await importDictionary(file);
+            e.target.value = "";
+          }}
+        />
       </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {BUILTIN_DICTS.map((d) => (
+          <Button
+            key={d.id}
+            size="sm"
+            variant="secondary"
+            loading={builtinBusy === d.id}
+            disabled={Boolean(builtinBusy)}
+            onClick={() => importBuiltin(d)}
+          >
+            <DownloadCloud className="size-3.5" /> {d.name} · {Math.round(d.words / 1000)}k 词（
+            {(d.gzipBytes / 1048576).toFixed(1)}MB）
+          </Button>
+        ))}
+      </div>
+      {builtinBusy ? (
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+          <div
+            className="h-full rounded-full bg-blue-700 transition-[width]"
+            style={{ width: `${Math.round(builtinProgress * 100)}%` }}
+          />
+        </div>
+      ) : null}
       {dictionaries.length === 0 ? (
         <EmptyState
           icon={<HardDrive className="size-4" />}
