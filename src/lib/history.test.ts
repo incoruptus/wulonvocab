@@ -140,7 +140,7 @@ describe("抑制与签名工具", () => {
   it("suppress 期间的修改不进历史；结束后恢复记录", () => {
     const store = create<MiniState>()(
       withHistory(
-        (set, get, api) => ({
+        (set, _get, api) => ({
           a: 0,
           b: "",
           nested: [],

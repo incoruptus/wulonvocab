@@ -1,5 +1,6 @@
 import { createStore, del, get, set } from "idb-keyval";
 import type { LookupResult, LookupSourceConfig, Schema } from "../types";
+import { stripSourceCredentials } from "../credentials";
 
 /**
  * 检索结果缓存（L2 · IndexedDB）
@@ -27,7 +28,7 @@ function djb2(str: string): string {
 function fingerprint(sources: LookupSourceConfig[], schema: Schema, localDictIds: string[]): string {
   const sourcesRaw = sources
     .filter((s) => s.enabled)
-    .map((s) => `${s.kind}:${JSON.stringify(s.config)}`)
+    .map((s) => `${s.kind}:${JSON.stringify(stripSourceCredentials(s).config)}`)
     .join("|");
   const schemaKeys = schema.sections.map((sec) => sec.key).join(",");
   // 本地词典集合参与指纹：换/加/删词典后旧结果立即失效（避免旧释义被补进词条）

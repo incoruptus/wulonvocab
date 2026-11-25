@@ -3,15 +3,32 @@ import { isDue, isMastered, isNewSrs, retrievabilityOf } from "./engine";
 import { bigramJaccard, editDistance, firstTranslation } from "./quiz";
 import { sortEntries, type SortDim } from "./sort";
 import { isEntrySuspended, clampLeechThreshold } from "./leech";
-import { DEFAULT_STUDY_CONFIG, emptyDailyLog, ymd, type BookStudy, type NewWordOrder, type StudyConfig, type StudyDailyLog } from "./types";
+import { DEFAULT_STUDY_CONFIG, emptyDailyLog, ymd, type BookStudy, type ChoiceQuizKind, type ChoiceTimeLimit, type ChoiceTimeLimits, type NewWordOrder, type StudyConfig, type StudyDailyLog } from "./types";
 import { computeStudyPlan, prioritizeWeakReviews } from "./planning";
+import { choiceMixOf, quizMixOf } from "./quizMix";
 /** 取（或补默认）学习配置视图，不写库 */
 export function studyOf(book: Wordbook): BookStudy {
   return book.study ?? { config: { ...DEFAULT_STUDY_CONFIG }, daily: {} };
 }
 
+const CHOICE_KINDS: ChoiceQuizKind[] = ["word2def", "def2word", "zh2word", "word2zh"];
+function isChoiceTimeLimit(value: unknown): value is ChoiceTimeLimit {
+  return value === 10 || value === 15 || value === 20 || value === 25 || value === 30;
+}
+
+/** 旧版 10 / 25 秒属于用户明确选择，迁移到所有子型；旧默认 15 秒采用新的分档默认值。 */
+function choiceTimeLimitsOf(stored: Partial<StudyConfig> | undefined): ChoiceTimeLimits {
+  const legacy = stored?.choiceTimeLimit === 10 || stored?.choiceTimeLimit === 25 ? stored.choiceTimeLimit : null;
+  const defaults = DEFAULT_STUDY_CONFIG.choiceTimeLimits;
+  return Object.fromEntries(CHOICE_KINDS.map((kind) => {
+    const value = stored?.choiceTimeLimits?.[kind];
+    return [kind, isChoiceTimeLimit(value) ? value : legacy ?? defaults[kind]];
+  })) as ChoiceTimeLimits;
+}
+
 export function studyConfigOf(book: Wordbook): StudyConfig {
-  const cfg = { ...DEFAULT_STUDY_CONFIG, ...(book.study?.config ?? {}) };
+  const stored = book.study?.config;
+  const cfg = { ...DEFAULT_STUDY_CONFIG, ...(stored ?? {}) };
   return {
     ...cfg,
     leechThreshold: clampLeechThreshold(cfg.leechThreshold),
@@ -19,7 +36,19 @@ export function studyConfigOf(book: Wordbook): StudyConfig {
     reviewPerDay: Number.isFinite(cfg.reviewPerDay) ? Math.max(0, Math.round(cfg.reviewPerDay)) : DEFAULT_STUDY_CONFIG.reviewPerDay,
     dailyMinutes: Number.isFinite(cfg.dailyMinutes) ? Math.min(180, Math.max(5, Math.round(cfg.dailyMinutes))) : DEFAULT_STUDY_CONFIG.dailyMinutes,
     weakCapPct: 20,
-    choiceTypes: cfg.choiceTypes.filter((kind) => kind === "word2zh" || kind === "zh2word" || kind === "def2word"),
+    choiceTypes: (Array.isArray(cfg.choiceTypes) ? cfg.choiceTypes : DEFAULT_STUDY_CONFIG.choiceTypes).filter(
+      (kind): kind is NonNullable<StudyConfig["choiceTypes"]>[number] =>
+        kind === "word2def" || kind === "word2zh" || kind === "zh2word" || kind === "def2word",
+    ),
+    choiceTimeLimit: cfg.choiceTimeLimit === 10 || cfg.choiceTimeLimit === 25 ? cfg.choiceTimeLimit : 15,
+    choiceTimeLimits: choiceTimeLimitsOf(stored),
+    quizMode: cfg.quizMode === "choice" || cfg.quizMode === "cloze" || cfg.quizMode === "mix" ? cfg.quizMode : "flip",
+    quizMixWeights: quizMixOf(cfg),
+    choiceMixWeights: choiceMixOf(cfg),
+    quizBankSource: cfg.quizBankSource === "personal" || cfg.quizBankSource === "both" ? cfg.quizBankSource : "public",
+    clozeEnabled: cfg.clozeEnabled !== false,
+    aiCloze: cfg.aiCloze === true,
+    spellEnabled: cfg.spellEnabled === true,
   };
 }
 

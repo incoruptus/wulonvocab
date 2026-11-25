@@ -442,19 +442,7 @@ export function EntryList(props: EntryListProps) {
               </div>
 
               <div className="flex shrink-0 items-center justify-between gap-3 border-t border-gray-300 bg-background-100 px-4 py-3">
-                <div className="t-label-12 text-gray-700">
-                  显示 <span className="font-medium text-gray-1000 tabular-nums">{filtered.length}</span> / {book.entries.length} 词
-                </div>
-                <Button
-                  size="sm"
-                  variant={props.selecting ? "default" : "secondary"}
-                  onClick={() => {
-                    if (props.selecting) props.onExitSelect();
-                    else props.onEnterSelect(selectedId ?? filteredIds[0] ?? "");
-                  }}
-                >
-                  <CheckSquare className="size-3.5" /> {props.selecting ? "退出多选" : "多选"}
-                </Button>
+                <p className="t-label-12 leading-5 text-gray-700">批量编辑会保留当前筛选结果，可在底部工具栏统一改状态、标签、星标或合并。</p>
               </div>
             </PopoverContent>
           </Popover>
@@ -580,8 +568,18 @@ export function EntryList(props: EntryListProps) {
             <Button size="sm" variant="secondary" onClick={() => props.onAddLookup()}>
               <Search className="size-3.5" /> 添加并匹配
             </Button>
-            <Button size="sm" onClick={() => createEntry()}>
+            <Button size="sm" variant="secondary" onClick={() => createEntry()}>
               <Plus className="size-3.5" /> 手动新建
+            </Button>
+            <Button
+              size="sm"
+              variant={props.selecting ? "default" : "secondary"}
+              onClick={() => {
+                if (props.selecting) props.onExitSelect();
+                else props.onEnterSelect(selectedId ?? filteredIds[0] ?? "");
+              }}
+            >
+              <CheckSquare className="size-3.5" /> {props.selecting ? "退出多选" : "批量编辑"}
             </Button>
           </div>
         </div>

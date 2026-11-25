@@ -8,6 +8,7 @@ import { agentSystemPrompt, AGENT_TOOL_LABELS, buildAgentTools, runAgentTurn, ty
 import { makeAgentExecutor } from "@/lib/ai/agentExec";
 import { clearAgentChat, loadAgentChat, saveAgentChat, type AgentChatItem } from "@/lib/ai/agentStore";
 import { useAppStore } from "@/lib/store";
+import { withSourceCredentials } from "@/lib/credentials";
 import { Button, IconButton } from "@/components/ui/button";
 import { Badge } from "@/components/ui/misc";
 import { Dialog, DialogBody, DialogHeader } from "@/components/ui/overlay";
@@ -132,11 +133,12 @@ export function AgentPanel({
     const controller = new AbortController();
     abortRef.current = controller;
     try {
+      const runtimeSource = await withSourceCredentials(aiSource);
       await runAgentTurn({
         cfg: {
-          baseUrl: aiSource.config.baseUrl ?? "",
-          apiKey: aiSource.config.apiKey,
-          model: aiSource.config.model ?? "",
+          baseUrl: runtimeSource.config.baseUrl ?? "",
+          apiKey: runtimeSource.config.apiKey,
+          model: runtimeSource.config.model ?? "",
         },
         thread: threadRef.current,
         userText: text,

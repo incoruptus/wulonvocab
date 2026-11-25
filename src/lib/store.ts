@@ -29,8 +29,18 @@ import { hasSyncedSettingChange, pickLocalSettings } from "./sync/types";
 import type { SyncState, SyncTombstone } from "./sync/types";
 import { historyOf, withHistory } from "./history";
 import { uid } from "./utils";
-import { writeReviewLog, type ReviewLogContext } from "./study/reviewLog";
+import { replaceReviewLog, writeReviewLog, type ReviewLogContext } from "./study/reviewLog";
+import { clearBookViewState, mergeSavedViews, normalizeViewPrefs, type SavedView, type ViewPrefs } from "./viewPrefs";
 import { sanitizeSuspension, suspensionForDays } from "./study/leech";
+import { mergePersonalQuizQuestions, type PersonalQuizQuestion } from "./study/quizBank";
+import {
+  deleteSourceCredentials,
+  migrateLegacyLookupCredentials,
+  saveSourceCredentials,
+  splitSourceCredentials,
+  stripLookupSourceCredentials,
+  stripSourceCredentials,
+} from "./credentials";
 
 /* ============================================================
    持久化：IndexedDB + 防抖写入（词库体积大时 localStorage 不够）
@@ -98,7 +108,20 @@ if (typeof window !== "undefined") {
 const idbStorage: StateStorage = {
   getItem: async (name) => {
     const v = await idbGet<string>(name);
-    return v ?? null;
+    if (!v) return null;
+    if (name !== "wulonvocab-v1") return v;
+    try {
+      const parsed = JSON.parse(v) as { state?: { lookupSources?: LookupSourceConfig[] } };
+      if (!Array.isArray(parsed.state?.lookupSources)) return v;
+      const lookupSources = await migrateLegacyLookupCredentials(parsed.state.lookupSources);
+      const sanitized = JSON.stringify({ ...parsed, state: { ...parsed.state, lookupSources } });
+      await idbSet(name, sanitized); // 立即擦除主库中的旧凭据副本，不等下一次防抖写入
+      return sanitized;
+    } catch (error) {
+      // 保留旧值，避免迁移失败时丢 Key；本次运行结束前仍会重试。
+      console.error("[wulonvocab] 数据源凭据迁移失败：", error);
+      return v;
+    }
   },
   setItem: (name, value) => {
     scheduleWrite(name, value);
@@ -150,7 +173,6 @@ export const DEFAULT_LOOKUP_SOURCES: LookupSourceConfig[] = [
     config: {
       baseUrl: "https://api.deepseek.com/v1",
       model: "deepseek-chat",
-      apiKey: "",
       language: "中文",
     },
   },
@@ -206,7 +228,16 @@ export interface AppStore {
   updateBook: (id: string, patch: Partial<Pick<Wordbook, "name" | "description" | "tags" | "meta">>) => void;
   /** 词库学习状态：随书主体 LWW 同步；updatedAt 由 patchBook 提升 */
   setBookStudyState: (id: string, state: BookStudyState) => void;
+  /** 命名保存视图：用户数据，随词库同步；临时偏好仍由 useBookViewPrefs 本机保存 */
+  saveBookView: (bookId: string, name: string, prefs: ViewPrefs) => void;
+  deleteBookView: (bookId: string, viewId: string) => void;
+  /** 将旧独立 IDB 中的保存视图迁入主 store，按 id 合并且不覆盖较新版本 */
+  importLegacySavedViews: (bookId: string, views: SavedView[]) => void;
   replaceBook: (book: Wordbook) => void;
+  /** 个人题库：随词库同步；保存与删除均使用稳定 ID 和墓碑。 */
+  savePersonalQuizQuestion: (bookId: string, question: PersonalQuizQuestion) => void;
+  deletePersonalQuizQuestion: (bookId: string, questionId: string) => void;
+  importPersonalQuizQuestions: (bookId: string, questions: PersonalQuizQuestion[]) => void;
   setLastBook: (id: string | null) => void;
 
   // Schema（动态字段）
@@ -293,7 +324,7 @@ export interface AppStore {
   updateLookupSource: (id: string, patch: Partial<Omit<LookupSourceConfig, "config">> & { config?: Record<string, string> }) => Promise<boolean> | null;
   removeLookupSource: (id: string) => Promise<boolean> | null;
   /** 跨端同步：合并结果落库（lastBookId 保持本机值） */
-  applySyncState: (next: SyncState) => void;
+  applySyncState: (next: SyncState) => Promise<void>;
   /** 全局撤销/重做（内容域：词库/词条/数据源/预设；评分与同步合并不入历史） */
   undoHistory: () => void;
   redoHistory: () => void;
@@ -333,10 +364,16 @@ async function alignTombstones(restored: Record<string, unknown>, replaced: Reco
     const books = (snap.books ?? []) as Wordbook[];
     const bookIds = new Set(books.map((b) => b.id));
     const entries = new Map<string, Set<string>>();
-    for (const b of books) entries.set(b.id, new Set(b.entries.map((e) => e.id)));
+    const savedViews = new Map<string, Set<string>>();
+    const personalQuiz = new Map<string, Set<string>>();
+    for (const b of books) {
+      entries.set(b.id, new Set(b.entries.map((e) => e.id)));
+      savedViews.set(b.id, new Set((b.savedViews ?? []).map((view) => view.id)));
+      personalQuiz.set(b.id, new Set((b.personalQuizBank ?? []).map((question) => question.id)));
+    }
     const sourceIds = new Set(((snap.lookupSources ?? []) as LookupSourceConfig[]).map((s) => s.id));
     const presetIds = new Set(((snap.exportPresets ?? []) as ExportPreset[]).map((p) => p.id));
-    return { bookIds, entries, sourceIds, presetIds };
+    return { bookIds, entries, savedViews, personalQuiz, sourceIds, presetIds };
   };
   try {
     const a = ids(restored);
@@ -351,6 +388,18 @@ async function alignTombstones(restored: Record<string, unknown>, replaced: Reco
       if (!setA) continue; // 整书都不见了，book 墓碑已覆盖
       for (const eid of setB) if (!setA.has(eid)) dead.push({ kind: "entry", id: eid, bookId: bid, deletedAt: at });
       for (const eid of setA) if (!setB.has(eid)) back.push({ kind: "entry", id: eid, bookId: bid });
+    }
+    for (const [bid, setB] of b.savedViews) {
+      const setA = a.savedViews.get(bid);
+      if (!setA) continue;
+      for (const viewId of setB) if (!setA.has(viewId)) dead.push({ kind: "savedView", id: viewId, bookId: bid, deletedAt: at });
+      for (const viewId of setA) if (!setB.has(viewId)) back.push({ kind: "savedView", id: viewId, bookId: bid });
+    }
+    for (const [bid, setB] of b.personalQuiz) {
+      const setA = a.personalQuiz.get(bid);
+      if (!setA) continue;
+      for (const questionId of setB) if (!setA.has(questionId)) dead.push({ kind: "personalQuiz", id: questionId, bookId: bid, deletedAt: at });
+      for (const questionId of setA) if (!setB.has(questionId)) back.push({ kind: "personalQuiz", id: questionId, bookId: bid });
     }
     for (const id of b.sourceIds) if (!a.sourceIds.has(id)) dead.push({ kind: "lookupSource", id, deletedAt: at });
     for (const id of a.sourceIds) if (!b.sourceIds.has(id)) back.push({ kind: "lookupSource", id });
@@ -407,6 +456,7 @@ export const useAppStore = create<AppStore>()(
         }));
         // 跨端同步墓碑（fire-and-forget；失败不影响删除本身）
         void recordTombstones([{ kind: "book", id, deletedAt: Date.now() }]);
+        void clearBookViewState(id);
       },
 
       duplicateBook: (id) => {
@@ -432,13 +482,71 @@ export const useAppStore = create<AppStore>()(
         requestSyncSoon(10_000);
       },
 
-      replaceBook: (book) =>
+      saveBookView: (bookId, name, prefs) => {
+        const trimmed = name.trim().slice(0, 40);
+        if (!trimmed) return;
+        const now = Date.now();
+        const view: SavedView = { id: uid(), name: trimmed, prefs: normalizeViewPrefs({ ...prefs, collapsed: [] }), updatedAt: now };
+        const existing = get().books.find((book) => book.id === bookId)?.savedViews ?? [];
+        const next = mergeSavedViews(existing, [view]);
+        const removed = existing.filter((old) => !next.some((item) => item.id === old.id));
+        set((s) => ({
+          books: patchBook(s.books, bookId, (b) => ({ ...b, savedViews: next })),
+        }));
+        if (removed.length) void recordTombstones(removed.map((item) => ({ kind: "savedView" as const, id: item.id, bookId, deletedAt: now })));
+        requestSyncSoon(10_000);
+      },
+
+      deleteBookView: (bookId, viewId) => {
+        const at = Date.now();
+        set((s) => ({ books: patchBook(s.books, bookId, (b) => ({ ...b, savedViews: (b.savedViews ?? []).filter((view) => view.id !== viewId) })) }));
+        void recordTombstones([{ kind: "savedView", id: viewId, bookId, deletedAt: at }]);
+        requestSyncSoon(10_000);
+      },
+
+      importLegacySavedViews: (bookId, views) => {
+        if (!views.length) return;
+        set((s) => ({ books: patchBook(s.books, bookId, (b) => ({ ...b, savedViews: mergeSavedViews(b.savedViews ?? [], views) })) }));
+        requestSyncSoon(10_000);
+      },
+
+      replaceBook: (book) => {
         set((s) => ({
           books: s.books.some((b) => b.id === book.id)
             ? s.books.map((b) => (b.id === book.id ? book : b))
             : [book, ...s.books],
           settings: { ...s.settings, lastBookId: book.id },
-        })),
+        }));
+        flushSoon(); // 导入后可能立即跳转或关页，关键内容不等防抖
+      },
+
+      savePersonalQuizQuestion: (bookId, question) => {
+        const saved = { ...question, id: question.id || uid(), updatedAt: Date.now() };
+        set((s) => ({ books: patchBook(s.books, bookId, (b) => ({
+          ...b,
+          personalQuizBank: mergePersonalQuizQuestions(b.personalQuizBank ?? [], [saved]),
+        })) }));
+        void clearTombstonesFor([{ kind: "personalQuiz", id: saved.id, bookId }]);
+        requestSyncSoon(3000);
+      },
+
+      deletePersonalQuizQuestion: (bookId, questionId) => {
+        set((s) => ({ books: patchBook(s.books, bookId, (b) => ({
+          ...b,
+          personalQuizBank: (b.personalQuizBank ?? []).filter((question) => question.id !== questionId),
+        })) }));
+        void recordTombstones([{ kind: "personalQuiz", id: questionId, bookId, deletedAt: Date.now() }]);
+        requestSyncSoon(3000);
+      },
+
+      importPersonalQuizQuestions: (bookId, questions) => {
+        set((s) => ({ books: patchBook(s.books, bookId, (b) => ({
+          ...b,
+          personalQuizBank: mergePersonalQuizQuestions(b.personalQuizBank ?? [], questions),
+        })) }));
+        void clearTombstonesFor(questions.map((question) => ({ kind: "personalQuiz" as const, id: question.id, bookId })));
+        requestSyncSoon(3000);
+      },
 
       setLastBook: (id) => set((s) => ({ settings: { ...s.settings, lastBookId: id } })),
 
@@ -684,7 +792,7 @@ export const useAppStore = create<AppStore>()(
           })),
         })),
 
-      appendEntries: (bookId, newEntries, mode = "merge") =>
+      appendEntries: (bookId, newEntries, mode = "merge") => {
         set((s) => ({
           books: s.books.map((b) => {
             if (b.id !== bookId) return b;
@@ -694,7 +802,9 @@ export const useAppStore = create<AppStore>()(
             const changed = merged.length !== b.entries.length || merged.some((entry, index) => entry !== b.entries[index]);
             return changed ? { ...b, entries: merged, updatedAt: Date.now() } : b;
           }),
-        })),
+        }));
+        flushSoon(); // 导入、检索添加与 Agent 批量写入后立即落盘
+      },
 
       replaceEntries: (bookId, entries, resetSrs = false) => {
         const now = Date.now();
@@ -710,6 +820,7 @@ export const useAppStore = create<AppStore>()(
             }),
           })),
         }));
+        flushSoon(); // 整批替换可能来自导入，立即落盘避免跳转丢失
       },
 
       setEntriesStatus: (bookId, ids, status) =>
@@ -1074,41 +1185,60 @@ export const useAppStore = create<AppStore>()(
       },
 
       addLookupSource: (source) => {
-        set((s) => ({ lookupSources: [...s.lookupSources, { ...source, id: uid() }] }));
+        const id = uid();
+        const split = splitSourceCredentials({ ...source, id });
+        set((s) => ({ lookupSources: [...s.lookupSources, split.source] }));
+        if (Object.keys(split.credentials).length) {
+          void saveSourceCredentials(id, split.credentials).catch((error) => console.error("[wulonvocab] 凭据保存失败：", error));
+        }
         return requestSyncNow(); // 数据源增删是离散设置改动：立即上云
       },
 
       updateLookupSource: (id, patch) => {
+        const current = get().lookupSources.find((source) => source.id === id);
+        if (!current) return null;
+        const credentialKeys = ["apiKey", "headers"];
+        const configKeys = Object.keys(patch.config ?? {});
+        const credentialOnly = Boolean(configKeys.length) && configKeys.every((key) => credentialKeys.includes(key))
+          && Object.keys(patch).every((key) => key === "config");
+        const merged = {
+          ...current,
+          ...patch,
+          config: patch.config ? { ...current.config, ...patch.config } : current.config,
+        };
+        const split = splitSourceCredentials(merged);
+        if (configKeys.some((key) => credentialKeys.includes(key))) {
+          void saveSourceCredentials(id, split.credentials).catch((error) => console.error("[wulonvocab] 凭据保存失败：", error));
+        }
         set((s) => ({
-          lookupSources: s.lookupSources.map((src) =>
-            src.id === id
-              ? { ...src, ...patch, config: patch.config ? { ...src.config, ...patch.config } : src.config }
-              : src,
-          ),
+          lookupSources: s.lookupSources.map((src) => (src.id === id ? split.source : stripSourceCredentials(src))),
         }));
-        // 开关等离散改动：立即同步（返回确认 Promise）；表单文本编辑：30s 防抖合并（防逐键风暴）
-        if (Object.keys(patch).some((k) => k !== "config")) return requestSyncNow();
+        // 凭据编辑不触发同步；其余表单文本 30s 防抖，开关等离散改动立即同步。
+        if (credentialOnly) return null;
+        if (Object.keys(patch).some((key) => key !== "config")) return requestSyncNow();
         requestSyncSoon();
         return null;
       },
 
       removeLookupSource: (id) => {
         set((s) => ({ lookupSources: s.lookupSources.filter((src) => src.id !== id) }));
+        void deleteSourceCredentials(id).catch((error) => console.error("[wulonvocab] 凭据清理失败：", error));
         void recordTombstones([{ kind: "lookupSource", id, deletedAt: Date.now() }]);
         return requestSyncNow(); // 删除立即上云（配合墓碑传播）
       },
 
       /** 跨端同步：把合并结果落库（lastBookId 与设备本地外观保持本机值；其余字段整体替换） */
-      applySyncState: (next) => {
+      applySyncState: async (next) => {
         const endHist = historyOf(api)?.suppress(); // 远端合并不进入本地撤销栈
         try {
-        set((s) => ({
-          books: next.books,
-          settings: { ...next.settings, ...pickLocalSettings(s.settings), lastBookId: s.settings.lastBookId },
-          lookupSources: next.lookupSources,
-          dictionaries: next.dictionaries,
-          exportPresets: next.exportPresets ?? [],
-        }));
+          set((s) => ({
+            books: next.books,
+            settings: { ...next.settings, ...pickLocalSettings(s.settings), lastBookId: s.settings.lastBookId },
+            lookupSources: stripLookupSourceCredentials(next.lookupSources),
+            dictionaries: next.dictionaries,
+            exportPresets: next.exportPresets ?? [],
+          }));
+          if (next.reviewEvents) await replaceReviewLog(next.reviewEvents);
         } finally {
           endHist?.();
         }
@@ -1128,7 +1258,7 @@ export const useAppStore = create<AppStore>()(
 
       setSettings: (patch) => {
         if (!hasSyncedSettingChange(patch)) {
-          // 外观（明暗/强调色）：纯设备本地偏好——不 bump、不推送、不参与冲突
+          // 设备本地字段（明暗 / 强调色 / 最近词库）：不 bump、不推送、不参与冲突
           set((s) => ({ settings: { ...s.settings, ...patch } }));
           return null;
         }
@@ -1145,7 +1275,7 @@ export const useAppStore = create<AppStore>()(
             exportedAt: new Date().toISOString(),
             books,
             settings,
-            lookupSources,
+            lookupSources: stripLookupSourceCredentials(lookupSources),
             dictionaries,
             exportPresets,
           },
@@ -1237,15 +1367,20 @@ export const useAppStore = create<AppStore>()(
               ...DEFAULT_SETTINGS,
               ...(typeof data.settings === "object" && data.settings ? (data.settings as Partial<AppSettings>) : {}),
             },
-            lookupSources: lookupSources.length ? lookupSources : DEFAULT_LOOKUP_SOURCES,
+            lookupSources: stripLookupSourceCredentials(lookupSources),
             dictionaries,
             exportPresets,
           });
           flushSoon();
+          const warnings = dropped ? [`已跳过 ${dropped} 个结构异常或重复的词库`] : [];
+          if (rawSources.some((source) => {
+            const config = (source as Partial<LookupSourceConfig>)?.config;
+            return config && ("apiKey" in config || "headers" in config);
+          })) warnings.push("备份中的 API Key 与请求头已忽略，请在本机重新填写");
           return {
             ok: true,
             books: books.length,
-            ...(dropped ? { warnings: [`已跳过 ${dropped} 个结构异常或重复的词库`] } : {}),
+            ...(warnings.length ? { warnings } : {}),
           };
         } catch (e) {
           return { ok: false, error: (e as Error).message };
@@ -1275,7 +1410,7 @@ export const useAppStore = create<AppStore>()(
       partialize: (s) => ({
         books: s.books,
         settings: s.settings,
-        lookupSources: s.lookupSources,
+        lookupSources: stripLookupSourceCredentials(s.lookupSources),
         dictionaries: s.dictionaries,
         exportPresets: s.exportPresets,
       }),

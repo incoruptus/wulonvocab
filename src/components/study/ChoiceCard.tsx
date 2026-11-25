@@ -1,6 +1,6 @@
 "use client";
 
-import { SkipForward, Star, Volume2 } from "lucide-react";
+import { SkipForward, Star, Timer, Volume2 } from "lucide-react";
 import type { Entry } from "@/lib/types";
 import { speakWord } from "@/lib/study/tts";
 import type { QuizQuestion } from "@/lib/study/quiz";
@@ -11,7 +11,7 @@ import { cx } from "@/lib/utils";
 
 /**
  * 选择题卡片（四选一）：
- * - word2zh：正面显示单词 + 音标；zh2word / def2word：正面显示线索（隐藏词头，作答后揭晓）
+ * - word2def / word2zh：正面显示单词 + 音标；def2word / zh2word：正面显示线索（隐藏词头，作答后揭晓）
  * - 词头可朗读、星标、跳过（稍后再次出现）；隐藏词头时朗读按钮在作答前不出现（避免泄底）
  * - 直选键位由会话传入（默认 WEIO，可切 ABCD/自定义）；「稳 / 猜」确认在底部操作区（拇指区）
  */
@@ -22,6 +22,11 @@ export function ChoiceCard({
   chosen,
   starred,
   optionKeys,
+  remainingMs,
+  durationMs,
+  timerPaused,
+  onReport,
+  onContribute,
   onToggleStar,
   onChoose,
   onSkip,
@@ -33,6 +38,11 @@ export function ChoiceCard({
   starred: boolean;
   /** 四个选项的直选键（大写字面，用于键帽提示） */
   optionKeys: string[];
+  remainingMs: number;
+  durationMs: number;
+  timerPaused: boolean;
+  onReport: () => void;
+  onContribute: () => void;
   onToggleStar: () => void;
   onChoose: (i: number) => void;
   onSkip: () => void;
@@ -72,6 +82,11 @@ export function ChoiceCard({
           </div>
         ) : (
           <div className="min-w-0">
+            {question.kind === "word2def" ? (
+              <div className="text-[0.72em] font-semibold uppercase tracking-[0.08em] text-[var(--wv-soft,#4b4b4b)]">
+                选择对应的英文释义
+              </div>
+            ) : null}
             <div className="break-words text-[1.85em] font-semibold leading-[1.15] tracking-[-0.02em]">{entry.headword}</div>
             {pron.uk || pron.us ? (
               <div className="wv-mono mt-[0.4em] flex flex-wrap gap-x-[1em] text-[0.85em] opacity-75">
@@ -124,6 +139,28 @@ export function ChoiceCard({
         </div>
       </div>
 
+      {/* 限时状态：页面隐藏时显示暂停，不扣除离开时间 */}
+      {!judged ? (
+        <div className="mt-[0.9em]" role="timer" aria-label={`剩余 ${Math.ceil(remainingMs / 1000)} 秒`}>
+          <div className="mb-1 flex items-center justify-between gap-2 text-[0.78em] text-[var(--wv-soft,#4b4b4b)]">
+            <span className="inline-flex items-center gap-1.5">
+              <Timer className="size-[1.1em]" />
+              {timerPaused ? "已暂停" : `剩余 ${Math.ceil(remainingMs / 1000)} 秒`}
+            </span>
+            <span className="tabular-nums">限时 {Math.round(durationMs / 1000)} 秒</span>
+          </div>
+          <div className="h-1 overflow-hidden rounded-full bg-black/10">
+            <div
+              className={cx(
+                "h-full rounded-full transition-[width] duration-100 motion-reduce:transition-none",
+                remainingMs <= 5000 ? "bg-red-700" : "bg-blue-700",
+              )}
+              style={{ width: `${durationMs > 0 ? Math.max(0, Math.min(100, (remainingMs / durationMs) * 100)) : 0}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
+
       {/* 选项 */}
       <div className="mt-[1em] space-y-2">
         {question.options.map((opt, i) => {
@@ -150,7 +187,12 @@ export function ChoiceCard({
               <span className="t-mono-12 grid size-6 shrink-0 place-items-center rounded-md bg-gray-1000/10 text-[11px] font-semibold">
                 {"ABCD"[i]}
               </span>
-              <span className="min-w-0 flex-1">{opt.text}</span>
+              <span className="min-w-0 flex-1">
+                {opt.text}
+                {judged && isChosen && !isCorrect && opt.note ? (
+                  <span className="mt-1 block text-[12px] leading-[1.45] text-red-900">{opt.note}</span>
+                ) : null}
+              </span>
               <span className="wv-desktop-only hidden shrink-0 sm:inline-flex">
                 <Kbd>{optionKeys[i] ?? "ABCD"[i]}</Kbd>
               </span>
@@ -158,6 +200,16 @@ export function ChoiceCard({
           );
         })}
       </div>
+
+      {judged && question.source && question.source !== "entry" ? (
+        <div className="mt-[0.8em] flex flex-wrap items-center justify-between gap-2 border-t border-black/10 pt-[0.7em] text-[0.72em] text-[var(--wv-soft,#4b4b4b)]">
+          <span>题目来源：{question.source === "shared" ? "公共题库" : "AI 生成"}</span>
+          <span className="flex items-center gap-3">
+            <button type="button" onClick={onReport} className="underline decoration-black/20 underline-offset-2 hover:text-[var(--wv-fg,#1b1b1b)]">举报此题</button>
+            <button type="button" onClick={onContribute} className="underline decoration-black/20 underline-offset-2 hover:text-[var(--wv-fg,#1b1b1b)]">导出贡献包</button>
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

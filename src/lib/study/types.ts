@@ -22,8 +22,9 @@ export interface StudySrs {
   learningSteps: number;
 }
 
-/** 题目类型：选择题、例句挖空与拼写。拼写不使用四选一选项。 */
-export type QuizKind = "word2zh" | "zh2word" | "def2word" | "cloze" | "spell";
+/** 题目类型：Word Quiz 四选一、例句挖空与拼写。拼写不使用四选一选项。 */
+export type ChoiceQuizKind = "word2def" | "def2word" | "zh2word" | "word2zh";
+export type QuizKind = ChoiceQuizKind | "cloze" | "spell";
 
 /** 新词引入顺序：词库顺序 / 倒序 / 字母正倒序 / 会话乱序 */
 export type NewWordOrder = "list" | "listDesc" | "az" | "azDesc" | "shuffle";
@@ -31,6 +32,15 @@ export type NewWordOrder = "list" | "listDesc" | "az" | "azDesc" | "shuffle";
 export type ReviewOrder = "due" | "retrievability";
 
 /** 每本书的学习配置 */
+/** 学习模式：熟悉度自评 / 选择题 / 独立 Cloze / 按比例混搭 */
+export type QuizMode = "flip" | "choice" | "cloze" | "mix";
+export type QuizFamily = "flip" | "choice" | "cloze";
+export interface QuizMixWeights { flip: number; choice: number; cloze: number }
+export type ChoiceMixWeights = Record<ChoiceQuizKind, number>;
+/** 四个子型分别可选的作答时限（秒） */
+export type ChoiceTimeLimit = 10 | 15 | 20 | 25 | 30;
+export type ChoiceTimeLimits = Record<ChoiceQuizKind, ChoiceTimeLimit>;
+
 export interface StudyConfig {
   /** 每日新词上限 */
   newPerDay: number;
@@ -40,14 +50,26 @@ export interface StudyConfig {
   retention: number;
   /** 卡片正面自动发音 */
   autoSpeak: boolean;
-  /** 学习模式：翻卡自评 / 选择题 */
-  quizMode: "flip" | "choice";
+  /** 学习模式：翻卡自评 / 选择题 / Cloze / 混搭 */
+  quizMode: QuizMode;
+  /** 混搭模式三大题型占比；内部按相对权重归一化，允许全部为 0 时回退自评 */
+  quizMixWeights?: QuizMixWeights;
+  /** 选择题供给层：公共只读 / 本词库个人可维护 / 两者（个人优先） */
+  quizBankSource?: "public" | "personal" | "both";
+  /** 选择题四个子型在混搭模式中的相对权重 */
+  choiceMixWeights?: ChoiceMixWeights;
   /** 选择题答后推进：自动下一题 / 按「继续」 */
   choiceAdvance: "auto" | "continue";
   /** 启用的选择题题型（按词的学习阶段自动挑选；缺数据自动降级） */
-  choiceTypes: QuizKind[];
+  choiceTypes: ChoiceQuizKind[];
+  /** 旧版统一作答时限（秒）；仅用于兼容迁移，实际计时读取 choiceTimeLimits */
+  choiceTimeLimit: 10 | 15 | 25;
+  /** 四个选择题子型各自的作答时限（秒）；页面隐藏时暂停 */
+  choiceTimeLimits: ChoiceTimeLimits;
   /** 选择题答对后询问「稳 / 猜」（猜 → Hard，更贴近真实记忆） */
   choiceConfidence: boolean;
+  /** 显式允许 AI 生成 Word Quiz；默认关，公共题库与词条字段仍可出题 */
+  aiWordQuiz: boolean;
   /** 相似词避让：形近或义近的词不紧挨着出现（易混组可用「本场允许」临时放行） */
   similarityAvoid: boolean;
   /** 出题顺序：到期优先（默认，照顾最该复习的词）/ 随机乱序（每次会话开始时打散） */
@@ -82,9 +104,15 @@ export const DEFAULT_STUDY_CONFIG: StudyConfig = {
   retention: 0.9,
   autoSpeak: true,
   quizMode: "flip",
+  quizMixWeights: { flip: 20, choice: 60, cloze: 20 },
+  quizBankSource: "public",
+  choiceMixWeights: { word2def: 25, word2zh: 25, zh2word: 25, def2word: 25 },
   choiceAdvance: "auto",
-  choiceTypes: ["word2zh", "zh2word", "def2word"],
+  choiceTypes: ["word2def", "word2zh", "zh2word", "def2word"],
+  choiceTimeLimit: 15,
+  choiceTimeLimits: { word2def: 30, def2word: 20, zh2word: 15, word2zh: 15 },
   choiceConfidence: true,
+  aiWordQuiz: false,
   similarityAvoid: true,
   queueOrder: "due",
   newOrder: "list",

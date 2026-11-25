@@ -21,10 +21,10 @@ const env = {
   NEXT_PUBLIC_BASE_PATH: process.env.NEXT_PUBLIC_BASE_PATH ?? "/wulonvocab",
 };
 
-const result = spawnSync("npx", ["next", "build"], {
+const nextBin = join(process.cwd(), "node_modules", "next", "dist", "bin", "next");
+const result = spawnSync(process.execPath, [nextBin, "build"], {
   stdio: "inherit",
   env,
-  shell: true,
 });
 
 if ((result.status ?? 1) !== 0) process.exit(result.status ?? 1);

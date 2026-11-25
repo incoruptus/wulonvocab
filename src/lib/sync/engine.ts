@@ -64,8 +64,8 @@ export function markSyncOff(): void {
 }
 
 export interface SyncDeps {
-  getState: () => SyncState;
-  applyState: (s: SyncState) => void;
+  getState: () => SyncState | Promise<SyncState>;
+  applyState: (s: SyncState) => void | Promise<void>;
 }
 
 export interface SyncOutcome {
@@ -168,8 +168,9 @@ async function runOnce(deps: SyncDeps, manual: boolean): Promise<SyncOutcome> {
       remoteRevision = remote.revision;
       const { envelope, payload } = parsed;
       if (envelope.deviceId !== meta.device.id) {
+        const localState = await deps.getState();
         const res = mergeSync({
-          local: deps.getState(),
+          local: localState,
           remote: payload,
           meta: {
             base: meta.base,
@@ -180,8 +181,8 @@ async function runOnce(deps: SyncDeps, manual: boolean): Promise<SyncOutcome> {
             now: Date.now(),
           },
         });
-        await writeSafetySnapshot(JSON.stringify({ state: deps.getState(), tombstones: meta.tombstones, at: Date.now() }));
-        deps.applyState(res.state);
+        await writeSafetySnapshot(JSON.stringify({ state: localState, tombstones: meta.tombstones, at: Date.now() }));
+        await deps.applyState(res.state);
         await saveSyncMeta({ base: res.nextBase, tombstones: res.nextTombstones, lastSyncAt: Date.now() });
         pulled = true;
         applied = res.applied;
@@ -192,7 +193,7 @@ async function runOnce(deps: SyncDeps, manual: boolean): Promise<SyncOutcome> {
     // 2) 推送本端快照（内容与上轮相同则跳过）
     const fresh = await loadSyncMeta();
     const current = fresh.gist ?? cfg;
-    const payload = buildSyncPayload(deps.getState(), {
+    const payload = buildSyncPayload(await deps.getState(), {
       mode: "snapshot",
       deviceId: fresh.device.id,
       tombstones: fresh.tombstones,

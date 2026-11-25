@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectiveReviewEvents, normalizeReviewEvent, type ReviewLogEvent } from "./reviewLog";
+import { effectiveReviewEvents, normalizeReviewEvent, pruneReviewEvents, type ReviewLogEvent } from "./reviewLog";
 
 const base: ReviewLogEvent = {
   id: "r1",
@@ -42,5 +42,35 @@ describe("review log", () => {
     const second = { ...base, id: "r2", at: 150, rating: 3 as const };
     const unrelatedUndo = { id: "u2", kind: "undo" as const, at: 180, bookId: "b1", originalEventId: "missing" };
     expect(effectiveReviewEvents([base, second, unrelatedUndo]).map((e) => e.id)).toEqual(["r1", "r2"]);
+  });
+
+  it("四种选择题子型都保留在同步日志中", () => {
+    for (const questionKind of ["word2def", "def2word", "zh2word", "word2zh"] as const) {
+      expect(normalizeReviewEvent({ ...base, interaction: "choice", questionKind })).toMatchObject({ questionKind });
+    }
+  });
+
+  it("滚动保留按时间稳定排序，并受 180 天与 5000 条双重限制", () => {
+    const day = 24 * 60 * 60 * 1000;
+    const now = 200 * day;
+    const events = [
+      { ...base, id: "old", at: now - 181 * day },
+      { ...base, id: "b", at: now - 20 * day },
+      { ...base, id: "a", at: now - 20 * day },
+      { ...base, id: "recent", at: now },
+    ];
+    expect(pruneReviewEvents(events, now).map((event) => event.id)).toEqual(["a", "b", "recent"]);
+    expect(pruneReviewEvents(events, now)).toEqual(pruneReviewEvents([...events].reverse(), now));
+    const many = Array.from({ length: 5002 }, (_, index) => ({ ...base, id: `r${String(index).padStart(4, "0")}`, at: index }));
+    expect(pruneReviewEvents(many)).toHaveLength(5000);
+    expect(pruneReviewEvents(many)[0].id).toBe("r0002");
+  });
+
+  it("清空标记传播并删除更早事件，之后的评分仍有效", () => {
+    const clear: ReviewLogEvent = { id: "c1", kind: "clear", at: 300, bookId: "*" };
+    const after = { ...base, id: "r2", at: 400 };
+    expect(pruneReviewEvents([base, clear, after])).toEqual([clear, after]);
+    expect(effectiveReviewEvents(pruneReviewEvents([base, clear, after]))).toEqual([after]);
+    expect(pruneReviewEvents([{ ...base, at: 300 }, clear])).toEqual([clear]);
   });
 });

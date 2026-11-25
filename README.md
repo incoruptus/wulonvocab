@@ -21,7 +21,9 @@
 
 **学习（间隔重复）**
 - 基于 FSRS 的复习调度；每日新词上限、记忆保持率可调
-- 两种模式：翻卡自评、看词选义选择题（键盘 DFJK / WEIO 快捷操作）
+- 熟悉度自评、四子型选择题、独立 Cloze 与按比例混搭；选择题各子型可分别设置作答时限
+- 三步式新词引入、错题回炉、逐层撤销、顽固词搁置与掌握证据
+- 公共 / 个人 / 个人优先题库分层，个人题可新建、编辑、随词库同步并生成公共文件
 - 学习中心：负载建议、7 天预排、13 周热力图、正确率与连续天数
 
 **导入**
@@ -64,9 +66,10 @@ npm run build        # 生产构建
 ```bash
 npm run typecheck    # tsc --noEmit
 npm run lint         # ESLint
-npm test             # Vitest（157+ 单测）
+npm test             # Vitest 单测
 npm run check:encoding
 npm run e2e:sync     # 双设备同步 E2E（需先起 dev server）
+npm run e2e:study-settings # 复习参数、题库与四子型计时 E2E
 ```
 
 GitHub Pages 静态导出（子路径 `/wulonvocab`）：

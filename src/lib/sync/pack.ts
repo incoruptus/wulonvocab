@@ -6,9 +6,11 @@
  */
 
 import { uid } from "../utils";
+import { pruneReviewEvents } from "../study/reviewLog";
 import { decryptPayload, encryptPayload, pairIdOf } from "./crypto";
 import type { SyncEnvelopeV1, SyncMeta, SyncPayloadV1, SyncState } from "./types";
 import { stripLocalSettings, SYNC_FORMAT, SYNC_FORMAT_VERSION } from "./types";
+import { stripLookupSourceCredentials } from "../credentials";
 
 export function stableJson(v: unknown): string {
   return JSON.stringify(sortValue(v));
@@ -66,7 +68,7 @@ function decodeBase64(b64: string): string {
 
 export function buildSyncPayload(
   state: SyncState,
-  opts: { mode: "snapshot" | "delta"; since?: number | null; deviceId: string; tombstones: SyncMeta["tombstones"] },
+  opts: { mode: "snapshot" | "delta"; since?: number | null; deviceId: string; tombstones: SyncMeta["tombstones"]; now?: number },
 ): SyncPayloadV1 {
   // 设备本地设置（明暗/强调色）与 lastBookId 一律不出机
   const settings = stripLocalSettings(state.settings);
@@ -86,9 +88,10 @@ export function buildSyncPayload(
     books,
     tombstones: opts.tombstones,
     settings,
-    lookupSources: state.lookupSources,
+    lookupSources: stripLookupSourceCredentials(state.lookupSources),
     dictionaries: state.dictionaries,
     exportPresets: state.exportPresets ?? [],
+    reviewEvents: pruneReviewEvents(state.reviewEvents ?? [], opts.now ?? Date.now()),
     stats: { books: books.length, entries: books.reduce((n, b) => n + (b.entries?.length ?? 0), 0) },
   };
 }

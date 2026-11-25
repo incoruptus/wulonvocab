@@ -1,4 +1,5 @@
 import type { AppSettings, Entry, ExportPreset, LocalDictMeta, LookupSourceConfig, Wordbook } from "../types";
+import type { ReviewLogEvent } from "../study/reviewLog";
 
 /**
  * 跨端同步 · 类型 v1（P0）
@@ -32,7 +33,7 @@ export function pickLocalSettings(s: AppSettings): Pick<AppSettings, LocalSettin
 /** patch 是否触及需要同步的设置键（决定：是否 bump updatedAt / 是否立即推送） */
 export function hasSyncedSettingChange(patch: Partial<AppSettings>): boolean {
   return Object.keys(patch).some(
-    (k) => k !== "updatedAt" && !(LOCAL_SETTING_KEYS as readonly string[]).includes(k),
+    (k) => k !== "updatedAt" && k !== "lastBookId" && !(LOCAL_SETTING_KEYS as readonly string[]).includes(k),
   );
 }
 
@@ -45,7 +46,7 @@ export interface SyncDeviceInfo {
 
 /** 删除墓碑：防「删了又回来」。kind=entry 时必须带 bookId */
 export interface SyncTombstone {
-  kind: "book" | "entry" | "lookupSource" | "exportPreset";
+  kind: "book" | "entry" | "savedView" | "personalQuiz" | "lookupSource" | "exportPreset";
   id: string;
   bookId?: string;
   deletedAt: number;
@@ -104,6 +105,8 @@ export interface SyncState {
   lookupSources: LookupSourceConfig[];
   dictionaries: LocalDictMeta[];
   exportPresets: ExportPreset[];
+  /** 原始复习事件；旧客户端缺省视为未提供 */
+  reviewEvents?: ReviewLogEvent[];
 }
 
 /** 同步载荷（合并引擎的唯一远端输入；文件/加密容器在其外层） */
@@ -119,6 +122,8 @@ export interface SyncPayloadV1 {
   dictionaries?: LocalDictMeta[];
   /** 导出预设（旧版本载荷缺省 ⇒ 视为「未提供」，infer 不删本地） */
   exportPresets?: ExportPreset[];
+  /** 复习事件与清空标记；180 天 / 5,000 条滚动保留 */
+  reviewEvents?: ReviewLogEvent[];
   stats: { books: number; entries: number };
 }
 

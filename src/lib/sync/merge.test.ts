@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Entry, ExportPreset, Wordbook } from "../types";
 import { createEmptyBook, defaultExportSettings } from "../presets";
+import type { ReviewLogEvent } from "../study/reviewLog";
+import { DEFAULT_VIEW_PREFS, type SavedView } from "../viewPrefs";
 import { stableJson } from "./pack";
 import { computeBaseHashes, mergeSync } from "./merge";
 import type { MergeInput, SyncPayloadV1, SyncState, SyncTombstone } from "./types";
+import { SAMPLE_QUIZ_QUESTIONS } from "../study/sampleQuizBank";
 
 /* ---------------- fixtures ---------------- */
 
@@ -137,6 +140,29 @@ describe("mergeSync · 存在性与墓碑", () => {
     });
     expect(second.state.books[0].entries).toHaveLength(0);
     expect(second.applied.entriesDeleted).toBe(1);
+  });
+});
+
+describe("mergeSync · 个人题库", () => {
+  it("双端各加个人题 → 并集；同 ID 取较新版本", () => {
+    const a = { ...SAMPLE_QUIZ_QUESTIONS[0], id: "q-a", updatedAt: 10 };
+    const b = { ...SAMPLE_QUIZ_QUESTIONS[1], id: "q-b", updatedAt: 20 };
+    const newerA = { ...a, updatedAt: 30 };
+    const local = mkState([{ ...mkBook("b1", 100), personalQuizBank: [a] }]);
+    const remote = [{ ...mkBook("b1", 100), personalQuizBank: [newerA, b] }];
+    const result = mergeSync(mkInput(local, remote));
+    expect(result.state.books[0].personalQuizBank?.map((question) => question.id)).toEqual(["q-a", "q-b"]);
+    expect(result.state.books[0].personalQuizBank?.[0].updatedAt).toBe(30);
+  });
+
+  it("个人题墓碑阻止旧端恢复，较晚重建可存活", () => {
+    const question = { ...SAMPLE_QUIZ_QUESTIONS[0], id: "q-deleted", updatedAt: 50 };
+    const local = mkState([mkBook("b1", 100)]);
+    const remote = [{ ...mkBook("b1", 100), personalQuizBank: [question] }];
+    const deleted = mergeSync(mkInput(local, remote, { tombstones: [tomb({ kind: "personalQuiz", id: question.id, bookId: "b1", deletedAt: 60 })] }));
+    expect(deleted.state.books[0].personalQuizBank).toBeUndefined();
+    const recreated = mergeSync(mkInput(local, [{ ...remote[0], personalQuizBank: [{ ...question, updatedAt: 70 }] }], { tombstones: [tomb({ kind: "personalQuiz", id: question.id, bookId: "b1", deletedAt: 60 })] }));
+    expect(recreated.state.books[0].personalQuizBank).toHaveLength(1);
   });
 });
 
@@ -464,5 +490,62 @@ describe("mergeSync · 词库学习状态", () => {
     const r = mergeSync(mkInput(mkState([local]), [remote], { base: computeBaseHashes(mkState([base])), lastSyncAt: 100 }));
     expect(r.state.books[0].studyState).toBe("archived");
     expect(r.conflicts.some((conflict) => conflict.kind === "bookMeta" && conflict.canFlip)).toBe(true);
+  });
+});
+
+describe("mergeSync · 保存视图与复习事件", () => {
+  const savedView = (id: string, name: string, updatedAt: number): SavedView => ({
+    id, name, updatedAt, prefs: { ...DEFAULT_VIEW_PREFS, tag: name },
+  });
+
+  it("两端并发新增保存视图时保留双方结果", () => {
+    const localBook = { ...mkBook("b1", 100), savedViews: [savedView("v1", "本机", 200)] };
+    const remoteBook = { ...mkBook("b1", 100), savedViews: [savedView("v2", "远端", 300)] };
+    const result = mergeSync(mkInput(mkState([localBook]), [remoteBook], { now: 400 }));
+    expect(result.state.books[0].savedViews?.map((view) => view.id)).toEqual(["v1", "v2"]);
+  });
+
+  it("保存视图删除墓碑阻止旧端复活，较晚重建可解除墓碑", () => {
+    const localBook = { ...mkBook("b1", 100), savedViews: [savedView("v1", "旧视图", 100)] };
+    const remoteBook = { ...mkBook("b1", 100), savedViews: [savedView("v1", "旧视图", 100)] };
+    const input = mkInput(mkState([localBook]), [remoteBook], { now: 400 });
+    input.meta.tombstones = [tomb({ kind: "savedView", bookId: "b1", id: "v1", deletedAt: 300 })];
+    expect(mergeSync(input).state.books[0].savedViews).toEqual([]);
+
+    const rebuilt = { ...remoteBook, savedViews: [savedView("v1", "重建", 350)] };
+    input.remote = mkPayload("devB", [rebuilt]);
+    expect(mergeSync(input).state.books[0].savedViews?.map((view) => view.name)).toEqual(["重建"]);
+  });
+
+  it("两端意外夹带凭据时，合并结果与下一轮 base 都不含凭据", () => {
+    const local = mkState([]);
+    local.lookupSources = [{ id: "ai", kind: "ai", label: "AI", enabled: true, config: { apiKey: "local-secret", model: "flash" } }];
+    const input = mkInput(local, [], { now: 400 });
+    input.remote.lookupSources = [{ id: "ai", kind: "ai", label: "AI", enabled: true, config: { apiKey: "remote-secret", model: "flash" } }];
+    const result = mergeSync(input);
+    expect(result.state.lookupSources[0].config).toEqual({ model: "flash" });
+    expect(JSON.stringify(result.nextBase)).not.toContain("secret");
+    expect(result.conflicts).toHaveLength(0);
+  });
+
+  it("相同复习事件去重，撤销与清空标记跨端合并", () => {
+    const review: ReviewLogEvent = {
+      id: "r1", kind: "review", at: 100, bookId: "b1", entryId: "e1", interaction: "choice", questionKind: "word2def", rating: 2,
+    };
+    const local = mkState([]);
+    local.reviewEvents = [review];
+    const input = mkInput(local, [], { now: 400 });
+    input.remote.reviewEvents = [
+      review,
+      { id: "u1", kind: "undo", at: 200, bookId: "b1", originalEventId: "r1" },
+      { id: "c1", kind: "clear", at: 300, bookId: "*" },
+    ];
+    const result = mergeSync(input);
+    expect(result.state.reviewEvents).toMatchObject([
+      { id: "c1", kind: "clear", at: 300, bookId: "*" },
+    ]);
+    expect(result.state.reviewEvents).toHaveLength(1);
+    expect(mergeSync(mkInput({ ...local, reviewEvents: result.state.reviewEvents }, [], { now: 400 })).state.reviewEvents)
+      .toEqual(result.state.reviewEvents);
   });
 });

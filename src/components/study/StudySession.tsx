@@ -6,7 +6,7 @@ import { requestSyncNow, requestSyncSoon } from "@/lib/sync/auto";
 import { useSyncCommit } from "@/components/app/useSyncCommit";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Brain, CalendarClock, ChevronLeft, ChevronRight, CircleHelp, Keyboard, Layers, PauseCircle, RotateCcw, Sparkles, Timer, Undo2, Volume2, X } from "lucide-react";
+import { Brain, CalendarClock, ChevronLeft, ChevronRight, Keyboard, Layers, PauseCircle, RotateCcw, Sparkles, Timer, Undo2, Volume2, X } from "lucide-react";
 import type { Entry, Wordbook } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
 import {
@@ -21,6 +21,9 @@ import { buildQueue, entryById, requeueInsertIndex, studyConfigOf, studyOverview
 import { buildQuizQuestion, quizStageOf, type QuizQuestion } from "@/lib/study/quiz";
 import { buildCloze, buildSpellQuestion, gradeProductionAnswer, type ProductionGrade, type ProductionQuestion } from "@/lib/study/production";
 import { loadAiCloze } from "@/lib/study/clozeAi";
+import { loadWordQuizQuestion } from "@/lib/study/quizBank";
+import { planQuiz } from "@/lib/study/quizMix";
+import { SAMPLE_QUIZ_QUESTIONS } from "@/lib/study/sampleQuizBank";
 import { masteryOf } from "@/lib/study/mastery";
 import { useReviewMastery } from "@/components/study/useReviewMastery";
 import { KEYMAP_CHOICE, KEYMAP_COMMON, KEYMAP_FLIP, type KeyBinding } from "@/lib/study/keymap";
@@ -30,10 +33,14 @@ import { normalizeChoiceKeys, type ChoiceKeys } from "@/lib/study/keys";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, Kbd, KbdGroup, SegmentedControl } from "@/components/ui/misc";
 import { Slider, SwitchRow } from "@/components/ui/field";
-import { Dialog, DialogBody, DialogFooter, DialogHeader, Popover, PopoverContent, PopoverTrigger } from "@/components/ui/overlay";
+import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/overlay";
 import { StudyCard } from "@/components/study/StudyCard";
 import { ProductionCard } from "@/components/study/ProductionCard";
 import { ChoiceCard } from "@/components/study/ChoiceCard";
+import { QuizCommunityDialog, type QuizCommunityMode } from "@/components/study/QuizCommunityDialog";
+import { withSourceCredentials } from "@/lib/credentials";
+import { StudyEngineHelp } from "@/components/study/StudyEngineHelp";
+import { QuizModeControl } from "@/components/study/QuizModeControl";
 import { cx, uid } from "@/lib/utils";
 import { transitionNewWord, type NewWordStep } from "@/lib/study/newWordFlow";
 import { leechInfoOf } from "@/lib/study/leech";
@@ -41,6 +48,7 @@ import { computeStudyPlan, type StudyPlan } from "@/lib/study/planning";
 import { batchLabel, buildBatchQueue, type BatchIntent, type BatchSelection } from "@/lib/study/batch";
 import type { ReviewSessionMode, ReviewInteraction } from "@/lib/study/reviewLog";
 import { useWeakEvidence } from "./useWeakEvidence";
+import { useChoiceTimer } from "./useChoiceTimer";
 
 type Phase = "home" | "session" | "summary";
 type SessionKind = StudyMode | "cram";
@@ -77,7 +85,9 @@ function pronLang(entry: Entry): "en-GB" | "en-US" {
 }
 
 function isChoiceQuestion(question: StudyQuestion | null): question is QuizQuestion {
-  return Boolean(question && (question.kind === "word2zh" || question.kind === "zh2word" || question.kind === "def2word"));
+  return Boolean(question && (
+    question.kind === "word2def" || question.kind === "word2zh" || question.kind === "zh2word" || question.kind === "def2word"
+  ));
 }
 
 function isProductionQuestion(question: StudyQuestion | null): question is ProductionQuestion {
@@ -85,15 +95,9 @@ function isProductionQuestion(question: StudyQuestion | null): question is Produ
 }
 
 /** 隐藏词头的提取题在判定前不自动朗读，避免答案泄底。 */
-function autoSpeakAllowed(entry: Entry | undefined, cfg: StudyConfig, book: Wordbook): boolean {
-  if (!entry || cfg.quizMode === "choice") return false;
-  const stage = quizStageOf(entry);
-  if (cfg.spellEnabled && stage === "stable" && buildSpellQuestion(entry)) return false;
-  if (cfg.clozeEnabled && stage !== "learning") {
-    if (buildCloze(entry, book)) return false;
-    if (cfg.aiCloze) return false;
-  }
-  return true;
+function autoSpeakAllowed(entry: Entry | undefined, cfg: StudyConfig): boolean {
+  // 混搭在出题前无法确定是否隐藏词头；与选择题一样，统一在判定后朗读。
+  return Boolean(entry && cfg.quizMode === "flip");
 }
 
 export function StudySession({
@@ -167,6 +171,7 @@ export function StudySession({
   // 选择题模式状态
   const [chosen, setChosen] = useState<number | null>(null);
   const [judged, setJudged] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
   /** 本次会话跳过的词（未作答，F 返回用；上限 50 条） */
   const skippedRef = useRef<QueueItem[]>([]);
   /** 本轮已提交评分的快照（「放弃进度并退出」按逆序回滚；U 逐层撤回） */
@@ -190,8 +195,14 @@ export function StudySession({
   const [abandonArmed, setAbandonArmed] = useState(false);
   /** 快捷键帮助弹窗 */
   const [helpOpen, setHelpOpen] = useState(false);
+  /** 公共题举报与贡献包 */
+  const [quizCommunityMode, setQuizCommunityMode] = useState<QuizCommunityMode>(null);
   /** 正确项位置洗牌袋（每答一题轮换；用 ref 以免触发题目重建） */
   const posBagRef = useRef<number[]>([0, 1, 2, 3]);
+  /** 混搭轮转序号与累计次数；只保存在本场，不影响同步配置。 */
+  const quizTurnRef = useRef(0);
+  const quizChoiceTurnRef = useRef(0);
+  const quizUsedRef = useRef<{ families: Partial<Record<"flip" | "choice" | "cloze", number>>; kinds: Partial<Record<NonNullable<StudyConfig["choiceTypes"]>[number], number>> }>({ families: {}, kinds: {} });
   /** 当前卡片的题目（卡片切换时重建；作答后冻结，防止选项重排） */
   const [question, setQuestion] = useState<StudyQuestion | null>(null);
   const [questionLoading, setQuestionLoading] = useState(false);
@@ -214,6 +225,7 @@ export function StudySession({
     : null;
 
   const choiceTypesKey = cfg.choiceTypes.join(",");
+  const mixWeightsKey = JSON.stringify([cfg.quizMixWeights, cfg.choiceMixWeights]);
 
   // 题目只在切卡或配置变化时重建；评分更新词条不会重排选项。
   useEffect(() => {
@@ -222,16 +234,49 @@ export function StudySession({
       setQuestionLoading(false);
       setProductionValue("");
       setProductionResult(null);
+      setTimedOut(false);
       if (!current) {
         setQuestion(null);
         return;
       }
       const entries = useAppStore.getState().books.find((b) => b.id === book.id)?.entries ?? book.entries;
-      const setChoice = () => {
+      const setChoice = async (kind?: StudyConfig["choiceTypes"][number]) => {
         if (!alive) return;
-        setQuestion(cfg.quizMode === "choice"
-          ? buildQuizQuestion(current, entries, { forceCorrectIndex: posBagRef.current[0], kinds: choiceTypesKey.split(",") as StudyConfig["choiceTypes"] })
-          : null);
+        const kinds = kind ? [kind] : choiceTypesKey.split(",") as StudyConfig["choiceTypes"];
+        if (!kinds.length) {
+          setQuestion(null);
+          return;
+        }
+        const state = useAppStore.getState();
+        const source = state.lookupSources.find((item) => item.kind === "ai" && item.enabled)
+          ?? state.lookupSources.find((item) => item.kind === "ai");
+        const bankUrl = state.settings.quizBankUrl?.trim() ?? "";
+        const personalQuestions = book.personalQuizBank;
+        if (!cfg.aiWordQuiz && !bankUrl && !personalQuestions?.length && !SAMPLE_QUIZ_QUESTIONS.some((item) => item.word.toLowerCase() === current.headword.toLowerCase())) {
+          setQuestion(buildQuizQuestion(current, entries, { forceCorrectIndex: posBagRef.current[0], kinds }));
+          return;
+        }
+        setQuestion(null);
+        setQuestionLoading(true);
+        const runtimeSource = source ? await withSourceCredentials(source) : null;
+        if (!alive) return;
+        void loadWordQuizQuestion(current, entries, kinds, {
+          aiEnabled: cfg.aiWordQuiz,
+          aiConfig: runtimeSource ? { baseUrl: runtimeSource.config.baseUrl ?? "", apiKey: runtimeSource.config.apiKey, model: runtimeSource.config.model ?? "" } : undefined,
+          bankUrl,
+          bankSource: cfg.quizBankSource,
+          personalQuestions,
+          fallbackQuestions: SAMPLE_QUIZ_QUESTIONS,
+          forceCorrectIndex: posBagRef.current[0],
+        }).then((next) => {
+          if (!alive) return;
+          setQuestionLoading(false);
+          setQuestion(next);
+        }).catch(() => {
+          if (!alive) return;
+          setQuestionLoading(false);
+          setQuestion(buildQuizQuestion(current, entries, { forceCorrectIndex: posBagRef.current[0], kinds }));
+        });
       };
       if (newStep === "recognition") {
         setQuestion(buildQuizQuestion(current, entries, { forceCorrectIndex: posBagRef.current[0], kinds: ["word2zh"] }));
@@ -241,55 +286,81 @@ export function StudySession({
         setQuestion(null);
         return;
       }
+      const turn = quizTurnRef.current;
+      quizTurnRef.current += 1;
+      const planned = planQuiz(cfg, current, turn, quizUsedRef.current, quizChoiceTurnRef.current);
+      quizUsedRef.current.families[planned.family] = (quizUsedRef.current.families[planned.family] ?? 0) + 1;
+      if (planned.choiceKind) {
+        quizChoiceTurnRef.current += 1;
+        quizUsedRef.current.kinds[planned.choiceKind] = (quizUsedRef.current.kinds[planned.choiceKind] ?? 0) + 1;
+      }
+      if (planned.family === "flip") {
+        setQuestion(null);
+        return;
+      }
+      if (planned.family === "choice") {
+        void setChoice(planned.choiceKind).catch(() => {
+          if (!alive) return;
+          setQuestionLoading(false);
+          setQuestion(null);
+        });
+        return;
+      }
+
       const stage = quizStageOf(current);
-      if (cfg.spellEnabled && stage === "stable") {
+      if (cfg.quizMode === "cloze" && cfg.spellEnabled && stage === "stable") {
         const spell = buildSpellQuestion(current);
         if (spell) {
           setQuestion(spell);
           return;
         }
       }
-      if (cfg.clozeEnabled && stage !== "learning") {
-        const cloze = buildCloze(current, book);
-        if (cloze) {
-          setQuestion(cloze);
-          return;
-        }
-        if (cfg.aiCloze) {
-          const source = useAppStore.getState().lookupSources.find((item) => item.kind === "ai" && item.enabled)
-            ?? useAppStore.getState().lookupSources.find((item) => item.kind === "ai");
-          if (source?.config.baseUrl && source.config.model) {
-            setQuestion(null);
-            setQuestionLoading(true);
+      const cloze = buildCloze(current, book);
+      if (cloze) {
+        setQuestion(cloze);
+        return;
+      }
+      if (cfg.aiCloze) {
+        const source = useAppStore.getState().lookupSources.find((item) => item.kind === "ai" && item.enabled)
+          ?? useAppStore.getState().lookupSources.find((item) => item.kind === "ai");
+        if (source?.config.baseUrl && source.config.model) {
+          setQuestion(null);
+          setQuestionLoading(true);
+          void withSourceCredentials(source).then((runtimeSource) => {
+            if (!alive) return;
             void loadAiCloze(current, book, {
-              baseUrl: source.config.baseUrl,
-              apiKey: source.config.apiKey,
-              model: source.config.model,
+              baseUrl: runtimeSource.config.baseUrl,
+              apiKey: runtimeSource.config.apiKey,
+              model: runtimeSource.config.model,
             }).then((result) => {
               if (!alive) return;
               setQuestionLoading(false);
               setQuestion(result?.question ?? null);
-              if (!result) setChoice();
             }).catch(() => {
               if (!alive) return;
               setQuestionLoading(false);
-              setChoice();
+              setQuestion(null);
             });
-            return;
-          }
+          }).catch(() => {
+            if (!alive) return;
+            setQuestionLoading(false);
+            setQuestion(null);
+          });
+          return;
         }
       }
-      setChoice();
+      // Cloze 缺例句时保留提取语义，不偷偷换成选择题。
+      setQuestion(null);
     });
     return () => {
       alive = false;
       cancelAnimationFrame(raf);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg.quizMode, choiceTypesKey, cfg.spellEnabled, cfg.clozeEnabled, cfg.aiCloze, current?.id, book.id, newStep]);
+  }, [cfg.quizMode, cfg.aiWordQuiz, cfg.quizBankSource, choiceTypesKey, mixWeightsKey, cfg.spellEnabled, cfg.clozeEnabled, cfg.aiCloze, current?.id, book.id, newStep]);
   const effectiveMode: EffectiveMode = question?.kind === "cloze" || question?.kind === "spell"
     ? question.kind
-    : (newStep === "recognition" || (!newStep && cfg.quizMode === "choice")) && question
+    : question
       ? "choice"
       : "flip";
   const choiceQuestion = isChoiceQuestion(question) ? question : null;
@@ -357,6 +428,7 @@ export function StudySession({
       }
       setChosen(null);
       setJudged(false);
+      setTimedOut(false);
       setProductionValue("");
       setProductionResult(null);
       cardStartRef.current = Date.now();
@@ -395,17 +467,21 @@ export function StudySession({
       setPreviews([]);
       setChosen(null);
       setJudged(false);
+      setTimedOut(false);
       setProductionValue("");
       setProductionResult(null);
       setPendingConfidence(false);
       skippedRef.current = [];
       sessionGradesRef.current = [];
+      quizTurnRef.current = 0;
+      quizChoiceTurnRef.current = 0;
+      quizUsedRef.current = { families: {}, kinds: {} };
       setAgainCounts({});
       cardStartRef.current = Date.now();
       setPhase("session");
       const first = entryById(book, items[0].entryId);
       // 选择题在选定题型前无法判断是否隐藏词头（朗读会泄底），统一改为「作答后朗读」
-      if (first && cfg.autoSpeak && autoSpeakAllowed(first, cfg, book)) speakWord(first.headword, pronLang(first));
+      if (first && cfg.autoSpeak && autoSpeakAllowed(first, cfg)) speakWord(first.headword, pronLang(first));
     },
     [book, batch, intent, cfg, allowSimilar, weakEvidence, clearAutoTimer],
   );
@@ -489,6 +565,7 @@ export function StudySession({
       setPreviews([]);
       setChosen(null);
       setJudged(false);
+      setTimedOut(false);
       setProductionValue("");
       setProductionResult(null);
       if (rest.length === 0) {
@@ -496,7 +573,7 @@ export function StudySession({
         setPhase("summary");
       } else {
         const next = entryById(book, rest[0].entryId);
-        if (next && cfg.autoSpeak && autoSpeakAllowed(next, cfg, book)) speakWord(next.headword, pronLang(next));
+        if (next && cfg.autoSpeak && autoSpeakAllowed(next, cfg)) speakWord(next.headword, pronLang(next));
         cardStartRef.current = Date.now();
       }
     },
@@ -542,10 +619,11 @@ export function StudySession({
       setPreviews([]);
       setChosen(null);
       setJudged(false);
+      setTimedOut(false);
       setProductionValue("");
       setProductionResult(null);
       const next = entryById(book, nextEntryId);
-      if (next && cfg.autoSpeak && autoSpeakAllowed(next, cfg, book)) speakWord(next.headword, pronLang(next));
+      if (next && cfg.autoSpeak && autoSpeakAllowed(next, cfg)) speakWord(next.headword, pronLang(next));
       cardStartRef.current = Date.now();
     },
     [queue, book, cfg, clearAutoTimer, currentItem],
@@ -598,9 +676,13 @@ export function StudySession({
   /** 选择题作答 */
   const onChoose = useCallback(
     (index: number) => {
-      if (!current || !question || judged || (question.kind !== "word2zh" && question.kind !== "zh2word" && question.kind !== "def2word")) return;
+      if (!current || !question || judged || pendingConfidence || Date.now() < inputLockRef.current) return;
+      if (question.kind !== "word2def" && question.kind !== "word2zh" && question.kind !== "zh2word" && question.kind !== "def2word") return;
+      const now = Date.now();
+      reviewNowRef.current = now;
       const correct = index === question.correctIndex;
       setChosen(index);
+      setTimedOut(false);
       // 洗牌袋轮换（ref 更新，不触发题目重建）
       posBagRef.current = [...posBagRef.current.slice(1), posBagRef.current[0]];
       if (newStep === "recognition") {
@@ -632,8 +714,38 @@ export function StudySession({
         autoTimerRef.current = setTimeout(advanceCard, 800);
       }
     },
-    [current, question, judged, newStep, commitGrade, cfg.choiceAdvance, cfg.choiceConfidence, speakEntry, advanceCard, clearAutoTimer],
+    [current, question, judged, pendingConfidence, newStep, commitGrade, cfg.choiceAdvance, cfg.choiceConfidence, speakEntry, advanceCard, clearAutoTimer],
   );
+
+  /** Word Quiz 超时：按忘记处理，必须停留并揭示答案。 */
+  const onChoiceTimeout = useCallback(() => {
+    if (!current || !choiceQuestion || judged || pendingConfidence) return;
+    const now = Date.now();
+    reviewNowRef.current = now;
+    inputLockRef.current = now + 180;
+    posBagRef.current = [...posBagRef.current.slice(1), posBagRef.current[0]];
+    setChosen(null);
+    setTimedOut(true);
+    if (newStep === "recognition") {
+      const transition = transitionNewWord("recognition", "not-recognized");
+      if (!transition.rating || !commitGrade(transition.rating, { interaction: "new-recognition", firstAttempt: true })) return;
+      setJudged(true);
+      speakEntry(current);
+      return;
+    }
+    if (!commitGrade(1)) return;
+    setJudged(true);
+    speakEntry(current);
+  }, [current, choiceQuestion, judged, pendingConfidence, newStep, commitGrade, speakEntry]);
+
+  const choiceDurationMs = (choiceQuestion ? cfg.choiceTimeLimits?.[choiceQuestion.kind] ?? cfg.choiceTimeLimit : cfg.choiceTimeLimit) * 1000;
+  const choiceTimer = useChoiceTimer({
+    durationMs: choiceDurationMs,
+    active: phase === "session" && Boolean(choiceQuestion) && !judged && !pendingConfidence && !questionLoading
+      && quizCommunityMode === null && !helpOpen && !confirmExit && !abandonArmed,
+    resetKey: `${current?.id ?? "none"}:${choiceQuestion?.kind ?? "none"}:${newStep ?? "review"}`,
+    onTimeout: onChoiceTimeout,
+  });
 
   const onSubmitProduction = useCallback(() => {
     if (!current || !question || judged || (question.kind !== "cloze" && question.kind !== "spell") || !productionValue.trim() || Date.now() < inputLockRef.current) return;
@@ -649,13 +761,16 @@ export function StudySession({
   }, [current, question, judged, productionValue, masteryIndex, commitGrade, speakEntry]);
 
   const continueAfterChoice = useCallback(() => {
-    if (newStep === "recognition" && current && question && (question.kind === "word2zh" || question.kind === "zh2word" || question.kind === "def2word")) {
+    if (newStep === "recognition" && current && question && (
+      question.kind === "word2def" || question.kind === "word2zh" || question.kind === "zh2word" || question.kind === "def2word"
+    )) {
       if (chosen === question.correctIndex) {
         advanceCard();
       } else {
         setNewFlow({ entryId: current.id, step: "teaching" });
         setChosen(null);
         setJudged(false);
+        setTimedOut(false);
         setProductionValue("");
         setProductionResult(null);
         setRevealed(false);
@@ -709,6 +824,7 @@ export function StudySession({
     setNewFlow(g.newWord && g.newStep ? { entryId: g.entryId, step: g.newStep } : null);
     setChosen(null);
     setJudged(false);
+    setTimedOut(false);
     setProductionValue("");
     setProductionResult(null);
     setPhase((p) => (p === "summary" ? "session" : p));
@@ -763,11 +879,16 @@ export function StudySession({
       if (!commitGrade(1)) return;
       advanceCard({ park: true });
     } else {
-      if (!judged || !choiceQuestion || chosen === null || chosen === choiceQuestion.correctIndex) return;
-      advanceCard({ park: true });
+      if (timedOut) {
+        advanceCard({ park: true });
+      } else if (!judged || !choiceQuestion || chosen === null || chosen === choiceQuestion.correctIndex) {
+        return;
+      } else {
+        advanceCard({ park: true });
+      }
     }
     toast.info("已先放下这个词", { description: practiceOnly ? "本轮不再出现，自由练习不改变复习计划。" : "本轮不再出现；下次学习时它会排在前面。" });
-  }, [current, parkEligible, newStep, revealed, effectiveMode, commitGrade, advanceCard, judged, productionResult, choiceQuestion, chosen, practiceOnly]);
+  }, [current, parkEligible, newStep, revealed, timedOut, effectiveMode, commitGrade, advanceCard, judged, productionResult, choiceQuestion, chosen, practiceOnly]);
 
   const requestExit = useCallback(() => {
     clearAutoTimer();
@@ -1025,7 +1146,7 @@ export function StudySession({
 
   const remaining = queue.length;
   const progress = stats.answered + remaining > 0 ? stats.answered / (stats.answered + remaining) : 0;
-  const choiceCorrect = choiceQuestion && chosen !== null ? chosen === choiceQuestion.correctIndex : null;
+  const choiceCorrect = choiceQuestion && (chosen !== null || timedOut) ? chosen === choiceQuestion.correctIndex : null;
 
   return (
     <div className="flex h-dvh flex-col bg-background-200 touch-manipulation">
@@ -1079,8 +1200,8 @@ export function StudySession({
               />
             ) : questionLoading ? (
               <Card className="w-full max-w-xl py-10 text-center">
-                <div className="t-h-16">正在准备例句…</div>
-                <p className="t-label-13 mt-2 text-gray-800">已开启 AI 补句，生成后会通过同一套短句规则再出题。</p>
+                <div className="t-h-16">正在准备题目…</div>
+                <p className="t-label-13 mt-2 text-gray-800">先查已启用的题库，再按需生成；不可用时会使用词条现有内容。</p>
                 <Button variant="secondary" className="mt-4" onClick={() => navigateCard(1)}>跳过这个词</Button>
               </Card>
             ) : choiceQuestion ? (
@@ -1091,6 +1212,11 @@ export function StudySession({
                 chosen={chosen}
                 starred={current.starred}
                 optionKeys={choiceKeys.map((k) => k.toUpperCase())}
+                remainingMs={choiceTimer.remainingMs}
+                durationMs={choiceDurationMs}
+                timerPaused={choiceTimer.paused}
+                onReport={() => setQuizCommunityMode("report")}
+                onContribute={() => setQuizCommunityMode("contribute")}
                 onToggleStar={() => toggleStar(book.id, current.id)}
                 onChoose={onChoose}
                 onSkip={() => navigateCard(1)}
@@ -1211,7 +1337,7 @@ export function StudySession({
                   <>{newStep === "recognition" ? "✓ 回答正确 · 再认记「模糊」" : "✓ 回答正确 · 记为「记得」"}</>
                 ) : (
                   <span className="line-clamp-2">
-                    ✗ 正确答案：{"ABCD"[choiceQuestion.correctIndex]}. {choiceQuestion.options[choiceQuestion.correctIndex].text}
+                    {timedOut ? "时间到 · " : "✗ "}正确答案：{"ABCD"[choiceQuestion.correctIndex]}. {choiceQuestion.options[choiceQuestion.correctIndex].text}
                     {newStep === "recognition" ? " · 记入「忘记」，回教学卡" : " · 记入「忘记」"}
                   </span>
                 )}
@@ -1389,6 +1515,14 @@ export function StudySession({
         </DialogFooter>
       </Dialog>
 
+      <QuizCommunityDialog
+        key={`${choiceQuestion?.sharedId ?? choiceQuestion?.word ?? "none"}:${choiceQuestion?.kind ?? "none"}`}
+        open={quizCommunityMode !== null}
+        onOpenChange={(open) => { if (!open) setQuizCommunityMode(null); }}
+        mode={quizCommunityMode}
+        question={choiceQuestion}
+      />
+
         {/* 快捷键帮助（功能 | 键位 两列） */}
       <ShortcutHelp open={helpOpen} onOpenChange={setHelpOpen} mode={effectiveMode} choiceKeys={choiceKeys} newStep={newStep} />
     </div>
@@ -1475,7 +1609,6 @@ function HomeView({
   const plannedNew = plan?.newWords ?? overview.newRemaining;
   const nothingToday = plannedReviews === 0 && plannedNew === 0;
   const { pending: configPending, run: runConfig } = useSyncCommit();
-  const [engineHelpOpen, setEngineHelpOpen] = useState(false);
   return (
     <div className="min-h-dvh bg-background-200">
       <div className="mx-auto w-full max-w-xl px-4 py-5 pb-10 sm:py-8">
@@ -1549,25 +1682,7 @@ function HomeView({
         <Card className="mt-5 space-y-4">
           <div className="flex items-start justify-between gap-3">
             <div className="t-h-14">学习设置</div>
-            <Popover open={engineHelpOpen} onOpenChange={setEngineHelpOpen}>
-              <PopoverTrigger asChild>
-                <IconButton label="学习引擎怎么安排？" variant="ghost" className="-mr-1.5 -mt-1.5">
-                  <CircleHelp className="size-4" />
-                </IconButton>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-[min(22rem,calc(100vw-2rem))] p-4">
-                <div className="t-label-13 font-medium text-gray-1000">学习引擎怎么安排？</div>
-                <div className="t-label-12 mt-2 space-y-2 text-gray-800">
-                  <p>新词先看内容，再按熟悉感选择验证路径；熟悉感本身不评分，再认正确最多记「模糊」。</p>
-                  <p>复习由 FSRS 按到期时间与记忆稳固度安排；「忘记」会在本轮继续出现，直到你给出更肯定的答案或选择「先放下」。</p>
-                  <p>每日计划先按时间预算安排复习，再减少新词；弱词优先最多占本轮复习的 20%，只改变顺序，不直接改变正确答案的等级。</p>
-                  <p>进入复习与稳定期后，可使用真实例句挖空和拼写题。隐藏词头的题目在提交前不朗读，提交后只给反馈，不改写首次评分。</p>
-                  <p>R(30) 表示按当前记忆强度估计 30 天后仍记得的概率。它是当前估计，不是永久掌握，也不代表以后不用复习。</p>
-                  <p>反复忘记达到词库设置的阈值后会标记为顽固词，你可以搁置、改卡或降级重学；系统不会自动停考。</p>
-                  <p>再认、回忆、产出按本机复习日志分别记录，只取每个会话每层的首次评分；它们帮助你看清自己会认、会想还是会用，不参与同步，也不改变调度。</p>
-                </div>
-              </PopoverContent>
-            </Popover>
+            <StudyEngineHelp />
           </div>
           <div>
             <div className="mb-1 flex items-center justify-between">
@@ -1576,22 +1691,7 @@ function HomeView({
             </div>
             <Slider min={5} max={60} step={5} value={[cfg.newPerDay]} disabled={configPending} onValueChange={([v]) => runConfig(() => onConfig({ newPerDay: v }))} />
           </div>
-          <div className="space-y-1.5">
-            <div className="t-label-13 text-gray-900">学习模式</div>
-            <SegmentedControl
-              value={cfg.quizMode}
-              disabled={configPending}
-              onValueChange={(v) => runConfig(() => onConfig({ quizMode: v }))}
-              options={[
-                { value: "flip", label: "翻卡自评" },
-                { value: "choice", label: "选择题（四选一）" },
-              ]}
-              grow
-            />
-            <p className="t-label-12 text-gray-700">
-              翻卡：先回忆，再翻面对照评级；选择题：按题型设置出题，选项凑不够的词会回到翻卡。
-            </p>
-          </div>
+          <QuizModeControl cfg={cfg} disabled={configPending} onChange={onConfig} compact />
           <div className="space-y-1.5 border-t border-gray-300 pt-3">
             <div className="t-label-13 text-gray-900">出题顺序</div>
             <SegmentedControl

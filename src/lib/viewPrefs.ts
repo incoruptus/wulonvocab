@@ -26,6 +26,8 @@ export interface SavedView {
   id: string;
   name: string;
   prefs: ViewPrefs;
+  /** 跨端合并时间戳；旧数据缺省为 0 */
+  updatedAt: number;
 }
 
 export interface BookViewState {
@@ -86,8 +88,28 @@ export function normalizeBookViewState(raw: unknown): BookViewState {
   const savedViews = rawViews
     .filter((item): item is SavedView => Boolean(item && typeof item === "object" && typeof (item as SavedView).id === "string" && typeof (item as SavedView).name === "string"))
     .slice(0, 20)
-    .map((item) => ({ id: item.id, name: item.name.slice(0, 40), prefs: normalizeViewPrefs(item.prefs) }));
+    .map((item) => ({
+      id: item.id,
+      name: item.name.slice(0, 40),
+      prefs: normalizeViewPrefs(item.prefs),
+      updatedAt: typeof item.updatedAt === "number" && Number.isFinite(item.updatedAt) ? item.updatedAt : 0,
+    }));
   return { prefs: normalizeViewPrefs(value.prefs), savedViews };
+}
+
+/** 按稳定 ID 与更新时间合并命名视图；最多保留最新 20 个。 */
+export function mergeSavedViews(a: SavedView[], b: SavedView[]): SavedView[] {
+  const byId = new Map<string, SavedView>();
+  for (const view of [...a, ...b]) {
+    const prev = byId.get(view.id);
+    const tieKey = (item: SavedView) => JSON.stringify([item.name, item.prefs]);
+    if (!prev || view.updatedAt > prev.updatedAt || (view.updatedAt === prev.updatedAt && tieKey(view) >= tieKey(prev))) {
+      byId.set(view.id, view);
+    }
+  }
+  return [...byId.values()]
+    .sort((x, y) => x.updatedAt - y.updatedAt || x.id.localeCompare(y.id))
+    .slice(-20);
 }
 
 export async function loadBookViewState(bookId: string): Promise<BookViewState> {
@@ -98,8 +120,9 @@ export async function loadBookViewState(bookId: string): Promise<BookViewState> 
   }
 }
 
+/** 只持久化设备本地临时偏好；保存视图已迁入主 store，不再写入这份旧缓存。 */
 export async function saveBookViewState(bookId: string, state: BookViewState): Promise<void> {
-  await set(bookId, normalizeBookViewState(state), viewStore);
+  await set(bookId, { prefs: normalizeViewPrefs(state.prefs), savedViews: [] }, viewStore);
 }
 
 export async function clearBookViewState(bookId: string): Promise<void> {

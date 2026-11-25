@@ -112,8 +112,9 @@ export default function LandingPage() {
             忘记的词稍后还会再敲一次门，何时见面由它安排。
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <span className="rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">翻卡自评</span>
-            <span className="rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">看词选义选择题</span>
+            <span className="rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">熟悉度自评</span>
+            <span className="rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">限时选择题</span>
+            <span className="rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">Cloze 例句挖空</span>
             <span className="rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">系统语音自动发音</span>
             <span className="wv-desktop-only rounded-full bg-background-100 px-3 py-1 text-[13px] shadow-geist-border">键盘 DFJK / WEIO 快捷操作</span>
           </div>

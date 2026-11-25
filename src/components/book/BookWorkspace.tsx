@@ -20,6 +20,8 @@ import { EntryList } from "@/components/book/EntryList";
 import { EntryEditor } from "@/components/book/EntryEditor";
 import { EntryPreviewCard } from "@/components/book/EntryPreview";
 import { SchemaDesigner } from "@/components/book/SchemaDesigner";
+import { BookStudySettings } from "@/components/book/BookStudySettings";
+import { BookQuizBank } from "@/components/book/BookQuizBank";
 import { LookupPanel } from "@/components/lookup/LookupPanel";
 import { ImportDialog } from "@/components/import/ImportDialog";
 import { studyOverview } from "@/lib/study/queue";
@@ -34,7 +36,7 @@ export function BookWorkspace() {
   const addRequested = searchParams.get("add") === "1";
   const hydrated = useAppStore((s) => s.hydrated);
   const book = useAppStore((s) => s.books.find((b) => b.id === id));
-  const [tab, setTab] = useState<"entries" | "fields">("entries");
+  const [tab, setTab] = useState<"entries" | "fields" | "study" | "quiz">("entries");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [lookupOpen, setLookupOpen] = useState(addRequested);
   const [lookupIntent, setLookupIntent] = useState<{ tab: "single" | "batch" | "fill"; ids?: string[]; initialWord?: string; addNew?: boolean }>(
@@ -94,6 +96,22 @@ export function BookWorkspace() {
     });
     return () => cancelAnimationFrame(raf);
   }, [hydrated, book, addRequested, router]);
+
+  useEffect(() => {
+    if (!hydrated || !book || addRequested) return;
+    const requested = searchParams.get("tab");
+    if (requested !== "study" && requested !== "quiz" && requested !== "fields" && requested !== "entries") return;
+    const raf = requestAnimationFrame(() => {
+      setTab(requested);
+      if (requested !== "entries") {
+        setSelecting(false);
+        setSelection(new Set());
+        anchorRef.current = null;
+      }
+      router.replace(`/book?id=${book.id}`);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [hydrated, book, addRequested, searchParams, router]);
 
   const exitSelect = () => {
     setSelecting(false);
@@ -334,6 +352,8 @@ export function BookWorkspace() {
             options={[
               { value: "entries", label: "词条编辑" },
               { value: "fields", label: "字段设计" },
+              { value: "study", label: "复习参数" },
+              { value: "quiz", label: "题库" },
             ]}
           />
         </div>
@@ -464,9 +484,17 @@ export function BookWorkspace() {
           {showPreview && selected ? (
             <PreviewPanel book={book} entry={selected} onClose={() => setShowPreview(false)} />
           ) : null}        </div>
-      ) : (
+      ) : tab === "fields" ? (
         <div className="min-h-0 flex-1">
           <SchemaDesigner book={book} />
+        </div>
+      ) : tab === "quiz" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
+          <BookQuizBank book={book} />
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
+          <BookStudySettings book={book} />
         </div>
       )}
 

@@ -1,6 +1,10 @@
 import type { AppSettings, Entry, ExportPreset, LocalDictMeta, LookupSourceConfig, Wordbook } from "../types";
 import { deriveStatusFromSrs } from "../study/engine";
 import { emptyDailyLog, type StudyDailyLog } from "../study/types";
+import { mergeSavedViews } from "../viewPrefs";
+import { mergePersonalQuizQuestions } from "../study/quizBank";
+import { normalizeReviewEvent, pruneReviewEvents, type ReviewLogEvent } from "../study/reviewLog";
+import { stripLookupSourceCredentials, stripSourceCredentials } from "../credentials";
 import { pickLocalSettings } from "./types";
 import { quickHash, stableJson } from "./pack";
 import type {
@@ -10,6 +14,7 @@ import type {
   MergeInput,
   MergeResult,
   SyncState,
+  SyncPayloadV1,
   SyncTombstone,
 } from "./types";
 
@@ -52,7 +57,7 @@ export function computeBaseHashes(state: SyncState): BaseHashes {
   const books: BaseHashes["books"] = {};
   for (const b of state.books) books[b.id] = bookHashes(b);
   const lookupSources: Record<string, string> = {};
-  for (const s of state.lookupSources) lookupSources[s.id] = quickHash(s);
+  for (const s of stripLookupSourceCredentials(state.lookupSources)) lookupSources[s.id] = quickHash(s);
   const dictionaries: Record<string, string> = {};
   for (const d of state.dictionaries) dictionaries[d.id] = quickHash(d);
   const exportPresets: Record<string, string> = {};
@@ -205,6 +210,53 @@ function insertRemoteEntries(localEntries: Entry[], remoteOnly: Entry[]): Entry[
   return [...localEntries, ...sorted];
 }
 
+/* ---------------- 复习事件合并 ---------------- */
+
+function mergeReviewEvents(
+  local: SyncState["reviewEvents"],
+  remote: SyncPayloadV1["reviewEvents"],
+  now: number,
+): ReviewLogEvent[] {
+  const byId = new Map<string, ReviewLogEvent>();
+  for (const event of [...(local ?? []), ...(remote ?? [])]) {
+    const normalized = normalizeReviewEvent(event);
+    if (normalized) byId.set(normalized.id, normalized);
+  }
+  return pruneReviewEvents([...byId.values()], now > 0 ? now : null);
+}
+
+/* ---------------- 保存视图合并 ---------------- */
+
+function mergeBookSavedViews(
+  bookId: string,
+  local: Wordbook["savedViews"],
+  remote: Wordbook["savedViews"],
+  tombstones: Map<string, SyncTombstone>,
+): Wordbook["savedViews"] {
+  if (!local?.length && !remote?.length) return local ?? remote;
+  return mergeSavedViews(local ?? [], remote ?? []).filter((view) => {
+    const tomb = tombstones.get(`savedView:${bookId}:${view.id}`);
+    return !tomb || tomb.deletedAt < view.updatedAt;
+  });
+}
+
+/* ---------------- 个人题库合并 ---------------- */
+
+function mergeBookPersonalQuiz(
+  bookId: string,
+  local: Wordbook["personalQuizBank"],
+  remote: Wordbook["personalQuizBank"],
+  tombstones: Map<string, SyncTombstone>,
+): Wordbook["personalQuizBank"] {
+  if (!local?.length && !remote?.length) return local ?? remote;
+  const merged = mergePersonalQuizQuestions(local ?? [], remote ?? []).filter((question) => {
+    const tomb = tombstones.get(`personalQuiz:${bookId}:${question.id}`);
+    return !tomb || tomb.deletedAt < question.updatedAt;
+  });
+  if (merged.length) return merged;
+  return local?.length === 0 || remote?.length === 0 ? [] : undefined;
+}
+
 /* ---------------- 主体 ---------------- */
 
 export function mergeSync(input: MergeInput): MergeResult {
@@ -258,7 +310,7 @@ export function mergeSync(input: MergeInput): MergeResult {
       continue;
     }
     if (!lb && rb) {
-      outBooks.push(rb);
+      outBooks.push({ ...rb, savedViews: mergeBookSavedViews(id, undefined, rb.savedViews, tombByKey), personalQuizBank: mergeBookPersonalQuiz(id, undefined, rb.personalQuizBank, tombByKey) });
       applied.booksAdded += 1;
       applied.entriesAdded += rb.entries.length;
       continue;
@@ -344,6 +396,8 @@ export function mergeSync(input: MergeInput): MergeResult {
       exportSettings: exportSide === "local" ? lb.exportSettings : rb.exportSettings,
       entries: mergedEntries,
       study,
+      savedViews: mergeBookSavedViews(id, lb.savedViews, rb.savedViews, tombByKey),
+      personalQuizBank: mergeBookPersonalQuiz(id, lb.personalQuizBank, rb.personalQuizBank, tombByKey),
     } as Wordbook;
     if (stableJson(merged) !== stableJson(lb)) applied.booksUpdated += 1;
     outBooks.push(merged);
@@ -381,9 +435,10 @@ export function mergeSync(input: MergeInput): MergeResult {
   }
 
   // ---- lookupSources ----
-  const localSrc = new Map<string, LookupSourceConfig>(local.lookupSources.map((s) => [s.id, s]));
-  const outSrc: LookupSourceConfig[] = [...local.lookupSources];
-  for (const rs of remote.lookupSources ?? []) {
+  const localSrc = new Map<string, LookupSourceConfig>(stripLookupSourceCredentials(local.lookupSources).map((s) => [s.id, s]));
+  const outSrc: LookupSourceConfig[] = stripLookupSourceCredentials(local.lookupSources);
+  for (const rawRemote of remote.lookupSources ?? []) {
+    const rs = stripSourceCredentials(rawRemote);
     const ls = localSrc.get(rs.id);
     const tomb = tombByKey.get(`lookupSource::${rs.id}`);
     if (tomb) {
@@ -471,6 +526,7 @@ export function mergeSync(input: MergeInput): MergeResult {
     lookupSources: outSrcFiltered,
     dictionaries: outDict,
     exportPresets: outPresetsFiltered,
+    reviewEvents: mergeReviewEvents(local.reviewEvents, remote.reviewEvents, now),
   };
 
   conflicts.sort((a, b) => (a.entityKey < b.entityKey ? -1 : a.entityKey > b.entityKey ? 1 : 0));

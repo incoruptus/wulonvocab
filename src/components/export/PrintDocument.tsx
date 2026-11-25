@@ -31,8 +31,8 @@ export function PrintDocument({ book, doc }: PrintDocumentProps) {
 
   const indexPages = useMemo(() => {
     if (!s.index.enabled || mode === "grid") return [] as typeof entries[];
-    return chunk(entries, indexCapacity(geometry.contentH, geometry.contentW, s.index.columns, s.fontScale));
-  }, [s.index.enabled, s.index.columns, s.fontScale, entries, geometry.contentH, geometry.contentW, mode]);
+    return chunk(entries, indexCapacity(geometry.contentH, s.index.columns, s.fontScale));
+  }, [s.index.enabled, s.index.columns, s.fontScale, entries, geometry.contentH, mode]);
 
   const coverPages = s.cover.enabled ? 1 : 0;
   const totalPages = coverPages + indexPages.length + contentPages.length;
@@ -413,7 +413,7 @@ function splitColumns<T>(items: T[], columns: number): T[][] {
   return out;
 }
 
-function indexCapacity(contentH: number, contentW: number, columns: number, fontScale: number): number {
+function indexCapacity(contentH: number, columns: number, fontScale: number): number {
   const basePx = 10.5 * fontScale * (96 / 72);
   const rowPx = basePx * 0.82 * 1.62;
   const rows = Math.max(6, Math.floor((contentH - basePx * 2.4) / rowPx));

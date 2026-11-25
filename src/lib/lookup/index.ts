@@ -8,6 +8,7 @@ import { aiAdapter } from "./ai";
 import { zeroDictAdapter } from "./zerodict";
 import { youdaoAdapter } from "./youdao";
 import { readLookupCache, writeLookupCache } from "./cache";
+import { withSourceCredentials } from "../credentials";
 
 const ADAPTERS: Record<LookupSourceConfig["kind"], DictionaryAdapter> = {
   freedict: freeDictAdapter,
@@ -74,10 +75,11 @@ export async function runLookup(
       const { signal, done } = withTimeout(timeoutMs, options.signal);
       try {
         const adapter = adapterFor(source.kind);
+        const runtimeSource = await withSourceCredentials(source);
         const config =
           source.kind === "localdict"
-            ? { ...source.config, ids: (options.localDictIds ?? []).join(",") }
-            : source.config;
+            ? { ...runtimeSource.config, ids: (options.localDictIds ?? []).join(",") }
+            : runtimeSource.config;
         const draft = await adapter.lookup({ word, schema, config, signal });
         return finish({ ...base, ok: true, draft, tookMs: Math.round(performance.now() - started) });
       } catch (e) {

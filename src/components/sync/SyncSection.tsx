@@ -7,7 +7,7 @@ import { useAppStore } from "@/lib/store";
 import { loadSyncMeta, saveSyncMeta, writeSafetySnapshot } from "@/lib/sync/meta";
 import { exportSyncFile, importSyncFile } from "@/lib/sync/transports/file";
 import { mergeSync } from "@/lib/sync/merge";
-import type { MergeResult, SyncMeta, SyncPayloadV1 } from "@/lib/sync/types";
+import type { MergeResult, SyncMeta, SyncPayloadV1, SyncState } from "@/lib/sync/types";
 import { Button, IconButton } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { Badge, Card } from "@/components/ui/misc";
@@ -15,6 +15,7 @@ import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/
 import { GistSyncBlock } from "@/components/sync/GistSyncBlock";
 import { PeerSyncDialog } from "@/components/sync/PeerSyncDialog";
 import { requestSyncSoon } from "@/lib/sync/auto";
+import { listReviewLogForSync } from "@/lib/study/reviewLog";
 import { cx, downloadText } from "@/lib/utils";
 
 interface PendingImport {
@@ -35,6 +36,7 @@ export function SyncSection() {
   const [resolutions, setResolutions] = useState<Record<string, "local" | "remote">>({});
   const [applying, setApplying] = useState(false);
   const [peerOpen, setPeerOpen] = useState(false);
+  const [localSnapshot, setLocalSnapshot] = useState<SyncState | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -49,19 +51,26 @@ export function SyncSection() {
     };
   }, []);
 
-  const syncState = () => {
+  const syncState = async (): Promise<SyncState> => {
     const s = useAppStore.getState();
-    return { books: s.books, settings: s.settings, lookupSources: s.lookupSources, dictionaries: s.dictionaries, exportPresets: s.exportPresets };
+    return {
+      books: s.books,
+      settings: s.settings,
+      lookupSources: s.lookupSources,
+      dictionaries: s.dictionaries,
+      exportPresets: s.exportPresets,
+      reviewEvents: await listReviewLogForSync(),
+    };
   };
 
-  const buildFile = () => {
+  const buildFile = async () => {
     if (!meta) throw new Error("同步元数据尚未就绪");
-    return exportSyncFile(syncState(), meta);
+    return exportSyncFile(await syncState(), meta);
   };
 
-  const doExport = () => {
+  const doExport = async () => {
     try {
-      const { filename, text } = buildFile();
+      const { filename, text } = await buildFile();
       downloadText(filename, text, "application/json");
       toast.success("同步包已导出", { description: "把它带到其他设备，从「导入同步包」进入" });
     } catch (e) {
@@ -71,7 +80,7 @@ export function SyncSection() {
 
   const doShare = async () => {
     try {
-      const { filename, text } = buildFile();
+      const { filename, text } = await buildFile();
       const file = new File([text], filename, { type: "application/json" });
       if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: "WulonVocab 同步包" });
@@ -88,6 +97,7 @@ export function SyncSection() {
     try {
       const text = await file.text();
       const { payload } = importSyncFile(text);
+      setLocalSnapshot(await syncState());
       setResolutions({});
       setPending({ payload, now: Date.now(), fileName: file.name });
     } catch (e) {
@@ -96,9 +106,9 @@ export function SyncSection() {
   };
 
   const mergeResult: MergeResult | null = useMemo(() => {
-    if (!pending || !meta) return null;
+    if (!pending || !meta || !localSnapshot) return null;
     return mergeSync({
-      local: syncState(),
+      local: localSnapshot,
       remote: pending.payload,
       meta: {
         base: meta.base,
@@ -111,15 +121,15 @@ export function SyncSection() {
       resolutions,
     });
     // 重算时机：导入内容、元数据或人工裁决变化时；store 状态以导入那一刻为准
-  }, [pending, meta, resolutions]);
+  }, [pending, meta, localSnapshot, resolutions]);
 
   const applyMerge = async () => {
     if (!pending || !mergeResult || !meta) return;
     setApplying(true);
     try {
       // 安全快照（保留最近 3 份）
-      await writeSafetySnapshot(JSON.stringify({ state: syncState(), tombstones: meta.tombstones, at: Date.now() }));
-      useAppStore.getState().applySyncState(mergeResult.state);
+      await writeSafetySnapshot(JSON.stringify({ state: localSnapshot, tombstones: meta.tombstones, at: Date.now() }));
+      await useAppStore.getState().applySyncState(mergeResult.state);
       await saveSyncMeta({
         lastSyncAt: Date.now(),
         base: mergeResult.nextBase,
@@ -170,7 +180,7 @@ export function SyncSection() {
           <span className="t-label-13 font-medium text-gray-900">同步包</span>
           <span className="t-label-12 text-gray-700">零配置的离线搬运：导出 → 传输 → 在另一台导入合并。</span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={doExport} disabled={!meta}>
+            <Button size="sm" onClick={() => void doExport()} disabled={!meta}>
               <Download className="size-3.5" /> 导出
             </Button>
             <Button size="sm" variant="secondary" onClick={() => void doShare()} disabled={!meta}>

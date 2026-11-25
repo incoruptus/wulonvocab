@@ -10,6 +10,7 @@ import { extractJsonText } from "@/lib/lookup/ai";
 import { estimateVisionTokens, transcribeImageToWulon } from "@/lib/ai/vision";
 import { defaultSchema } from "@/lib/presets";
 import { useAppStore } from "@/lib/store";
+import { withSourceCredentials } from "@/lib/credentials";
 import { Button } from "@/components/ui/button";
 import { SwitchRow } from "@/components/ui/field";
 import { Card } from "@/components/ui/misc";
@@ -36,21 +37,18 @@ export function DocImportPanel({ onSeeded }: { onSeeded: (seed: { name: string; 
   const [localOcr, setLocalOcr] = useState(false);
 
   const aiSource = sources.find((s) => s.kind === "ai" && s.enabled) ?? sources.find((s) => s.kind === "ai");
-  const visionCfg = aiSource
-    ? {
-        baseUrl: aiSource.config.baseUrl ?? "",
-        apiKey: aiSource.config.apiKey,
-        model: (aiSource.config.visionModel || aiSource.config.model || "").trim(),
-      }
-    : null;
   /** 视觉转写用的 schema：只能在事件处理器里构造（uid 走 crypto.randomUUID，预渲染会报错） */
   const currentSchema = () => books[0]?.schema ?? defaultSchema();
 
-  const requireVision = () => {
-    if (!visionCfg?.baseUrl || !visionCfg.model) {
+  const requireVision = async () => {
+    if (!aiSource) throw new Error("照片 / 扫描件需要视觉模型：请到「设置 → 词典数据源 → AI」配置服务商与「视觉模型」");
+    const runtime = await withSourceCredentials(aiSource);
+    const baseUrl = runtime.config.baseUrl ?? "";
+    const model = (runtime.config.visionModel || runtime.config.model || "").trim();
+    if (!baseUrl || !model) {
       throw new Error("照片 / 扫描件需要视觉模型：请到「设置 → 词典数据源 → AI」配置服务商与「视觉模型」");
     }
-    return visionCfg;
+    return { baseUrl, apiKey: runtime.config.apiKey, model };
   };
 
   const describeVisionError = (msg: string): string => {
@@ -70,7 +68,7 @@ export function DocImportPanel({ onSeeded }: { onSeeded: (seed: { name: string; 
       if (!words.length) throw new Error("本机识别没找到单词。换更清晰的照片，或关掉本机 OCR 改用 AI 转写");
       return JSON.stringify({ format: "wulonvocab", version: 1, entries: words.map((w) => ({ headword: w })) });
     }
-    const cfg = requireVision();
+    const cfg = await requireVision();
     const small = await compressImageWithMeta(blob);
     const dataUrl = await blobToDataUrl(small.blob);
     setBusy(`视觉转写中：${label}（约 ${estimateVisionTokens(small.width, small.height)} token）…`);
@@ -257,8 +255,8 @@ export function DocImportPanel({ onSeeded }: { onSeeded: (seed: { name: string; 
             取消
           </Button>
         ) : null}
-        {visionCfg?.baseUrl && visionCfg.model ? (
-          <span className="t-label-12 text-gray-700">视觉模型：{visionCfg.model}</span>
+        {aiSource?.config.baseUrl && (aiSource.config.visionModel || aiSource.config.model) ? (
+          <span className="t-label-12 text-gray-700">视觉模型：{aiSource.config.visionModel || aiSource.config.model}</span>
         ) : (
           <span className="t-label-12 text-gray-700">
             {localOcr ? "本机 OCR 已就绪（首次识别需联网下载语言包）" : "照片 / 扫描件需先配置 AI「视觉模型」，或打开下方本机 OCR"}

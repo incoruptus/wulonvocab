@@ -8,6 +8,7 @@
  * ② B 星标 + 新书 → B 导出 → A 导入 → 断言星标与并集
  * ③ A 删除新书 → 导出 → B 导入 → 断言删除跨端
  * ④ 重复导入同一包 → 断言幂等（新增 0）
+ * ⑤ API Key 本机隔离 → 旧凭据迁移、主库/同步/备份不泄露、跨设备不传播
  */
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -43,8 +44,12 @@ async function createBook(page, words) {
   await page.getByPlaceholder("abandon, ability, abstract, academic, accompany, accurate, …").fill(words);
   await page.getByRole("button", { name: "直接导入（不匹配）" }).click();
   await page.getByRole("button", { name: /导入 \d+ 个词条/ }).click();
-  await page.waitForURL(/\/book\?id=/, { timeout: 20000 });
-  return new URL(page.url()).searchParams.get("id");
+  await page.waitForURL(/\/book\/?\?id=/, { timeout: 20000 });
+  const id = new URL(page.url()).searchParams.get("id");
+  const expected = words.split(",").map((word) => word.trim()).filter(Boolean).length;
+  await page.getByText(`${expected} 个词`, { exact: false }).first().waitFor();
+  // 不等待防抖：随后立即跳转导出，验证批量导入的即时落盘路径。
+  return id;
 }
 
 async function exportPack(page) {
@@ -89,6 +94,46 @@ async function applyMerge(page) {
   await sleep(600);
 }
 
+async function exportBackup(page) {
+  await page.goto(`${BASE}/settings/data`, { waitUntil: "networkidle" });
+  await sleep(1200);
+  await page.evaluate(() => {
+    if (window.__wvPatched) return;
+    window.__wvPatched = true;
+    const orig = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (b) => { window.__lastBlob = b; return orig(b); };
+  });
+  await page.getByRole("button", { name: "导出备份" }).click();
+  await page.waitForFunction(() => Boolean(window.__lastBlob), { timeout: 20000 });
+  return page.evaluate(async () => {
+    const text = await window.__lastBlob.text();
+    window.__lastBlob = null;
+    return text;
+  });
+}
+
+async function idbValue(page, dbName, storeName, key, attempt = 0) {
+  try {
+    return await page.evaluate(({ dbName, storeName, key }) => new Promise((resolve, reject) => {
+      const req = indexedDB.open(dbName);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(storeName)) { db.close(); resolve(undefined); return; }
+        const tx = db.transaction(storeName, "readonly");
+        const getReq = tx.objectStore(storeName).get(key);
+        getReq.onsuccess = () => resolve(getReq.result);
+        getReq.onerror = () => reject(getReq.error);
+        tx.oncomplete = () => db.close();
+      };
+    }), { dbName, storeName, key });
+  } catch (error) {
+    if (attempt >= 2 || !/Execution context was destroyed/.test(String(error))) throw error;
+    await page.waitForLoadState("domcontentloaded");
+    return idbValue(page, dbName, storeName, key, attempt + 1);
+  }
+}
+
 const main = async () => {
   const { chromium } = await loadPlaywright();
   const browser = await chromium.launch({ headless: true });
@@ -96,6 +141,8 @@ const main = async () => {
   const ctxB = await browser.newContext();
   const A = await ctxA.newPage();
   const B = await ctxB.newPage();
+  A.setDefaultTimeout(20000);
+  B.setDefaultTimeout(20000);
 
   try {
     // ---------- ① A 建书 → B 合并 ----------
@@ -161,6 +208,71 @@ const main = async () => {
     const deletes = Number(dialogB3.match(/删除 (\d+)/)?.[1] ?? -1);
     record("重复导入幂等（新增/更新/删除均为 0）", adds === 0 && updates === 0 && deletes === 0, `新增${adds} 更新${updates} 删除${deletes}`);
     await B.getByRole("button", { name: "取消" }).click();
+
+    // ---------- ⑤ 凭据本机隔离 ----------
+    await A.goto(`${BASE}/settings/sources`, { waitUntil: "networkidle" });
+    await sleep(1200);
+    const aiCard = A.locator("div.rounded-xl").filter({ hasText: "AI 生成（OpenAI 兼容）" }).first();
+    await aiCard.getByRole("switch").click();
+    await A.getByLabel("API Key（只保存在本机）").fill("e2e-local-secret");
+    await sleep(800);
+    const mainA = JSON.parse(await idbValue(A, "keyval-store", "keyval", "wulonvocab-v1"));
+    const credentialA = await idbValue(A, "wulonvocab-credentials-v1", "kv", "ai");
+    record("API Key 只进入独立本机库", mainA.state.lookupSources.find((s) => s.id === "ai").config.apiKey === undefined
+      && credentialA?.apiKey === "e2e-local-secret");
+
+    const packWithKey = await exportPack(A);
+    const payloadWithKey = JSON.parse(Buffer.from(JSON.parse(packWithKey).payload, "base64").toString("utf8"));
+    record("同步包不含 API Key", !JSON.stringify(payloadWithKey).includes("e2e-local-secret")
+      && payloadWithKey.lookupSources.find((s) => s.id === "ai").config.apiKey === undefined);
+    const backup = await exportBackup(A);
+    record("备份不含 API Key", !backup.includes("e2e-local-secret") && !backup.includes('"apiKey"'));
+
+    await importPack(B, packWithKey);
+    console.log("⑤ 跨设备合并预览已打开");
+    await applyMerge(B);
+    console.log("⑤ 跨设备合并已应用");
+    const mainB = JSON.parse(await idbValue(B, "keyval-store", "keyval", "wulonvocab-v1"));
+    const credentialB = await idbValue(B, "wulonvocab-credentials-v1", "kv", "ai");
+    record("另一台设备不会收到凭据", mainB.state.lookupSources.find((s) => s.id === "ai").config.apiKey === undefined
+      && credentialB?.apiKey === undefined);
+
+    // 模拟旧版本主库残留：迁移后应立即擦除旧副本，并把 Key 转入独立库。
+    console.log("⑤ 开始旧凭据迁移验证");
+    await A.evaluate(() => new Promise((resolve, reject) => {
+      const req = indexedDB.open("keyval-store");
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction("keyval", "readwrite");
+        const store = tx.objectStore("keyval");
+        const getReq = store.get("wulonvocab-v1");
+        getReq.onsuccess = () => {
+          const raw = JSON.parse(getReq.result);
+          raw.state.lookupSources.find((s) => s.id === "ai").config.apiKey = "e2e-legacy-secret";
+          store.put(JSON.stringify(raw), "wulonvocab-v1");
+        };
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => reject(tx.error);
+      };
+    }));
+    await A.evaluate(() => new Promise((resolve, reject) => {
+      const req = indexedDB.open("wulonvocab-credentials-v1");
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction("kv", "readwrite");
+        tx.objectStore("kv").delete("ai");
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => reject(tx.error);
+      };
+    }));
+    await A.reload({ waitUntil: "networkidle" });
+    await sleep(1200);
+    const migratedMain = JSON.parse(await idbValue(A, "keyval-store", "keyval", "wulonvocab-v1"));
+    const migratedCredential = await idbValue(A, "wulonvocab-credentials-v1", "kv", "ai");
+    record("旧凭据自动迁移并擦除主库副本", migratedMain.state.lookupSources.find((s) => s.id === "ai").config.apiKey === undefined
+      && migratedCredential?.apiKey === "e2e-legacy-secret");
   } finally {
     await browser.close();
   }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 import { AcknowledgmentsDialog } from "@/components/app/Acknowledgments";
+import { PrinciplesAccordion } from "@/components/settings/PrinciplesAccordion";
 import { Card, CardTitle } from "@/components/ui/misc";
 import pkg from "../../../../package.json";
 
@@ -56,6 +57,7 @@ export default function AboutSettingsPage() {
           </div>
         </div>
       </Card>
+      <PrinciplesAccordion />
       <AcknowledgmentsDialog open={ackOpen} onOpenChange={setAckOpen} />
     </SettingsShell>
   );

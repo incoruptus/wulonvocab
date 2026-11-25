@@ -10,6 +10,7 @@ import { buildImportResult } from "@/lib/importer";
 import { generateWordbookJson } from "@/lib/ai/generate";
 import { defaultExportSettings, defaultSchema } from "@/lib/presets";
 import { useAppStore } from "@/lib/store";
+import { withSourceCredentials } from "@/lib/credentials";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
@@ -83,8 +84,9 @@ export function AiGeneratePanel({
     timerRef.current = setInterval(() => setElapsed((t) => t + 1), 1000);
     try {
       const schema = targetBook?.schema ?? defaultSchema();
+      const runtimeSource = await withSourceCredentials(aiSource);
       const p = await generateWordbookJson({
-        config: { baseUrl: aiSource.config.baseUrl ?? "", apiKey: aiSource.config.apiKey, model: aiSource.config.model ?? "" },
+        config: { baseUrl: runtimeSource.config.baseUrl ?? "", apiKey: runtimeSource.config.apiKey, model: runtimeSource.config.model ?? "" },
         schema,
         request: request.trim(),
         signal: controller.signal,

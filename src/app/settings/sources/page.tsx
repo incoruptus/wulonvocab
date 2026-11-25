@@ -36,8 +36,8 @@ export default function SourcesSettingsPage() {
                 enabled: false,
                 config:
                   opt.kind === "ai"
-                    ? { baseUrl: "", model: "", apiKey: "", language: "中文" }
-                    : { urlTemplate: "", method: "GET", headers: "{}", resultPath: "", mapping: "{}" },
+                    ? { baseUrl: "", model: "", language: "中文" }
+                    : { urlTemplate: "", method: "GET", resultPath: "", mapping: "{}" },
               });
               toast.success("已添加数据源，请填写配置并启用");
             }}

@@ -1,4 +1,5 @@
 import { useAppStore } from "@/lib/store";
+import { listReviewLogForSync } from "@/lib/study/reviewLog";
 import type { SyncDeps } from "@/lib/sync/engine";
 
 /**
@@ -6,7 +7,7 @@ import type { SyncDeps } from "@/lib/sync/engine";
  * 引擎与协调器保持依赖注入；全局调度（SyncAutoProvider）与设置页共用这一份。
  */
 export const syncDeps: SyncDeps = {
-  getState: () => {
+  getState: async () => {
     const s = useAppStore.getState();
     return {
       books: s.books,
@@ -14,6 +15,7 @@ export const syncDeps: SyncDeps = {
       lookupSources: s.lookupSources,
       dictionaries: s.dictionaries,
       exportPresets: s.exportPresets,
+      reviewEvents: await listReviewLogForSync(),
     };
   },
   applyState: (next) => useAppStore.getState().applySyncState(next),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildEnvelope, buildSyncPayload, parseEnvelope, stableJson, syncFileName } from "./pack";
-import type { SyncState } from "./types";
+import { hasSyncedSettingChange, type SyncState } from "./types";
 
 const state: SyncState = {
   books: [],
@@ -9,6 +9,20 @@ const state: SyncState = {
   dictionaries: [],
   exportPresets: [],
 };
+
+describe("同步域设置变更判定", () => {
+  it("最近词库、外观与时间戳不触发同步", () => {
+    expect(hasSyncedSettingChange({ lastBookId: "book-a" })).toBe(false);
+    expect(hasSyncedSettingChange({ theme: "dark", accent: "violet" })).toBe(false);
+    expect(hasSyncedSettingChange({ updatedAt: 123 })).toBe(false);
+  });
+
+  it("界面缩放与侧栏状态属于同步域，混合 patch 不误判", () => {
+    expect(hasSyncedSettingChange({ uiScale: 1.1 })).toBe(true);
+    expect(hasSyncedSettingChange({ sidebarCollapsed: true })).toBe(true);
+    expect(hasSyncedSettingChange({ lastBookId: "book-a", uiScale: 1.1 })).toBe(true);
+  });
+});
 
 describe("同步包封包/解析", () => {
   it("snapshot 往返：中文/超长值无损，lastBookId 不随包", () => {
@@ -19,6 +33,20 @@ describe("同步包封包/解析", () => {
     expect(round.payload.settings && "lastBookId" in round.payload.settings).toBe(false);
     expect(round.payload.exportPresets).toEqual([]);
     expect(stableJson(round.payload)).toBe(stableJson(payload));
+  });
+
+  it("凭据不进入同步包，即使调用方意外传入旧配置", () => {
+    const payload = buildSyncPayload({
+      ...state,
+      lookupSources: [
+        { id: "ai", kind: "ai", label: "AI", enabled: true, config: { baseUrl: "https://example.test", apiKey: "secret-key" } },
+        { id: "http", kind: "http", label: "HTTP", enabled: true, config: { headers: '{"Authorization":"Bearer secret"}' } },
+      ],
+    }, { mode: "snapshot", deviceId: "devA", tombstones: [] });
+    const text = JSON.stringify(payload);
+    expect(text).not.toContain("secret-key");
+    expect(text).not.toContain("Authorization");
+    expect(payload.lookupSources?.[0].config).toEqual({ baseUrl: "https://example.test" });
   });
 
   it("版本/格式/校验和三道闸门", () => {

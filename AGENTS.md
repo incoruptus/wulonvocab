@@ -2,7 +2,7 @@
 
 面向 AI 代理与协作者的工程约定。修改代码前请先阅读本文件。
 
-> **接手项目先读**：`docs/HANDOVER.md`（当前状态快照、未完成清单、待拍板决策、环境体检与发布步骤）。
+> **接手项目先读**：`docs/HANDOVER.md`（当前状态快照、未完成清单、决策状态、环境体检与发布步骤）→ `docs/PRODUCT-LOGIC.md`（项目结构与逻辑总览）→ `docs/DECISIONS-PENDING.md`（已确认决策与外部前置）→ `docs/ROADMAP.md` → 需要动题型或题库时先读 `docs/research/word-quiz-definitions-2026-11.md`。
 
 ## 项目定位
 
@@ -22,6 +22,8 @@
 | `npm test` | Vitest 单测（改核心库必跑） |
 | `npm run check:encoding` | 编码守卫：扫描源码字符串中的乱码残留（应为 0） |
 | `npm run e2e:sync` | 双设备同步 E2E（无头双上下文；需本地 dev server，不进 CI） |
+| `npm run e2e:study-settings` | 学习模式、复习参数分组、题库与关于页 E2E（需本地 dev server） |
+| `npm run e2e:public-bank` | 真实公共 Gist 读取与 word2def 验收；需设置 `WV_PUBLIC_BANK_URL` 与本地 dev server |
 | `npm run sync:skill` | 修改 `skill/` 后必须运行，使应用内下载同步 |
 | `npm run validate -- file.json` | 校验词表 JSON |
 
@@ -34,6 +36,7 @@
   - `study/` **学习引擎**：`engine.ts`（ts-fsrs 纯函数封装 + 时钟钳制）、`queue.ts`（每日队列/统计）、
     `types.ts`（srs 状态与每日日志）。**预览与评分必须共享同一 `now`**（fuzz 种子一致性），
     改动必须补 `study.test.ts`；学习状态唯一写入路径是 `store.applyReview/undoReview`；
+   题型比例由 `study/quizMix.ts` 纯函数规划，个人题与公共题共用 `quiz.ts` 准入校验；
   - `store.ts` Zustand + IndexedDB 持久化（防抖写入），**所有状态写入经由此层**；
     新增默认数据源时同步维护 `DEFAULT_LOOKUP_SOURCES`（`ensureLookupSources` 会在水合后为老用户补齐）；
   - `export/paginate.ts` 分页算法（纯函数，改动必须补 `paginate.test.ts`）；`export/print.ts` 打印/PNG/PDF 出口。
@@ -110,6 +113,7 @@
   会话持久化在独立 IDB（`ai/agentStore.ts`，key `chat:<bookId>`）——**聊天记录是设备本地资产，不进主 store、不随同步载荷传播**。
   **OCR**：tesseract.js 动态加载（worker 会话复用，中止即终止重置）；产物经 `extractWordTokens` 清洗为单词 tokens 后走统一导入管线。
   **手账笔记带**：`kind:"band"` 块（`splittable:false` + `glueWithPrev`）——分页器保证与上一块同列；渲染必须同时接 PrintDocument 与 MeasureLayer；2 栏降级单列。
+13. **关键内容即时落盘**：批量导入的新建 / 替换词库、追加 / 替换词条必须走 `flushSoon()`，不能只依赖 400ms 防抖；导入后可能立即跳转或关页。相关 E2E 必须覆盖快速导航后的持久化，不以固定睡眠替代断言。
 
 ## 术语与品牌（统一口径）
 
@@ -135,9 +139,9 @@
    （GitHub 不通时用新机自己的代理：`git config --global http.proxy http://127.0.0.1:<新机端口>`，
    并同步更新本文档「部署约束」中的代理端口）。
 4. `npm install`（慢则 `npm config set registry https://registry.npmmirror.com`）。
-5. **验证**：`npm run typecheck && npm test`（应 157 全绿）→ `npm run dev` 打开 localhost:3000。
+5. **验证**：`npm run typecheck && npm test`（以当前测试输出为准）→ `npm run dev` 打开 localhost:3000。
 6. **不要拷贝**：`node_modules/`、`.next/`、`out/`、`public/fonts/`、`public/pdfjs/`（首次 dev/build 自动生成）。
-7. 无仓库外的私密文件需要搬运（无 .env / keystore；API Key 只存在各自浏览器里）。
+7. 无仓库外的私密文件需要搬运（无 .env / keystore）。API Key 与自定义 Authorization 凭据已隔离到独立本机 IDB，不进主 store、同步与备份；加载旧数据时自动迁移并擦除旧副本。
 8. **到岗体检**：`git log --oneline -5` + `npm test`；安卓线从 `docs/PLAN-2026-10.md` §7（Capacitor 路线）与本文件约定继续。
 9. **双机分工**：开发机 A（本机）专注**网页端**；安卓工程在**开发机 B**（有 JDK/SDK/Studio），以 Git 仓库为唯一交接面。
    安卓**实施定稿**见 `docs/ANDROID.md`（含五格 IA、顶栏双层、纵向预算、CI APK、自托管 OTA、keystore 流程）——B 机 Agent 拉库即按其执行。
@@ -189,11 +193,13 @@
   触屏/窄屏改用 `wv-touch-only` 点按说明；移动端评级栏用 2×2 网格（`grid-cols-2 sm:grid-cols-4`）；底部操作区必须**原位切换**（揭示按钮 ↔ 评级栏），
   不得叠加新行造成布局位移；忽略 `event.repeat` 与修饰键，答题后 180ms 输入锁防连发；
   window 级键监听先跳过 `ev.defaultPrevented`（Radix 弹窗处理的 Esc 等不再透传）；
-- **学习题型与调度规则（docs/research/learning-science-2026-10.md）**：
-  题型三种（`ChoiceQuizKind`）：`word2zh` 看词选义 / `zh2word` 看义选词 / `def2word` 看释义选词（英英）；
+- **学习题型与调度规则（现行规范见 `docs/research/word-quiz-definitions-2026-11.md`）**：
+  三大类为熟悉度自评、选择题（内部 Word Quiz B1）、Cloze；Word Quiz 四个子型（`ChoiceQuizKind`）：
+  `word2def` 看英文词选英文释义 / `def2word` 看英文释义选英文词 / `zh2word` 看中文释义选英文词 / `word2zh` 看英文词选中文释义；
   提取练习（`ProductionQuestion.kind`）：`cloze` 例句挖空 / `spell` 隐藏词头拼写；统一题型枚举为 `QuizKind`；
+  每题固定四选项，1 个正确答案、最多 2 个真正易混项，其余为对照项；四个子型独立配置 10 / 15 / 20 / 25 / 30 秒，默认 `word2def` 30、`def2word` 20、`zh2word` 15、`word2zh` 15 秒；页面隐藏暂停，超时 Again；题型或时限切换的首帧必须直接显示新时限，不得混用旧剩余秒数；
   按 `quizStageOf` 自动挑题（学习期识别优先，Review 稳定后产出线索优先），缺数据沿顺序降级，全不可用回退翻卡；
-  **隐藏词头题型（zh2word/def2word）作答前不显示词头、不出现朗读按钮、选择题一律改为「判定后朗读」**（防泄底）；
+  **隐藏词头题型（def2word/zh2word）作答前不显示词头、不出现朗读按钮、选择题一律改为「判定后朗读」**（防泄底）；
   **选择题答对最高记 Good，永不 Easy**；开启「稳 / 猜」确认（`choiceConfidence`）时，答对先确认再记分（猜 → Hard），
   确认期间自动推进暂停（空格 = 稳）；**错题必停留并展示答案**（硬规则，防假知识）；
   **相似词避让（`similarityAvoid` 默认开）**：词形编辑距离 ≤2 或首义项 bigram Jaccard ≥0.6 视为易混，
@@ -210,13 +216,20 @@
   是条目主体字段，搁置/解除必须 bump `updatedAt` 并纳入 `entryMaterialHash`，双端并行改卡走既有冲突流；
   队列只过滤 `until > now`，到期自动回归，**搁置绝不改 SRS / due / daily**；重置学习进度时清除搁置；
   不自动静默搁置，UI 只提供搁置 7/30 天、改卡、二次确认后降级重学；
-  **掌握层次派生**：再认 / 回忆 / 产出只从本机 `review_log` 纯函数计算，同一词同一会话同一层只取首次有效评分、
+  **掌握层次派生**：再认 / 回忆 / 产出只从有效 `review_log` 纯函数计算，同一词同一会话同一层只取首次有效评分、
   每层最多最近 20 次，撤销补偿先排除；Hard/Good/Easy 计成功、Again 不计；不做 0–100 综合分，
-  不写 `EntryStatus` / SRS / 主 store / sync / backup；`cloze` 归回忆、`spell` 归产出，自由练习事件带 `practiceOnly`；
+  不写 `EntryStatus` / SRS / 主 store；`cloze` 归回忆、`spell` 归产出，自由练习事件带 `practiceOnly`；
+  2026-11-25 起目标为原始事件按稳定 ID 同步、确定性保留 180 天 / 5,000 条，掌握层次由合并后的同一事件集派生；当前已实现同步；
   **新词短步骤**：Good 依次在 30 分钟、1 天、3 天后到期，再交 FSRS；FSRS 提前返回 Review 但仍有 learningSteps 时须保留 Learning，
   Again 回炉与 Easy 直入复习不变，既有复习卡不得套用初始步骤；
   **Cloze 准入**：只读词条已有例句或显式开启的 AI 补句，最多 12 词、目标恰好一次，支持明确保存的词形；
-  生成句仍须通过同一本地校验，AI 句缓存于独立本机 IDB，不进入同步与备份；
+  生成句仍须通过同一本地校验，AI 句缓存于独立本机 IDB，不进入同步与备份；B2 的来源想法是给句填空，产品名独立为 Cloze；
+  **公共题库与生成物**：公共 GitHub 仓库维护、公共 Gist 只读分发；应用匿名按需拉分片并再次本地校验；
+  AI 题与本机下载缓存可重建，留本机；待上传贡献包、举报记录是用户数据，目标随同步；贡献必须用户预览并授权，
+  不含学习记录、词库内容、设备 ID、API Key 或个人笔记；
+  **保存视图同步**：命名 `SavedView` 是词库用户数据，已随书同步与备份；当前排序 / 筛选 / 分区选择 / 折叠态仍是设备本地状态；
+  **复习事件同步**：稳定 ID、撤销补偿与清空标记已同步，按 180 天 / 5,000 条确定性滚动保留；
+  **凭据本地化**：API Key 与自定义 HTTP 的 Authorization 等凭据已独立本机保管，不进入 `buildSyncPayload`、备份或公共题包；
   **拼写与 IME 硬规则**：隐藏词头题作答前不显示答案、不朗读，composition 期间禁止提交，输入框不触发全局评分热键；
   首次提交定终身，精确 Good、一字符之差 Hard、其他 Again，精确且已有回忆成功证据才可升 Easy；提交后输入禁用，只保留反馈与继续；
   **自由练习（cram）硬规则**：暂停 / 归档词库可进入，每词一次、不回炉；评分与撤销只写本机日志，
@@ -225,9 +238,9 @@
   弱词优先只重排当前复习队列且最多 20%，不增删、不直接改评分；学习批次限随机、主题 / 情景标签、来源、频率，新词 5–10 词。
 - **设置信息架构**：`/settings` 是分组索引页，具体内容一律放二级页
   （`/settings/study|appearance|sources|dictionaries|sync|data|about`，统一经 `SettingsShell` 带返回导航），
-  新增设置项就近入册、不得堆回索引页；**学习首页只保留开始学习的基础项**（每日新词上限 / 学习模式 / 出题顺序 /
-  本场允许相似词 / 自动发音 + 「更多学习设置」深链 `/settings/study?book=<id>`）；记忆保持率、选择题题型、
-  推进方式、直选键位、相似词避让都在「设置 → 学习」（通用组 + 按词库组，通用组含退出去向与键位）。
+  新增通用设置项就近入册、不得堆回索引页；**学习首页只保留开始学习的基础项**（每日新词上限 / 学习模式 / 出题顺序 /
+  本场允许相似词 / 自动发音 + 通用学习偏好入口）；**按词库复习参数已迁入词库工作区第三个「复习参数」Tab**，
+  题库为第四个 Tab；旧设置 `?book=` 深链保持兼容，不复制配置。
 - **窄屏「列表 → 详情」编辑**：移动端此类场景用「点入全屏编辑」（`Dialog mobileFull`：列表占满整屏、
   点按进入编辑器，编辑完关闭返回），**不要用「上选下编」堆叠**（字段设计为范例）；桌面保留双栏。
 - **列表行控件规范**：行内右侧控件（开关 / ⋯ 等）必须用 `flex items-center` 成组包裹（消除 inline 基线盒造成的纵向偏移），

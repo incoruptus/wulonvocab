@@ -1,6 +1,6 @@
 "use client";
 
-import { cloneElement, isValidElement, useId, useMemo, useState } from "react";
+import { cloneElement, isValidElement, useEffect, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ExternalLink, RefreshCw, Trash2, Wifi } from "lucide-react";
 import type { LookupKind, LookupSourceConfig } from "@/lib/types";
@@ -23,6 +23,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { useSyncCommit } from "@/components/app/useSyncCommit";
 import { Badge } from "@/components/ui/misc";
 import { cx } from "@/lib/utils";
+import { loadSourceCredentials, saveSourceCredentials, type SourceCredentials } from "@/lib/credentials";
 
 /* ---------------- 数据源编辑器 ---------------- */
 
@@ -37,6 +38,24 @@ export function SourceEditor({ source, removable }: { source: LookupSourceConfig
   const [models, setModels] = useState<FetchedModel[] | null>(null);
   const [modelsBusy, setModelsBusy] = useState(false);
   const [probe, setProbe] = useState<{ busy: boolean; ok?: boolean; text?: string }>({ busy: false });
+  const [credentials, setCredentials] = useState<SourceCredentials>({});
+  const runtimeSource = { ...source, config: { ...source.config, ...credentials } };
+
+  useEffect(() => {
+    let alive = true;
+    void loadSourceCredentials(source.id).then((stored) => {
+      if (alive) setCredentials(stored);
+    }).catch(() => {
+      if (alive) toast.error("本机凭据读取失败，请重新打开此页");
+    });
+    return () => { alive = false; };
+  }, [source.id]);
+
+  const updateCredential = (key: string, value: string) => {
+    const next = { ...credentials, [key]: value };
+    setCredentials(next);
+    void saveSourceCredentials(source.id, next).catch(() => toast.error("凭据保存失败，请重试"));
+  };
 
   const modelOptions = useMemo(
     () =>
@@ -76,7 +95,7 @@ export function SourceEditor({ source, removable }: { source: LookupSourceConfig
     setModelsBusy(true);
     const t = toast.loading("正在拉取模型列表…");
     try {
-      const list = await fetchModelList(activePreset, source.config.apiKey ?? "");
+      const list = await fetchModelList(activePreset, runtimeSource.config.apiKey ?? "");
       setModels(list);
       toast.success(`拉取到 ${list.length} 个模型`, { id: t, description: "带「视觉」标注的模型可用于图片识别" });
     } catch (e) {
@@ -92,7 +111,7 @@ export function SourceEditor({ source, removable }: { source: LookupSourceConfig
   const runProbe = async () => {
     setProbe({ busy: true });
     try {
-      const r = await probeConnection(source.config.baseUrl ?? "", source.config.apiKey ?? "", source.config.model ?? "");
+      const r = await probeConnection(runtimeSource.config.baseUrl ?? "", runtimeSource.config.apiKey ?? "", runtimeSource.config.model ?? "");
       const hint = r.ok ? "" : probeHint(r.status);
       setProbe({ busy: false, ok: r.ok, text: r.ok ? `连接成功 · ${r.latencyMs}ms` : `${r.status}${hint ? ` · ${hint}` : ""}` });
       if (r.ok) toast.success(`连接成功（${r.latencyMs}ms）`);
@@ -117,7 +136,7 @@ export function SourceEditor({ source, removable }: { source: LookupSourceConfig
     const t = toast.loading("正在测试…");
     try {
       const schema = useAppStore.getState().books[0]?.schema ?? defaultSchema();
-      const res = await runLookup(testWord.trim(), [{ ...source, enabled: true }], schema, {
+      const res = await runLookup(testWord.trim(), [{ ...runtimeSource, enabled: true }], schema, {
         localDictIds: dictionaries.map((d) => d.id),
       });
       const r = res[0];
@@ -238,8 +257,8 @@ export function SourceEditor({ source, removable }: { source: LookupSourceConfig
                 <Labeled label="API Key（只保存在本机）">
                   <Input
                     type="password"
-                    value={source.config.apiKey ?? ""}
-                    onChange={(e) => updateSource(source.id, { config: { apiKey: e.target.value } })}
+                    value={credentials.apiKey ?? ""}
+                    onChange={(e) => updateCredential("apiKey", e.target.value)}
                     placeholder={activePreset?.keyHint ?? "sk-…（仅保存在本机）"}
                   />
                 </Labeled>
@@ -330,8 +349,9 @@ export function SourceEditor({ source, removable }: { source: LookupSourceConfig
               <Labeled label="请求头（JSON，可放 Authorization）">
                 <Textarea
                   rows={2}
-                  value={source.config.headers ?? "{}"}
-                  onChange={(e) => updateSource(source.id, { config: { headers: e.target.value } })}
+                  value={credentials.headers ?? ""}
+                  onChange={(e) => updateCredential("headers", e.target.value)}
+                  placeholder={"{}"}
                   className="t-mono-13"
                 />
               </Labeled>

@@ -290,6 +290,10 @@ export interface Wordbook {
   studyState?: BookStudyState;
   /** 学习（SRS）配置与每日记录 */
   study?: import("./study/types").BookStudy;
+  /** 命名保存视图：用户数据，随词库同步；临时排序筛选仍留本机 */
+  savedViews?: import("./viewPrefs").SavedView[];
+  /** 个人可维护选择题题库：随词库同步，与匿名公共题库分层读取 */
+  personalQuizBank?: import("./study/quizBank").PersonalQuizQuestion[];
 }
 
 // ============================================================
@@ -390,6 +394,8 @@ export interface AppSettings {
   choiceKeys?: string[];
   /** 关闭学习会话后的去向（默认词库页） */
   studyExit?: "book" | "learn" | "back";
+  /** 公共 Word Quiz 题库清单 URL（匿名只读；空表示未配置） */
+  quizBankUrl?: string;
   /** 每日有效提取目标档位：下限 / 目标 / 挑战 */
   goalTier?: "light" | "target" | "challenge";
   /** 是否显示连续学习天数；默认开 */
