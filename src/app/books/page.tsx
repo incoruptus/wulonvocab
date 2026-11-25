@@ -5,12 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-  ArrowRight, BookOpen, Brain, Download, FileDown, FileJson, Layers, MoreHorizontal, Pencil, Plus, Sparkles, Trash2, Upload, WandSparkles,
+  ArrowRight, Archive, BookOpen, Brain, Download, FileDown, FileJson, Layers, MoreHorizontal, Pause, Pencil, Plus, RotateCcw, Sparkles, Trash2, Upload, WandSparkles,
 } from "lucide-react";
 import type { Wordbook } from "@/lib/types";
 import { SCHEMA_PRESETS } from "@/lib/presets";
 import { serializeBookDoc } from "@/lib/serializers";
-import { studyOverview } from "@/lib/study/queue";
+import { studyOverview, studyStateOf } from "@/lib/study/queue";
 import { useAppStore } from "@/lib/store";
 import { TopNav } from "@/components/app/TopNav";
 import { ImportDialog } from "@/components/import/ImportDialog";
@@ -27,8 +27,12 @@ export default function BooksPage() {
   const createBook = useAppStore((s) => s.createBook);
   const addSampleBook = useAppStore((s) => s.addSampleBook);
   const deleteBook = useAppStore((s) => s.deleteBook);
+  const setBookStudyState = useAppStore((s) => s.setBookStudyState);
+  const resetBookStudyProgress = useAppStore((s) => s.resetBookStudyProgress);
   const [newOpen, setNewOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [restoring, setRestoring] = useState<Wordbook | null>(null);
   const [name, setName] = useState("");
   const [presetId, setPresetId] = useState("oxford");
 
@@ -46,6 +50,8 @@ export default function BooksPage() {
     const fields = books.reduce((acc, b) => acc + b.schema.sections.length, 0);
     return { entries, fields };
   }, [books]);
+  const archivedCount = books.filter((book) => studyStateOf(book) === "archived").length;
+  const visibleBooks = showArchived ? books : books.filter((book) => studyStateOf(book) !== "archived");
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -62,7 +68,7 @@ export default function BooksPage() {
               <Plus className="size-4" /> 新建词库
             </Button>
             <Button variant="secondary" onClick={() => setImportOpen(true)}>
-              <Upload className="size-4" /> 导入 JSON / CSV
+              <Upload className="size-4" /> 导入为新词库
             </Button>
             <Button variant="secondary" onClick={() => router.push("/import?panel=ai")}>
               <WandSparkles className="size-4" /> AI 生词库
@@ -89,42 +95,59 @@ export default function BooksPage() {
 
         {/* 词库列表 */}
         <section className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <h2 className="t-h-20">书架</h2>
-            <Link href="/skill" className="t-label-13 inline-flex items-center gap-1 text-blue-900 hover:underline">
-              让 AI 帮你整理词表 <ArrowRight className="size-3.5" />
-            </Link>
+            <div className="flex items-center gap-3">
+              {archivedCount > 0 ? (
+                <Button size="sm" variant="tertiary" onClick={() => setShowArchived((value) => !value)}>
+                  <Archive className="size-3.5" /> {showArchived ? "隐藏已归档" : `显示已归档（${archivedCount}）`}
+                </Button>
+              ) : null}
+              <Link href="/skill" className="t-label-13 inline-flex items-center gap-1 text-blue-900 hover:underline">
+                让 AI 帮你整理词表 <ArrowRight className="size-3.5" />
+              </Link>
+            </div>
           </div>
           {!hydrated ? (
             <div className="t-label-13 text-gray-800">正在载入数据…</div>
-          ) : books.length === 0 ? (
+          ) : visibleBooks.length === 0 ? (
             <Card className="py-0">
               <EmptyState
                 icon={<BookOpen className="size-4" />}
-                title="书架还是空的"
-                desc="新建一本开始写，或导入现成词表；想先看效果，就点「创建示例（10 词）」，完整词卡一眼就能看到。"
+                title={books.length ? "词库都归档了" : "书架还是空的"}
+                desc={
+                  books.length
+                    ? "归档不会删除内容与学习历史，打开显示开关就能恢复。"
+                    : "新建一本开始写，或导入现成词表；想先看效果，就点「创建示例（10 词）」。"
+                }
                 action={
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => setNewOpen(true)}>
-                      新建词库
+                  books.length ? (
+                    <Button size="sm" onClick={() => setShowArchived(true)}>
+                      显示已归档
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        const b = addSampleBook();
-                        router.push(`/book?id=${b.id}`);
-                      }}
-                    >
-                      创建示例（10 词）
-                    </Button>
-                  </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={() => setNewOpen(true)}>
+                        新建词库
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          const b = addSampleBook();
+                          router.push(`/book?id=${b.id}`);
+                        }}
+                      >
+                        创建示例（10 词）
+                      </Button>
+                    </div>
+                  )
                 }
               />
             </Card>
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {books.map((book) => (
+              {visibleBooks.map((book) => (
                 <BookCard
                   key={book.id}
                   book={book}
@@ -132,6 +155,21 @@ export default function BooksPage() {
                   onExport={() => router.push(`/book/export?id=${book.id}`)}
                   onStudy={() => router.push(`/study?id=${book.id}`)}
                   onDelete={() => setDeleting(book)}
+                  onPause={() => {
+                    setBookStudyState(book.id, "paused");
+                    toast.success(`已暂停「${book.name}」的学习`);
+                  }}
+                  onArchive={() => {
+                    setBookStudyState(book.id, "archived");
+                    toast.success(`已归档「${book.name}」`);
+                  }}
+                  onRestore={() => {
+                    if (studyStateOf(book) === "archived") setRestoring(book);
+                    else {
+                      setBookStudyState(book.id, "active");
+                      toast.success(`已恢复「${book.name}」的学习`);
+                    }
+                  }}
                 />
               ))}
             </div>
@@ -200,6 +238,46 @@ export default function BooksPage() {
         }}
       />
 
+      {/* 归档恢复：保留原计划或重置学习记录 */}
+      <Dialog open={restoring !== null} onOpenChange={(v) => !v && setRestoring(null)}>
+        <DialogHeader
+          title="恢复词库学习"
+          desc={restoring ? `「${restoring.name}」已归档。可以按原来的记忆进度继续，也可以把全部词条重置为未学。` : ""}
+        />
+        <DialogBody>
+          <p className="t-label-13 text-gray-800">
+            按原计划继续会保留到期时间与遗忘记录；重置后，所有词条都从新词开始，原来的复习进度不会保留。
+          </p>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => setRestoring(null)}>
+            取消
+          </Button>
+          <Button
+            onClick={() => {
+              if (!restoring) return;
+              setBookStudyState(restoring.id, "active");
+              toast.success(`已按原计划恢复「${restoring.name}」`);
+              setRestoring(null);
+            }}
+          >
+            按原计划继续
+          </Button>
+          <Button
+            variant="error"
+            onClick={() => {
+              if (!restoring) return;
+              resetBookStudyProgress(restoring.id);
+              setBookStudyState(restoring.id, "active");
+              toast.success(`已重置「${restoring.name}」的学习记录`);
+              setRestoring(null);
+            }}
+          >
+            重置学习记录
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
       {/* 删除确认 */}
       <Dialog open={deleting !== null} onOpenChange={(v) => !v && setDeleting(null)}>
         <DialogHeader
@@ -247,14 +325,22 @@ function BookCard({
   onExport,
   onStudy,
   onDelete,
+  onPause,
+  onArchive,
+  onRestore,
 }: {
   book: Wordbook;
   onOpen: () => void;
   onExport: () => void;
   onStudy: () => void;
   onDelete: () => void;
+  onPause: () => void;
+  onArchive: () => void;
+  onRestore: () => void;
 }) {
   const due = studyOverview(book).due;
+  const state = studyStateOf(book);
+  const inactive = state !== "active";
   return (
     <Card className="group relative flex cursor-pointer flex-col transition-shadow hover:shadow-geist-md" onClick={onOpen}>
       <div className="flex items-start gap-3">
@@ -275,8 +361,8 @@ function BookCard({
               </IconButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={onStudy}>
-                <Brain className="size-3.5" /> 开始学习
+              <DropdownMenuItem onSelect={inactive ? onOpen : onStudy}>
+                <Brain className="size-3.5" /> {inactive ? "打开词库" : "开始学习"}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={onOpen}>
                 <BookOpen className="size-3.5" /> 打开
@@ -300,6 +386,27 @@ function BookCard({
               >
                 <Layers className="size-3.5" /> 复制
               </DropdownMenuItem>
+              {state === "active" ? (
+                <>
+                  <DropdownMenuItem onSelect={onPause}>
+                    <Pause className="size-3.5" /> 暂停学习
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={onArchive}>
+                    <Archive className="size-3.5" /> 归档
+                  </DropdownMenuItem>
+                </>
+              ) : (
+                <>
+                  <DropdownMenuItem onSelect={onRestore}>
+                    <RotateCcw className="size-3.5" /> 恢复学习
+                  </DropdownMenuItem>
+                  {state === "paused" ? (
+                    <DropdownMenuItem onSelect={onArchive}>
+                      <Archive className="size-3.5" /> 归档
+                    </DropdownMenuItem>
+                  ) : null}
+                </>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem danger onSelect={onDelete}>
                 <Trash2 className="size-3.5" /> 删除
@@ -312,6 +419,13 @@ function BookCard({
         <p className="t-label-13 mt-3 line-clamp-2 text-gray-800">{book.description}</p>
       ) : null}
       <div className="mt-3 flex flex-wrap gap-1">
+        {state === "paused" ? (
+          <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[11px] font-medium text-gray-900">
+            暂停{ due > 0 ? ` · 到期 ${due}` : "" }
+          </span>
+        ) : state === "archived" ? (
+          <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[11px] font-medium text-gray-900">已归档</span>
+        ) : null}
         {due > 0 ? (
           <span className="rounded bg-amber-700/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-900">
             待复习 {due}

@@ -13,6 +13,7 @@ export function serializeBookDoc(book: Wordbook, opts: { includeSchema?: boolean
         description: book.description,
         tags: book.tags,
         meta: book.meta,
+        ...(book.studyState ? { studyState: book.studyState } : {}),
       },
       ...(includeSchema ? { schema: book.schema } : {}),
       entries: book.entries.map((e) => ({
@@ -23,6 +24,7 @@ export function serializeBookDoc(book: Wordbook, opts: { includeSchema?: boolean
         values: e.values,
         // 携带学习进度（用户拍板）：换设备导入后 SRS/学习中心与原文一致
         ...(e.srs ? { srs: e.srs } : {}),
+        ...(e.suspension ? { suspension: e.suspension } : {}),
       })),
     },
     null,

@@ -13,6 +13,8 @@ import type { QuizKind } from "./types";
  * 种子固定，同一词重复出现时选项顺序稳定（洗牌袋由调用处接管）。
  */
 
+export type ChoiceQuizKind = "word2zh" | "zh2word" | "def2word";
+
 export interface QuizOption {
   text: string;
   correct: boolean;
@@ -20,7 +22,7 @@ export interface QuizOption {
 
 export interface QuizQuestion {
   word: string;
-  kind: QuizKind;
+  kind: ChoiceQuizKind;
   options: QuizOption[];
   correctIndex: number;
   pos: string;
@@ -118,7 +120,7 @@ export function quizStageOf(entry: Entry): "learning" | "review" | "stable" {
   return (srs.scheduledDays ?? 0) >= 10 ? "stable" : "review";
 }
 
-const KIND_ORDER: Record<ReturnType<typeof quizStageOf>, QuizKind[]> = {
+const KIND_ORDER: Record<ReturnType<typeof quizStageOf>, ChoiceQuizKind[]> = {
   learning: ["word2zh", "zh2word"],
   review: ["zh2word", "word2zh"],
   stable: ["def2word", "zh2word", "word2zh"],
@@ -289,7 +291,10 @@ export function buildQuizQuestion(
   opts: { seed?: string; forceCorrectIndex?: number; kinds?: QuizKind[] } = {},
 ): QuizQuestion | null {
   const enabled = opts.kinds?.length ? opts.kinds : (["word2zh", "zh2word", "def2word"] as QuizKind[]);
-  const order = KIND_ORDER[quizStageOf(entry)].filter((k) => enabled.includes(k));
+  const choiceKinds = enabled.filter((kind): kind is "word2zh" | "zh2word" | "def2word" =>
+    kind === "word2zh" || kind === "zh2word" || kind === "def2word",
+  );
+  const order = KIND_ORDER[quizStageOf(entry)].filter((k) => choiceKinds.includes(k));
   for (const kind of order) {
     const q = kind === "word2zh" ? buildWord2Zh(entry, pool, opts) : buildWordChoice(kind, entry, pool, opts);
     if (q) return q;

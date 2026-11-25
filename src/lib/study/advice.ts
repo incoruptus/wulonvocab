@@ -88,10 +88,15 @@ export function estimateMinutes(due: number, newCount: number): number {
 }
 
 /** 日容量：最近 30 天有复习日期的复习量中位数；无数据时用兜底值 */
-export function computeCapacity(books: { study?: { daily: Record<string, { reviewed: number }> } }[], newPerDayTotal: number, now = Date.now()): number {
+export function computeCapacity(
+  books: { studyState?: "active" | "paused" | "archived"; study?: { daily: Record<string, { reviewed: number }> } }[],
+  newPerDayTotal: number,
+  now = Date.now(),
+): number {
   const values: number[] = [];
   const cutoff = now - 30 * 86400000;
   for (const b of books) {
+    if ((b.studyState ?? "active") !== "active") continue;
     const daily = b.study?.daily ?? {};
     for (const [key, log] of Object.entries(daily)) {
       const ts = Date.parse(`${key}T12:00:00`);

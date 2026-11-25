@@ -25,13 +25,27 @@ export const GRADE_META: Record<GradeValue, { label: string; hint: string; key: 
   4: { label: "轻松", hint: "毫不费力", key: "4" },
 };
 
+/** 新词短步骤：首个 1 分钟仅供 Again/Hard 计算，Good 依次走 30 分钟、1 天、3 天后交 FSRS。 */
+const INITIAL_LEARNING_STEPS = ["1m", "30m", "1d", "3d"] as const;
+
 function paramsFor(retention: number) {
   // enable_fuzz 与 Anki 一致（±5% 抖动，避免长期同步化）；
   // 注意：预览与评分必须共享同一 now，否则抖动种子不同导致显示与落库不一致。
   return generatorParameters({
     request_retention: clamp(retention, 0.7, 0.98),
     enable_fuzz: true,
+    learning_steps: INITIAL_LEARNING_STEPS,
   });
+}
+
+const decayCache = new Map<string, number>();
+function decayFor(retention: number): number {
+  const key = clamp(retention, 0.7, 0.98).toFixed(4);
+  const cached = decayCache.get(key);
+  if (cached !== undefined) return cached;
+  const decay = paramsFor(retention).w[20] ?? 0.1542;
+  decayCache.set(key, decay);
+  return decay;
 }
 
 /** 防御时钟回拨：ts-fsrs 对负 delta_t 会抛错 */
@@ -80,6 +94,29 @@ export function isNewSrs(srs?: StudySrs): boolean {
 
 export function isDue(srs: StudySrs | undefined, now: number): boolean {
   return Boolean(srs) && !isNewSrs(srs) && srs!.due <= now;
+}
+
+/**
+ * 当前可提取性 R（0–1）。用于复习排序，不参与评分。
+ * FSRS-6：R(t,S) = (1 + f·t/S)^(-w20)，f = 0.9^(-1/w20) - 1。
+ */
+export function retrievabilityOf(srs: StudySrs | undefined, now: number, retention = 0.9): number {
+  if (!srs || isNewSrs(srs) || srs.stability <= 0) return 1;
+  const w20 = decayFor(retention);
+  const factor = Math.pow(0.9, -1 / w20) - 1;
+  const elapsedDays = Math.max(0, (now - (srs.lastReview ?? srs.due)) / 86400000);
+  return Math.pow(1 + (factor * elapsedDays) / srs.stability, -w20);
+}
+
+/** R(30)：按当前稳固度估计 30 天后仍记得的概率；仅展示，不参与评分。 */
+export function r30Of(srs: StudySrs | undefined, now = Date.now(), retention = 0.9): number | null {
+  if (!srs || isNewSrs(srs) || srs.stability <= 0) return null;
+  return retrievabilityOf(srs, now + 30 * 86400000, retention);
+}
+
+export function memoryStateLabel(srs: StudySrs | undefined): "新词" | "学习中" | "稳固（当前）" {
+  if (isNewSrs(srs)) return "新词";
+  return isMastered(srs) ? "稳固（当前）" : "学习中";
 }
 
 /** 已掌握：处于复习态且间隔 ≥ 21 天 */
@@ -138,8 +175,14 @@ export function applyGrade(srs: StudySrs | undefined, rating: GradeValue, retent
   const now = clampReviewNow(srs, nowInput);
   const card = srs ? toCard(srs) : createEmptyCard(new Date(now));
   const algorithm = fsrs(paramsFor(retention));
-  const { card: next } = algorithm.next(card, new Date(now), rating as Grade);
-  return fromCard(next);
+  const { card: graded } = algorithm.next(card, new Date(now), rating as Grade);
+  const next = fromCard(graded);
+  // FSRS 在第二步 Good 后可能提前把 state 写成 Review，但仍有未完成的新词短步骤。
+  // 初始学习期间保留 Learning，确保 30 分钟 → 1 天 → 3 天真正走完；已有复习卡不受影响。
+  if (srs?.state === State.Learning && srs.lapses === 0 && next.state === State.Review && next.learningSteps > 0) {
+    return { ...next, state: State.Learning };
+  }
+  return next;
 }
 
 /** 人类可读的间隔文本（Anki 风格） */

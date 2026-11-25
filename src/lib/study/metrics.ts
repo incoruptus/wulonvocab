@@ -1,9 +1,11 @@
 import type { Wordbook } from "../types";
-import { studyConfigOf } from "./queue";
-import { ymd } from "./types";
+import { studyConfigOf, studyStateOf } from "./queue";
+import { clampBoundaryHour, ymd } from "./types";
+import { computeStreak, goalTargetOf, studyWeekDays, type GoalTier } from "./goals";
 
 /**
  * 学习中心聚合指标（纯函数；时间由调用方注入）
+ * 目标与待办只统计 active 词库；热力图、正确率与连续天数保留全部实际学习历史。
  */
 
 export interface HubMetrics {
@@ -25,20 +27,33 @@ export interface HubMetrics {
   accuracy30: number | null;
   /** 学习中卡片的 stability 中位数（天） */
   medianStability: number | null;
+  /** 今日有效提取目标（次） */
+  goalTarget: number;
+  /** 本周有有效提取的天数（备用轨道） */
+  weekDays: number;
+  /** 当前连续是否使用过每周自动宽恕 */
+  streakGraceUsed: boolean;
   /** 今日已复习次数与已学新词 */
   reviewedToday: number;
   addedToday: number;
   lastActiveAt: number | null;
 }
 
-function startOfDay(now: number): number {
-  const d = new Date(now);
+function startOfStudyDay(now: number, boundaryHour: number): number {
+  const d = new Date(now - boundaryHour * 3600000);
   d.setHours(0, 0, 0, 0);
-  return d.getTime();
+  return d.getTime() + boundaryHour * 3600000;
 }
 
-export function computeHubMetrics(books: Wordbook[], now: number): HubMetrics {
-  const today0 = startOfDay(now);
+export function computeHubMetrics(
+  books: Wordbook[],
+  now: number,
+  opts: { includeInactiveInGoals?: boolean; goalTier?: GoalTier; streakEnabled?: boolean; dayBoundaryHour?: number } = {},
+): HubMetrics {
+  const boundaryHour = clampBoundaryHour(opts.dayBoundaryHour);
+  const today0 = startOfStudyDay(now, boundaryHour);
+  const todayKey = ymd(now, boundaryHour);
+  const goalBooks = opts.includeInactiveInGoals ? books : books.filter((book) => studyStateOf(book) === "active");
   const heatmap: Record<string, number> = {};
   let due = 0;
   let overdue = 0;
@@ -53,17 +68,21 @@ export function computeHubMetrics(books: Wordbook[], now: number): HubMetrics {
   let addedToday = 0;
   let lastActiveAt: number | null = null;
 
+  // 实际学习历史：暂停/归档不抹掉过去的热力图与今日计数。
   for (const book of books) {
-    const cfg = studyConfigOf(book);
-    newPerDayTotal += cfg.newPerDay;
-    const todayKey = ymd(now);
     const todayLog = book.study?.daily?.[todayKey];
     addedToday += todayLog?.added ?? 0;
     reviewedToday += todayLog?.reviewed ?? 0;
-
     for (const [key, log] of Object.entries(book.study?.daily ?? {})) {
       heatmap[key] = (heatmap[key] ?? 0) + log.reviewed;
     }
+  }
+
+  // 目标与负载：只统计 active 词库。
+  for (const book of goalBooks) {
+    const cfg = studyConfigOf(book);
+    const todayLog = book.study?.daily?.[todayKey];
+    newPerDayTotal += cfg.newPerDay;
 
     for (const e of book.entries) {
       entries += 1;
@@ -86,17 +105,12 @@ export function computeHubMetrics(books: Wordbook[], now: number): HubMetrics {
     if (hasNew) newRemainingTotal += remaining;
   }
 
-  // 连续天数：从今天（没复习则从昨天）向前数
-  let streak = 0;
-  const cursor = new Date(now);
-  cursor.setHours(12, 0, 0, 0);
-  if (!heatmap[ymd(cursor.getTime())]) cursor.setDate(cursor.getDate() - 1);
-  while (heatmap[ymd(cursor.getTime())] > 0) {
-    streak += 1;
-    cursor.setDate(cursor.getDate() - 1);
-  }
+  // 连续天数：每周自动宽恕一个单日缺口；关闭时完全不显示。
+  const streakResult = computeStreak(heatmap, now, { enabled: opts.streakEnabled, boundaryHour });
+  const streak = streakResult.streak;
+  const weekDays = studyWeekDays(heatmap, now, boundaryHour);
 
-  // 近 30 天正确率（近似：1 - again/reviewed）
+  // 近 30 天正确率（近似：1 - again/reviewed），保留全部实际历史。
   let again = 0;
   let reviewed30 = 0;
   const cutoff = now - 30 * 86400000;
@@ -135,6 +149,9 @@ export function computeHubMetrics(books: Wordbook[], now: number): HubMetrics {
     due7,
     heatmap,
     streak,
+    goalTarget: goalTargetOf(opts.goalTier),
+    weekDays,
+    streakGraceUsed: streakResult.graceUsed,
     accuracy30,
     medianStability,
     reviewedToday,

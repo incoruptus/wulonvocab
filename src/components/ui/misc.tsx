@@ -2,7 +2,7 @@
 
 import { Fragment } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import * as ToggleGroupPrimitive from "@radix-ui/react-toggle-group";
 import { cx } from "@/lib/utils";
 import type { AccentId } from "@/lib/types";
@@ -71,15 +71,15 @@ export function Chip({
         className,
       )}
     >
-      {children}
+      <span className="min-w-0 leading-none">{children}</span>
       {onRemove ? (
         <button
           type="button"
           onClick={onRemove}
-          className="ml-0.5 -mr-1 grid size-4 place-items-center rounded-full opacity-60 hover:bg-black/10 hover:opacity-100"
+          className="ml-0.5 -mr-1.5 grid size-5 shrink-0 place-items-center rounded-full leading-none opacity-60 hover:bg-black/10 hover:opacity-100"
           aria-label="移除"
         >
-          ×
+          <X className="size-3" />
         </button>
       ) : null}
     </span>

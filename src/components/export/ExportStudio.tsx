@@ -649,8 +649,9 @@ function PanelsCards({ settings, patch, book }: PanelGroupProps) {
             value={settings.sortMode}
             onValueChange={(v) => patch({ sortMode: v })}
             options={[
-              { value: "list", label: "列表顺序" },
+              { value: "list", label: "词库顺序" },
               { value: "az", label: "字母序" },
+              { value: "view", label: "跟随视图" },
             ]}
             grow
           />

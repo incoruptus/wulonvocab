@@ -1,6 +1,7 @@
 import Papa from "papaparse";
-import type { Entry, Schema, SenseItem, Wordbook, WordbookMetaInfo } from "./types";
+import type { BookStudyState, Entry, Schema, SenseItem, Wordbook, WordbookMetaInfo } from "./types";
 import type { StudySrs } from "./study/types";
+import { sanitizeSuspension } from "./study/leech";
 import { makeEntry } from "./presets";
 import { inferSchema, keepExtras, labelForKey, mapRowToSchema, rowTags } from "./infer";
 import {
@@ -30,6 +31,7 @@ export interface ParsedImport {
   headers: string[];
   rows: Record<string, unknown>[];
   wordbookMeta?: { name?: string; description?: string; tags?: string[]; meta?: WordbookMetaInfo };
+  studyState?: BookStudyState;
   schema?: Schema;
   warnings: string[];
   entryLike?: boolean;
@@ -38,7 +40,7 @@ export interface ParsedImport {
 const ENTRY_WRAPPER_KEYS = ["entries", "words", "wordlist", "list", "data", "items", "词条", "单词列表"];
 const HEADWORD_KEYS = ["headword", "word", "term", "spelling", "expression", "单词", "词", "词汇"];
 const META_KEYS = new Set(
-  ["id", "headword", "word", "term", "spelling", "expression", "单词", "词", "tags", "tag", "status", "starred", "values", "createdat", "updatedat", "source"].map(canonicalKey),
+  ["id", "headword", "word", "term", "spelling", "expression", "单词", "词", "tags", "tag", "status", "starred", "values", "createdat", "updatedat", "source", "srs", "suspension"].map(canonicalKey),
 );
 
 const ECDICT_MARKERS = ["translation", "exchange", "bnc", "frq", "collins", "oxford", "phonetic", "释义", "音标"];
@@ -105,6 +107,7 @@ export function classifyJson(data: unknown): ParsedImport {
       rows: entries,
       schema,
       entryLike: true,
+      studyState: wb.studyState === "paused" || wb.studyState === "archived" ? wb.studyState : undefined,
       wordbookMeta: {
         name: typeof wb.name === "string" ? wb.name : undefined,
         description: typeof wb.description === "string" ? wb.description : undefined,
@@ -445,6 +448,7 @@ export function rowsToEntries(parsed: ParsedImport, schema?: Schema): RowsToEntr
         values: schema ? mapValuesWithSchema(rawValues, schema) : { ...rawValues },
         source: { kind: "import", label: parsed.wordbookMeta?.name, at: now },
         srs: sanitizeSrs(row.srs),
+        suspension: sanitizeSuspension(row.suspension),
       });
       entries.push(entry);
       continue;
@@ -508,12 +512,19 @@ function mapValuesWithSchema(rawValues: Record<string, unknown>, schema: Schema)
  * 纯函数（导出供「批量合并词条」与导入去重复用）。
  */
 export function mergeEntryBodies(target: Entry, incoming: Entry, now = Date.now()): Entry {
+  const tags = [...new Set([...target.tags, ...incoming.tags])];
+  const starred = target.starred || incoming.starred;
+  const values = mergeValues(target.values, incoming.values);
+  // 同一份内容重复导入是幂等的：不新增词条、不覆盖 srs，也不制造无意义的 updatedAt 变更。
+  if (JSON.stringify(tags) === JSON.stringify(target.tags) && starred === target.starred && JSON.stringify(values) === JSON.stringify(target.values)) {
+    return target;
+  }
   return {
     ...target,
-    tags: [...new Set([...target.tags, ...incoming.tags])],
-    starred: target.starred || incoming.starred,
+    tags,
+    starred,
     updatedAt: now,
-    values: mergeValues(target.values, incoming.values),
+    values,
   };
 }
 
@@ -530,6 +541,40 @@ export function mergeDuplicateEntries(entries: Entry[]): Entry[] {
     map.set(key, mergeEntryBodies(prev, entry));
   }
   return [...map.values()];
+}
+
+function missingValue(value: unknown): boolean {
+  return value == null || value === "" || (Array.isArray(value) && value.length === 0) ||
+    (isPlainObject(value) && Object.keys(value).length === 0);
+}
+
+/**
+ * 导入补缺：同名词条保留既有 id / srs / 状态与非空内容，只补空缺字段和标签。
+ * 与 mergeEntryBodies 的「合并」语义分开，供导入面板显式选择。
+ */
+export function mergeEntriesFillingGaps(existing: Entry[], incoming: Entry[], now = Date.now()): Entry[] {
+  const out = [...existing];
+  const index = new Map(existing.map((entry, i) => [entry.headword.toLowerCase(), i]));
+  for (const entry of incoming) {
+    const key = entry.headword.toLowerCase();
+    const at = index.get(key);
+    if (at === undefined) {
+      index.set(key, out.length);
+      out.push(entry);
+      continue;
+    }
+    const target = out[at];
+    const values = { ...target.values };
+    for (const [field, value] of Object.entries(entry.values)) {
+      if (missingValue(values[field])) values[field] = value;
+    }
+    const tags = [...new Set([...target.tags, ...entry.tags])];
+    const starred = target.starred || entry.starred;
+    const changed = JSON.stringify(values) !== JSON.stringify(target.values) ||
+      JSON.stringify(tags) !== JSON.stringify(target.tags) || starred !== target.starred;
+    out[at] = changed ? { ...target, values, tags, starred, updatedAt: now } : target;
+  }
+  return out;
 }
 
 function mergeValues(a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> {
@@ -582,6 +627,7 @@ export interface BuildBookResult {
   meta: WordbookMetaInfo | undefined;
   description?: string;
   tags: string[];
+  studyState?: BookStudyState;
   schemaOrigin: "doc" | "current" | "inferred";
 }
 
@@ -616,6 +662,7 @@ export function buildImportResult(parsed: ParsedImport, options: BuildBookOption
     meta: parsed.wordbookMeta?.meta,
     description: parsed.wordbookMeta?.description,
     tags: parsed.wordbookMeta?.tags ?? [],
+    studyState: parsed.studyState,
     schemaOrigin,
   };
 }

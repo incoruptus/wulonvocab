@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2, Eye, EyeOff, ImagePlus } from "lucide-react";
+import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2, Eye, EyeOff, ImagePlus, X } from "lucide-react";
 import type {
   ExampleItem,
   ImageValue,
@@ -213,15 +213,15 @@ export function TagsEditor({ items, onChange, placeholder }: { items: string[]; 
   return (
     <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-md bg-background-100 p-1.5 shadow-geist-border">
       {items.map((item, i) => (
-        <span key={i} className="inline-flex h-6 items-center gap-1 rounded-full bg-gray-100 px-2.5 text-[12px] text-gray-1000">
-          {item}
+        <span key={i} className="inline-flex h-6 items-center gap-1 rounded-full bg-gray-100 px-2.5 text-[12px] leading-none text-gray-1000">
+          <span className="min-w-0">{item}</span>
           <button
             type="button"
             aria-label={`移除 ${item}`}
-            className="-mr-1 grid size-4 place-items-center rounded-full opacity-60 hover:bg-black/10 hover:opacity-100"
+            className="-mr-1.5 grid size-5 shrink-0 place-items-center rounded-full leading-none opacity-60 hover:bg-black/10 hover:opacity-100"
             onClick={() => onChange(items.filter((_, k) => k !== i))}
           >
-            ×
+            <X className="size-3" />
           </button>
         </span>
       ))}

@@ -24,6 +24,15 @@ describe("buildCommands", () => {
     expect(empty.some((c) => c.id === "act-export")).toBe(false);
     expect(empty.find((c) => c.id === "act-start-study")?.run).toEqual({ kind: "navigate", href: "/books?new=1" });
   });
+
+  it("添加并匹配定位到上次词库；无词库时引导先新建", () => {
+    const withBook = buildCommands({ books, lastBookId: "b1" });
+    expect(withBook.find((c) => c.id === "act-add-match")?.run).toEqual({ kind: "navigate", href: "/book?id=b1&add=1" });
+    expect(withBook.find((c) => c.id === "go-import")?.run).toEqual({ kind: "navigate", href: "/import" });
+
+    const empty = buildCommands({ books: [], lastBookId: null });
+    expect(empty.find((c) => c.id === "act-add-match")?.run).toEqual({ kind: "navigate", href: "/books?new=1" });
+  });
 });
 
 describe("filterCommands", () => {

@@ -190,7 +190,8 @@
   不得叠加新行造成布局位移；忽略 `event.repeat` 与修饰键，答题后 180ms 输入锁防连发；
   window 级键监听先跳过 `ev.defaultPrevented`（Radix 弹窗处理的 Esc 等不再透传）；
 - **学习题型与调度规则（docs/research/learning-science-2026-10.md）**：
-  题型三种（`QuizKind`）：`word2zh` 看词选义 / `zh2word` 看义选词 / `def2word` 看释义选词（英英）；
+  题型三种（`ChoiceQuizKind`）：`word2zh` 看词选义 / `zh2word` 看义选词 / `def2word` 看释义选词（英英）；
+  提取练习（`ProductionQuestion.kind`）：`cloze` 例句挖空 / `spell` 隐藏词头拼写；统一题型枚举为 `QuizKind`；
   按 `quizStageOf` 自动挑题（学习期识别优先，Review 稳定后产出线索优先），缺数据沿顺序降级，全不可用回退翻卡；
   **隐藏词头题型（zh2word/def2word）作答前不显示词头、不出现朗读按钮、选择题一律改为「判定后朗读」**（防泄底）；
   **选择题答对最高记 Good，永不 Easy**；开启「稳 / 猜」确认（`choiceConfidence`）时，答对先确认再记分（猜 → Hard），
@@ -205,6 +206,23 @@
   对齐 T6 止损与 T5 顽固词方向）；
   **出题顺序**（`queueOrder`，默认「到期优先」/「随机乱序」）：`buildQueue` 内 Fisher–Yates 打散（rng 注入便于单测），
   每次开始会话打散一次，回炉插位与相似词避让照常生效；
+  **顽固词（T5）**：`StudyConfig.leechThreshold` 默认 8、可配置 2–20，半阈值向上取整后预告；`Entry.suspension={until,at}`
+  是条目主体字段，搁置/解除必须 bump `updatedAt` 并纳入 `entryMaterialHash`，双端并行改卡走既有冲突流；
+  队列只过滤 `until > now`，到期自动回归，**搁置绝不改 SRS / due / daily**；重置学习进度时清除搁置；
+  不自动静默搁置，UI 只提供搁置 7/30 天、改卡、二次确认后降级重学；
+  **掌握层次派生**：再认 / 回忆 / 产出只从本机 `review_log` 纯函数计算，同一词同一会话同一层只取首次有效评分、
+  每层最多最近 20 次，撤销补偿先排除；Hard/Good/Easy 计成功、Again 不计；不做 0–100 综合分，
+  不写 `EntryStatus` / SRS / 主 store / sync / backup；`cloze` 归回忆、`spell` 归产出，自由练习事件带 `practiceOnly`；
+  **新词短步骤**：Good 依次在 30 分钟、1 天、3 天后到期，再交 FSRS；FSRS 提前返回 Review 但仍有 learningSteps 时须保留 Learning，
+  Again 回炉与 Easy 直入复习不变，既有复习卡不得套用初始步骤；
+  **Cloze 准入**：只读词条已有例句或显式开启的 AI 补句，最多 12 词、目标恰好一次，支持明确保存的词形；
+  生成句仍须通过同一本地校验，AI 句缓存于独立本机 IDB，不进入同步与备份；
+  **拼写与 IME 硬规则**：隐藏词头题作答前不显示答案、不朗读，composition 期间禁止提交，输入框不触发全局评分热键；
+  首次提交定终身，精确 Good、一字符之差 Hard、其他 Again，精确且已有回忆成功证据才可升 Easy；提交后输入禁用，只保留反馈与继续；
+  **自由练习（cram）硬规则**：暂停 / 归档词库可进入，每词一次、不回炉；评分与撤销只写本机日志，
+  绝不改 SRS / due / daily / 同步状态，也不触发会话结束同步；
+  **规则档规划硬规则**：时间不足先减新词，积压不删除、不改 due，考试前两周进一步压缩新词；
+  弱词优先只重排当前复习队列且最多 20%，不增删、不直接改评分；学习批次限随机、主题 / 情景标签、来源、频率，新词 5–10 词。
 - **设置信息架构**：`/settings` 是分组索引页，具体内容一律放二级页
   （`/settings/study|appearance|sources|dictionaries|sync|data|about`，统一经 `SettingsShell` 带返回导航），
   新增设置项就近入册、不得堆回索引页；**学习首页只保留开始学习的基础项**（每日新词上限 / 学习模式 / 出题顺序 /

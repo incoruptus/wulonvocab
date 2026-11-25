@@ -29,6 +29,7 @@ export function LookupPanel({
   onApplied,
   initialTab,
   fillEntryIds,
+  initialWord,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -39,10 +40,12 @@ export function LookupPanel({
   initialTab?: "single" | "batch" | "fill";
   /** 补全范围（词条 id）；缺省时扫描全书的空缺释义词条 */
   fillEntryIds?: string[];
+  /** 从列表搜索框带入的待添加单词 */
+  initialWord?: string;
 }) {
   const sources = useAppStore((s) => s.lookupSources);
   const dictionaries = useAppStore((s) => s.dictionaries);
-  const [word, setWord] = useState("");
+  const [word, setWord] = useState(initialWord ?? "");
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [resultsBySource, setResultsBySource] = useState<Record<string, LookupResult>>({});
@@ -86,6 +89,13 @@ export function LookupPanel({
     }
     return out.slice(0, 10);
   }, [word, book.entries, dictionaries]);
+
+  // 写入目标始终按本次查询的词头精确匹配，不能把新词内容写进当前选中的另一个词条。
+  const singleTarget = useMemo(() => {
+    const w = (word.trim() || targetEntry?.headword || "").trim().toLowerCase();
+    if (!w) return null;
+    return book.entries.find((e) => e.headword.trim().toLowerCase() === w) ?? null;
+  }, [word, targetEntry?.headword, book.entries]);
 
   // 渐进渲染：按数据源占位，谁先返回谁先显示；命中缓存则瞬间全出
   /** 检索请求代次：新请求作废旧请求的异步回调（防串词/后到覆盖先到） */
@@ -179,6 +189,12 @@ export function LookupPanel({
 
   const createFromResult = (result: LookupResult) => {
     if (!result.draft) return;
+    const existing = book.entries.find((e) => e.headword.trim().toLowerCase() === result.word.trim().toLowerCase());
+    if (existing) {
+      toast.info(`「${result.word}」已在这个词库里`, { description: "已定位到原词条，可继续补全字段" });
+      onApplied(existing.id);
+      return;
+    }
     const { values } = draftToValues(result.draft.values, book.schema, {}, { keepExtras: false });
     const entry = makeEntry({
       headword: result.word,
@@ -187,7 +203,7 @@ export function LookupPanel({
       source: { kind: "lookup", label: result.sourceLabel, at: now() },
     });
     useAppStore.getState().appendEntries(book.id, [entry]);
-    toast.success(`已新建词条「${result.word}」`);
+    toast.success(`已添加并匹配「${result.word}」`);
     onApplied(entry.id);
   };
 
@@ -304,9 +320,9 @@ export function LookupPanel({
       <DialogHeader
         title="词典检索"
         desc={
-          targetEntry
-            ? `检索结果将填入当前词条「${targetEntry.headword || "（未命名）"}」，只补空缺、不覆盖已填内容`
-            : "输入单词，从词典数据源获取结构化词卡"
+          singleTarget
+            ? `已定位到词条「${singleTarget.headword}」；应用前可选择要写入的字段，已有内容需手动勾选覆盖`
+            : "输入单词获取结构化词卡；新词会直接建成词条，已有词会定位到原词条"
         }
       />
       <DialogBody className="space-y-4">
@@ -441,7 +457,7 @@ export function LookupPanel({
               <EmptyState
                 icon={<Search className="size-4" />}
                 title="等待检索"
-                desc="结果会按数据源分组展示；应用到词条时只填充空缺字段。30 天内的结果会留在本机，再查更快。"
+                desc="结果会按数据源分组展示；应用前可逐字段确认，已有内容不会默认覆盖。30 天内的结果会留在本机，再查更快。"
               />
             ) : null}
 
@@ -465,7 +481,8 @@ export function LookupPanel({
                     <ResultCard
                       key={src.id}
                       result={r}
-                      targetEntry={targetEntry}
+                      targetEntry={singleTarget}
+                      canCreate={!singleTarget}
                       onApply={(entry) => applyResult(r, entry)}
                       onCreate={() => createFromResult(r)}
                     />
@@ -666,11 +683,13 @@ function ResultPendingCard({ label }: { label: string }) {
 function ResultCard({
   result,
   targetEntry,
+  canCreate,
   onApply,
   onCreate,
 }: {
   result: LookupResult;
   targetEntry: Entry | null;
+  canCreate: boolean;
   onApply: (entry: Entry) => void;
   onCreate: () => void;
 }) {
@@ -754,15 +773,17 @@ function ResultCard({
             </div>
           ))}
 
-          <div className="flex items-center gap-2 pt-0.5">
+          <div className="flex flex-wrap items-center gap-2 pt-0.5">
             {targetEntry ? (
               <Button size="sm" onClick={() => onApply(targetEntry)}>
-                应用到「{targetEntry.headword || "当前词条"}」（只补空缺）
+                应用到「{targetEntry.headword}」
               </Button>
             ) : null}
-            <Button variant="secondary" size="sm" onClick={onCreate}>
-              新建词条
-            </Button>
+            {canCreate ? (
+              <Button variant={targetEntry ? "secondary" : "default"} size="sm" onClick={onCreate}>
+                添加并匹配
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : (

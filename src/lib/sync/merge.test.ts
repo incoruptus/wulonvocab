@@ -204,6 +204,57 @@ describe("mergeSync · LWW 与冲突", () => {
   });
 });
 
+describe("mergeSync · 顽固词搁置", () => {
+  const until = 8 * 86_400_000;
+  const suspension = { at: 100, until };
+
+  it("单侧搁置：取改方且不产生冲突", () => {
+    const baseBook = mkBook("b1", 100, [mkEntry("e1", 50)]);
+    const base = computeBaseHashes(mkState([baseBook]));
+    const local = mkState([{ ...baseBook, entries: [mkEntry("e1", 100, { suspension })] }]);
+    const remote = [baseBook];
+    const r = mergeSync(mkInput(local, remote, { base, lastSyncAt: 50 }));
+    expect(r.state.books[0].entries[0].suspension).toEqual(suspension);
+    expect(r.conflicts).toHaveLength(0);
+  });
+
+  it("单侧解除：删除 suspension，并保留较新的 SRS", () => {
+    const baseBook = mkBook("b1", 100, [mkEntry("e1", 50, { suspension })]);
+    const base = computeBaseHashes(mkState([baseBook]));
+    const srs = { due: 900, lastReview: 80, stability: 5, difficulty: 6, elapsedDays: 1, scheduledDays: 10, reps: 4, lapses: 8, state: 2, learningSteps: 0 };
+    const local = mkState([{ ...baseBook, entries: [mkEntry("e1", 100, { suspension: undefined, srs })] }]);
+    const r = mergeSync(mkInput(local, [baseBook], { base, lastSyncAt: 50 }));
+    expect(r.state.books[0].entries[0].suspension).toBeUndefined();
+    expect(r.state.books[0].entries[0].srs?.lastReview).toBe(80);
+    expect(r.conflicts).toHaveLength(0);
+  });
+
+  it("一端搁置、另一端改卡：材料哈希触发既有冲突流，可人工裁决", () => {
+    const baseBook = mkBook("b1", 100, [mkEntry("e1", 50)]);
+    const base = computeBaseHashes(mkState([baseBook]));
+    const local = mkState([{ ...baseBook, entries: [mkEntry("e1", 120, { suspension })] }]);
+    const remote = [{ ...baseBook, entries: [mkEntry("e1", 130, { values: { note: "远端改卡" } })] }];
+    const input = mkInput(local, remote, { base, lastSyncAt: 50 });
+    const r = mergeSync(input);
+    expect(r.conflicts.map((c) => c.entityKey)).toContain("entry:b1:e1");
+    expect(r.state.books[0].entries[0].suspension).toBeUndefined();
+    const flipped = mergeSync({ ...input, resolutions: { "entry:b1:e1": "local" } });
+    expect(flipped.state.books[0].entries[0].suspension).toEqual(suspension);
+    expect(flipped.conflicts[0]?.chosen).toBe("local");
+  });
+
+  it("搁置后继续评分只合并 SRS，不覆盖条目主体", () => {
+    const baseBook = mkBook("b1", 100, [mkEntry("e1", 100, { suspension })]);
+    const srs = { due: 900, lastReview: 150, stability: 5, difficulty: 6, elapsedDays: 1, scheduledDays: 10, reps: 5, lapses: 8, state: 2, learningSteps: 0 };
+    const local = mkState([{ ...baseBook, entries: [mkEntry("e1", 100, { suspension, srs })] }]);
+    const remote = [baseBook];
+    const r = mergeSync(mkInput(local, remote, { lastSyncAt: 100 }));
+    expect(r.state.books[0].entries[0].suspension).toEqual(suspension);
+    expect(r.state.books[0].entries[0].srs?.reps).toBe(5);
+    expect(r.conflicts).toHaveLength(0);
+  });
+});
+
 describe("mergeSync · SRS / 日志", () => {
   it("仅一端有复习记录 → 保留该端", () => {
     const srs = { due: 9, lastReview: 50, stability: 1, difficulty: 5, elapsedDays: 0, scheduledDays: 9, reps: 3, lapses: 0, state: 2, learningSteps: 0 };
@@ -382,5 +433,36 @@ describe("mergeSync · 导出预设（与数据源同规则）", () => {
     input2.remote.exportPresets = [mkPreset("p1", "旧的", 1)];
     const r2 = mergeSync(input2);
     expect(r2.state.exportPresets).toHaveLength(0);
+  });
+});
+
+describe("mergeSync · 词库学习状态", () => {
+  it("单侧暂停：取改方，无冲突", () => {
+    const base = mkBook("b1", 100);
+    const local = mkBook("b1", 200);
+    local.studyState = "paused";
+    const r = mergeSync(mkInput(mkState([local]), [base], { base: computeBaseHashes(mkState([base])), lastSyncAt: 100 }));
+    expect(r.state.books[0].studyState).toBe("paused");
+    expect(r.conflicts).toHaveLength(0);
+  });
+
+  it("单侧归档：随书主体传播", () => {
+    const base = mkBook("b1", 100);
+    const remote = mkBook("b1", 200);
+    remote.studyState = "archived";
+    const r = mergeSync(mkInput(mkState([base]), [remote], { base: computeBaseHashes(mkState([base])), lastSyncAt: 100 }));
+    expect(r.state.books[0].studyState).toBe("archived");
+    expect(r.conflicts).toHaveLength(0);
+  });
+
+  it("双改冲突：较新的书主体胜，并保留可翻转冲突", () => {
+    const base = mkBook("b1", 100);
+    const local = mkBook("b1", 200);
+    local.studyState = "paused";
+    const remote = mkBook("b1", 300);
+    remote.studyState = "archived";
+    const r = mergeSync(mkInput(mkState([local]), [remote], { base: computeBaseHashes(mkState([base])), lastSyncAt: 100 }));
+    expect(r.state.books[0].studyState).toBe("archived");
+    expect(r.conflicts.some((conflict) => conflict.kind === "bookMeta" && conflict.canFlip)).toBe(true);
   });
 });

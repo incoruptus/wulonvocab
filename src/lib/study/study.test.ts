@@ -31,19 +31,33 @@ describe("formatInterval", () => {
 });
 
 describe("applyGrade（FSRS 行为）", () => {
-  it("新卡 Good → 进入学习态，10 分钟后到期", () => {
+  it("新卡 Good → 进入学习态，30 分钟后到期", () => {
     const next = applyGrade(undefined, RATING_GOOD, 0.9, T0);
     expect(next.state).toBe(1); // Learning
-    expect(next.due - T0).toBeGreaterThanOrEqual(9 * 60 * 1000);
-    expect(next.due - T0).toBeLessThanOrEqual(11 * 60 * 1000);
+    expect(next.due - T0).toBe(30 * 60 * 1000);
     expect(next.reps).toBe(1);
   });
 
-  it("再次 Good → 毕业进入复习态（间隔 ≥ 1 天）", () => {
+  it("再次 Good → 1 天后到期，保留尚未完成的新词学习态", () => {
     const first = applyGrade(undefined, RATING_GOOD, 0.9, T0);
     const second = applyGrade(first, RATING_GOOD, 0.9, first.due);
-    expect(second.state).toBe(2); // Review
+    expect(second.state).toBe(1); // Learning，仍有短步骤
+    expect(second.due - first.due).toBe(86400000);
     expect(second.scheduledDays).toBeGreaterThanOrEqual(1);
+  });
+
+  it("新词短步骤依次为 30 分钟、1 天、3 天，之后交 FSRS", () => {
+    const first = applyGrade(undefined, RATING_GOOD, 0.9, T0);
+    const second = applyGrade(first, RATING_GOOD, 0.9, first.due);
+    const third = applyGrade(second, RATING_GOOD, 0.9, second.due);
+    const fourth = applyGrade(third, RATING_GOOD, 0.9, third.due);
+    expect(first.due - T0).toBe(30 * 60 * 1000);
+    expect(second.due - first.due).toBe(86400000);
+    expect(third.state).toBe(1);
+    expect(third.due - second.due).toBe(3 * 86400000);
+    expect(fourth.state).toBe(2);
+    expect(fourth.due - third.due).toBeGreaterThan(3 * 86400000);
+    expect(fourth.learningSteps).toBe(0);
   });
 
   it("Easy 直接给出长间隔且状态为复习", () => {
@@ -89,8 +103,10 @@ describe("isDue / isMastered / shouldRequeueInSession", () => {
     expect(shouldRequeueInSession(learning, 2)).toBe(false);
     expect(shouldRequeueInSession(learning, RATING_GOOD)).toBe(false);
     // 复习态忘记 → 进入重学（Relearning）→ 同样回炉（用真实状态链构造，避免伪造卡片的自洽性问题）
-    const learned = applyGrade(undefined, RATING_GOOD, 0.9, T0);
-    const review = applyGrade(learned, RATING_GOOD, 0.9, learned.due);
+    const first = applyGrade(undefined, RATING_GOOD, 0.9, T0);
+    const second = applyGrade(first, RATING_GOOD, 0.9, first.due);
+    const third = applyGrade(second, RATING_GOOD, 0.9, second.due);
+    const review = applyGrade(third, RATING_GOOD, 0.9, third.due);
     expect(review.state).toBe(2); // Review
     const relearn = applyGrade(review, RATING_AGAIN, 0.9, review.due);
     expect(relearn.state).toBe(3); // Relearning

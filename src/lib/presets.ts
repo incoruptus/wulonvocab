@@ -242,6 +242,7 @@ export function makeEntry(partial: Partial<Entry> & { headword: string }): Entry
     updatedAt: partial.updatedAt ?? now,
     source: partial.source,
     srs: partial.srs,
+    suspension: partial.suspension,
   };
 }
 

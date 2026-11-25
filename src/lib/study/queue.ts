@@ -1,18 +1,30 @@
-import type { Entry, Wordbook } from "../types";
-import { isDue, isMastered, isNewSrs } from "./engine";
+import type { BookStudyState, Entry, Wordbook } from "../types";
+import { isDue, isMastered, isNewSrs, retrievabilityOf } from "./engine";
 import { bigramJaccard, editDistance, firstTranslation } from "./quiz";
-import { DEFAULT_STUDY_CONFIG, emptyDailyLog, ymd, type BookStudy, type StudyConfig, type StudyDailyLog } from "./types";
+import { sortEntries, type SortDim } from "./sort";
+import { isEntrySuspended, clampLeechThreshold } from "./leech";
+import { DEFAULT_STUDY_CONFIG, emptyDailyLog, ymd, type BookStudy, type NewWordOrder, type StudyConfig, type StudyDailyLog } from "./types";
+import { computeStudyPlan, prioritizeWeakReviews } from "./planning";
 /** 取（或补默认）学习配置视图，不写库 */
 export function studyOf(book: Wordbook): BookStudy {
   return book.study ?? { config: { ...DEFAULT_STUDY_CONFIG }, daily: {} };
 }
 
 export function studyConfigOf(book: Wordbook): StudyConfig {
-  return { ...DEFAULT_STUDY_CONFIG, ...(book.study?.config ?? {}) };
+  const cfg = { ...DEFAULT_STUDY_CONFIG, ...(book.study?.config ?? {}) };
+  return {
+    ...cfg,
+    leechThreshold: clampLeechThreshold(cfg.leechThreshold),
+    newPerDay: Number.isFinite(cfg.newPerDay) ? Math.max(0, Math.round(cfg.newPerDay)) : DEFAULT_STUDY_CONFIG.newPerDay,
+    reviewPerDay: Number.isFinite(cfg.reviewPerDay) ? Math.max(0, Math.round(cfg.reviewPerDay)) : DEFAULT_STUDY_CONFIG.reviewPerDay,
+    dailyMinutes: Number.isFinite(cfg.dailyMinutes) ? Math.min(180, Math.max(5, Math.round(cfg.dailyMinutes))) : DEFAULT_STUDY_CONFIG.dailyMinutes,
+    weakCapPct: 20,
+    choiceTypes: cfg.choiceTypes.filter((kind) => kind === "word2zh" || kind === "zh2word" || kind === "def2word"),
+  };
 }
 
-export function dailyLogOf(book: Wordbook, now = Date.now()): StudyDailyLog {
-  return book.study?.daily[ymd(now)] ?? emptyDailyLog();
+export function dailyLogOf(book: Wordbook, now = Date.now(), boundaryHour = 4): StudyDailyLog {
+  return book.study?.daily[ymd(now, boundaryHour)] ?? emptyDailyLog();
 }
 
 export interface StudyOverview {
@@ -39,6 +51,7 @@ export function studyOverview(book: Wordbook, now = Date.now()): StudyOverview {
     if (isNewSrs(e.srs)) continue;
     if (isMastered(e.srs)) mastered += 1;
     else learning += 1;
+    if (isEntrySuspended(e, now)) continue;
     if (isDue(e.srs, now)) due += 1;
     else if (e.srs && (nextDue === undefined || e.srs.due < nextDue)) nextDue = e.srs.due;
   }
@@ -53,33 +66,74 @@ export function studyOverview(book: Wordbook, now = Date.now()): StudyOverview {
 
 export type StudyMode = "mixed" | "review" | "new";
 
+export function studyStateOf(book: Wordbook): BookStudyState {
+  return book.studyState ?? "active";
+}
+
+export function newOrderSort(order: NewWordOrder): { dim: SortDim; dir: "asc" | "desc" } {
+  switch (order) {
+    case "listDesc":
+      return { dim: "list", dir: "desc" };
+    case "az":
+      return { dim: "az", dir: "asc" };
+    case "azDesc":
+      return { dim: "az", dir: "desc" };
+    case "shuffle":
+      return { dim: "shuffle", dir: "asc" };
+    default:
+      return { dim: "list", dir: "asc" };
+  }
+}
+
 export interface QueueItem {
   entryId: string;
   isNew: boolean;
+  /** 本次队列仍按初学三步流程处理；首次评分后保留，回炉与撤销不丢失 */
+  newWord?: boolean;
 }
 
 export function buildQueue(
   book: Wordbook,
   mode: StudyMode,
   now = Date.now(),
-  opts: { allowSimilar?: boolean; order?: StudyConfig["queueOrder"]; rng?: () => number } = {},
+  opts: {
+    allowSimilar?: boolean;
+    order?: StudyConfig["queueOrder"];
+    rng?: () => number;
+    weakEvidence?: ReadonlyMap<string, { recentAgain?: boolean; slowSuccess?: boolean; lastRating?: number }>;
+  } = {},
 ): QueueItem[] {
+  if (studyStateOf(book) !== "active") return [];
   const cfg = studyConfigOf(book);
+  const plan = computeStudyPlan(book, now);
   const daily = dailyLogOf(book, now);
   const items: QueueItem[] = [];
 
   if (mode !== "new") {
-    const reviewRemaining = Math.max(0, cfg.reviewPerDay - daily.reviewed);
-    const dueEntries = book.entries
-      .filter((e) => isDue(e.srs, now))
-      .sort((a, b) => (a.srs!.due ?? 0) - (b.srs!.due ?? 0))
+    const reviewRemaining = Math.min(Math.max(0, cfg.reviewPerDay - daily.reviewed), plan.reviews);
+    const dueCandidates = book.entries.filter((e) => !isEntrySuspended(e, now) && isDue(e.srs, now));
+    const retrievability = cfg.reviewOrder === "retrievability"
+      ? new Map(dueCandidates.map((entry) => [entry.id, retrievabilityOf(entry.srs, now, cfg.retention)]))
+      : null;
+    const dueEntries = dueCandidates
+      .sort((a, b) => {
+        if (retrievability) {
+          const byR = (retrievability.get(a.id) ?? 1) - (retrievability.get(b.id) ?? 1);
+          if (byR !== 0) return byR;
+        }
+        return (a.srs!.due ?? 0) - (b.srs!.due ?? 0);
+      })
       .slice(0, reviewRemaining);
-    for (const e of dueEntries) items.push({ entryId: e.id, isNew: false });
+    const reviewItems = dueEntries.map((entry) => ({ entryId: entry.id, isNew: false }));
+    items.push(...(cfg.weakPriority
+      ? prioritizeWeakReviews(reviewItems, book.entries, opts.weakEvidence ?? new Map(), now, cfg.retention, cfg.weakCapPct)
+      : reviewItems));
   }
   if (mode !== "review") {
-    const remaining = Math.max(0, cfg.newPerDay - daily.added);
-    const newEntries = book.entries.filter((e) => isNewSrs(e.srs)).slice(0, remaining);
-    for (const e of newEntries) items.push({ entryId: e.id, isNew: true });
+    const remaining = Math.min(Math.max(0, cfg.newPerDay - daily.added), plan.newWords);
+    const { dim, dir } = newOrderSort(cfg.newOrder);
+    const newEntries = sortEntries(book.entries.filter((e) => !isEntrySuspended(e, now) && isNewSrs(e.srs)), dim, dir, { now, rng: opts.rng }).slice(0, remaining);
+    for (const e of newEntries) items.push({ entryId: e.id, isNew: true, newWord: true });
   }
   const order = opts.order ?? cfg.queueOrder;
   if (order === "shuffle") return avoidSimilarIfNeeded(book.entries, shuffleItems(items, opts.rng), cfg, opts);

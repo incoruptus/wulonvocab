@@ -8,6 +8,8 @@ import { paginate, type MeasuredBlock, type PaginationResult } from "@/lib/expor
 import { EntryHeaderBlock, fontStackFor, NotebookBandBlock, SectionBlock, type CardCtx } from "@/components/export/blocks";
 import { effectiveColumns, normalizeExportSettings, themeCssVars, themeRootClass } from "@/lib/export/themes";
 import { useDebouncedValue } from "@/lib/useDebounced";
+import { loadBookViewState, type ViewPrefs } from "@/lib/viewPrefs";
+import { sortEntries } from "@/lib/study/sort";
 
 const SPLITTABLE_TYPES: SectionType[] = ["senses", "examples", "keyvalue", "transforms", "image", "list", "tags", "table"];
 
@@ -89,6 +91,16 @@ export interface ExportProgress {
 export function useExportDocument(book: Wordbook, rawSettings: ExportSettings): ExportDocument {
   // 迁移与补齐（旧 cardStyle / grid.gapMm）在入口统一处理，测量与渲染共享同一份设置
   const settings = useMemo(() => normalizeExportSettings(rawSettings), [rawSettings]);
+  const [viewPrefs, setViewPrefs] = useState<ViewPrefs | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void loadBookViewState(book.id).then((state) => {
+      if (alive) setViewPrefs(state.prefs);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [book.id]);
   const elsRef = useRef(new Map<string, HTMLElement>());
   const [heights, setHeights] = useState<Map<string, number>>(new Map());
   const register = useCallback(
@@ -132,12 +144,14 @@ export function useExportDocument(book: Wordbook, rawSettings: ExportSettings): 
   }, [box, settings.orientation, settings.margin, columns, settings.columnGap, settings.fontScale]);
 
   const entries = useMemo(() => {
-    const list = [...book.entries];
     if (settings.sortMode === "az") {
-      list.sort((a, b) => a.headword.toLowerCase().localeCompare(b.headword.toLowerCase()));
+      return sortEntries(book.entries, "az", "asc");
     }
-    return list;
-  }, [book.entries, settings.sortMode]);
+    if (settings.sortMode === "view" && viewPrefs) {
+      return sortEntries(book.entries, viewPrefs.sort, viewPrefs.dir, { seed: viewPrefs.shuffleSeed });
+    }
+    return [...book.entries];
+  }, [book.entries, settings.sortMode, viewPrefs]);
 
   const sections = useMemo(() => visibleSections(book.schema, settings), [book.schema, settings]);
 

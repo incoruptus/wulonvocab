@@ -15,7 +15,7 @@ import { assetPath } from "@/lib/paths";
 import { requestSyncSoon } from "@/lib/sync/auto";
 import { cx, uid } from "@/lib/utils";
 
-type Target = "new" | "append" | "replace";
+type Target = "new" | "append" | "fill" | "replace";
 
 export function ImportDialog({
   open,
@@ -42,6 +42,7 @@ export function ImportDialog({
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [target, setTarget] = useState<Target>(targetBook ? "append" : "new");
+  const [replaceArmed, setReplaceArmed] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
@@ -51,6 +52,7 @@ export function ImportDialog({
     setError(null);
     setName("");
     setTarget(targetBook ? "append" : "new");
+    setReplaceArmed(false);
     lastSeedRef.current = null;
   };
 
@@ -99,6 +101,10 @@ export function ImportDialog({
 
   const doImport = () => {
     if (!parsed) return;
+    if (target === "replace" && !replaceArmed) {
+      setReplaceArmed(true);
+      return;
+    }
     const result = buildImportResult(parsed, {
       name: name.trim() || undefined,
       baseBook: target !== "new" && targetBook ? targetBook : undefined,
@@ -119,6 +125,7 @@ export function ImportDialog({
         entries: result.entries,
         exportSettings: defaultExportSettings(result.name),
         meta: result.meta,
+        studyState: result.studyState,
       };
       replaceBook(book);
       toast.success(`已导入 ${result.entries.length} 个词条`, {
@@ -127,11 +134,15 @@ export function ImportDialog({
       onImported(book.id);
     } else if (target === "append") {
       appendEntries(targetBook.id, result.entries);
-      toast.success(`已追加 ${result.entries.length} 个词条`, { description: "重复单词已自动合并" });
+      toast.success(`已追加 ${result.entries.length} 个词条`, { description: "重复单词已合并，学习进度保留" });
+      onImported(targetBook.id);
+    } else if (target === "fill") {
+      appendEntries(targetBook.id, result.entries, "fill");
+      toast.success(`已补充 ${result.entries.length} 个词条`, { description: "只补空缺内容，学习进度保留" });
       onImported(targetBook.id);
     } else {
-      replaceEntries(targetBook.id, result.entries);
-      toast.success(`已替换为 ${result.entries.length} 个词条`);
+      replaceEntries(targetBook.id, result.entries, true);
+      toast.success(`已替换为 ${result.entries.length} 个词条`, { description: "当前词库的学习记录已重置" });
       onImported(targetBook.id);
     }
     onOpenChange(false);
@@ -149,8 +160,8 @@ export function ImportDialog({
       widthClass="max-w-2xl"
     >
       <DialogHeader
-        title="导入 JSON / CSV"
-        desc="WulonVocab 文档、词条数组、词典对象、CSV / NDJSON 都能进；结构自动识别，先导进来再说。"
+        title="文件导入"
+        desc="WulonVocab 文档、词条数组、词典对象、CSV / NDJSON 都能进；先预览，再选择新建、合并、补缺或替换。"
       />
       <DialogBody className="space-y-4">
         {!parsed ? (
@@ -286,8 +297,9 @@ export function ImportDialog({
                     { value: "new", label: "新建词库", desc: "创建一个新词库" },
                     ...(targetBook
                       ? ([
-                          { value: "append", label: `追加到「${targetBook.name}」`, desc: "合并重复单词" },
-                          { value: "replace", label: "替换当前词库词条", desc: "清空后写入" },
+                          { value: "append", label: `合并到「${targetBook.name}」`, desc: "重复单词合并，保留学习进度" },
+                          { value: "fill", label: "只补空缺内容", desc: "不覆盖已有内容，保留学习进度" },
+                          { value: "replace", label: "替换并重置学习", desc: "清空后写入，学习记录归零" },
                         ] as const)
                       : []),
                   ] as { value: Target; label: string; desc: string }[]
@@ -295,7 +307,10 @@ export function ImportDialog({
                   <button
                     key={opt.value}
                     type="button"
-                    onClick={() => setTarget(opt.value)}
+                    onClick={() => {
+                      setTarget(opt.value);
+                      setReplaceArmed(false);
+                    }}
                     className={cx(
                       "rounded-lg px-3 py-2 text-left transition-colors",
                       target === opt.value ? "bg-blue-100 shadow-geist-border" : "bg-background-200 hover:bg-gray-100",
@@ -306,6 +321,13 @@ export function ImportDialog({
                   </button>
                 ))}
               </div>
+              {target === "replace" ? (
+                <p className={cx("rounded-lg p-2.5 text-[12px]", replaceArmed ? "bg-red-700/10 text-red-900" : "bg-amber-700/10 text-amber-900")}>
+                  {replaceArmed
+                    ? "请再点一次底部按钮确认。当前词库的全部学习记录会重置，导入文件自带的学习记录也不会保留。"
+                    : "替换会清空当前词库的学习记录。若只想补内容，请选「只补空缺内容」。"}
+                </p>
+              ) : null}
               {target === "new" ? (
                 <div className="space-y-1.5">
                   <div className="t-label-13 font-medium text-gray-900">词库名称</div>
@@ -335,8 +357,8 @@ export function ImportDialog({
         <Button variant="secondary" onClick={() => onOpenChange(false)}>
           取消
         </Button>
-        <Button onClick={doImport} disabled={!parsed} loading={false}>
-          开始导入
+        <Button onClick={doImport} disabled={!parsed} loading={false} variant={target === "replace" && replaceArmed ? "error" : "default"}>
+          {target === "replace" ? (replaceArmed ? "确认替换并重置" : "选择替换并重置") : "开始导入"}
         </Button>
       </DialogFooter>
     </Dialog>

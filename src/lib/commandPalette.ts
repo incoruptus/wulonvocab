@@ -74,6 +74,22 @@ export function buildCommands(input: {
     { id: "act-new-book", group: "动作", label: "新建词库", keywords: "xinjian ciku new", run: { kind: "navigate", href: "/books?new=1" } },
     lastBook
       ? {
+          id: "act-add-match",
+          group: "动作",
+          label: `添加并匹配「${lastBook.name}」`,
+          hint: "上次的词库",
+          keywords: "tianjia pipei add match chaci jiansuo",
+          run: { kind: "navigate" as const, href: `/book?id=${lastBook.id}&add=1` },
+        }
+      : {
+          id: "act-add-match",
+          group: "动作",
+          label: "添加并匹配（先建一个词库）",
+          keywords: "tianjia pipei add match chaci jiansuo",
+          run: { kind: "navigate" as const, href: "/books?new=1" },
+        },
+    lastBook
+      ? {
           id: "act-start-study",
           group: "动作",
           label: `开始学习「${lastBook.name}」`,

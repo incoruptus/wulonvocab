@@ -43,7 +43,7 @@ function bookHashes(book: Wordbook): BaseHashes["books"][string] {
   return {
     schemaHash: quickHash(book.schema),
     exportSettingsHash: quickHash(book.exportSettings),
-    metaHash: quickHash({ name: book.name, description: book.description ?? "", tags: book.tags, meta: book.meta ?? null }),
+    metaHash: quickHash({ name: book.name, description: book.description ?? "", tags: book.tags, meta: book.meta ?? null, studyState: book.studyState ?? "active" }),
     studyConfigHash: quickHash(book.study?.config ?? null),
   };
 }
@@ -91,6 +91,7 @@ function entryMaterialHash(e: Entry): string {
     tags: e.tags,
     starred: Boolean(e.starred),
     values: e.values,
+    suspension: e.suspension ?? null,
   });
 }
 
@@ -337,6 +338,7 @@ export function mergeSync(input: MergeInput): MergeResult {
       description: metaSide === "local" ? lb.description : rb.description,
       tags: metaSide === "local" ? lb.tags : rb.tags,
       meta: metaSide === "local" ? lb.meta : rb.meta,
+      studyState: metaSide === "local" ? lb.studyState : rb.studyState,
       updatedAt: Math.max(lb.updatedAt, rb.updatedAt),
       schema: schemaSide === "local" ? lb.schema : rb.schema,
       exportSettings: exportSide === "local" ? lb.exportSettings : rb.exportSettings,

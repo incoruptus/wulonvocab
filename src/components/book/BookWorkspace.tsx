@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   Brain,
-  ChevronLeft, Download, FileDown, Layers, MoreHorizontal, PanelRight, Pencil, Search, Sparkles, Trash2, Upload, Wand2,
+  ChevronLeft, Download, FileDown, Layers, MoreHorizontal, PanelRight, Pencil, Plus, Search, Sparkles, Trash2, Upload, Wand2,
 } from "lucide-react";
 import type { Entry, Wordbook } from "@/lib/types";
 import { serializeBookDoc } from "@/lib/serializers";
@@ -31,12 +31,16 @@ export function BookWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const id = searchParams.get("id") ?? "";
+  const addRequested = searchParams.get("add") === "1";
   const hydrated = useAppStore((s) => s.hydrated);
   const book = useAppStore((s) => s.books.find((b) => b.id === id));
   const [tab, setTab] = useState<"entries" | "fields">("entries");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [lookupOpen, setLookupOpen] = useState(false);
-  const [lookupIntent, setLookupIntent] = useState<{ tab: "single" | "batch" | "fill"; ids?: string[] }>({ tab: "single" });
+  const [lookupOpen, setLookupOpen] = useState(addRequested);
+  const [lookupIntent, setLookupIntent] = useState<{ tab: "single" | "batch" | "fill"; ids?: string[]; initialWord?: string; addNew?: boolean }>(
+    addRequested ? { tab: "single", addNew: true, initialWord: "" } : { tab: "single" },
+  );
+  const [lookupSession, setLookupSession] = useState(0);
   const [agentOpen, setAgentOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -68,8 +72,28 @@ export function BookWorkspace() {
   /** 打开检索面板（可带页签与补全范围意图；批量栏用 fill 页签 + 选中集） */
   const openLookup = (intent?: { tab?: "single" | "batch" | "fill"; ids?: string[] }) => {
     setLookupIntent({ tab: intent?.tab ?? "single", ids: intent?.ids });
+    setLookupSession((v) => v + 1);
     setLookupOpen(true);
   };
+
+  /** 添加新词：不使用当前选中词条作为写入目标。 */
+  const openAddLookup = (word = "") => {
+    setLookupIntent({ tab: "single", addNew: true, initialWord: word });
+    setLookupSession((v) => v + 1);
+    setLookupOpen(true);
+  };
+
+  useEffect(() => {
+    if (!hydrated || !book || !addRequested) return;
+    // query 驱动的深链在 rAF 中打开，兼顾静态导出与同路由命令面板跳转。
+    const raf = requestAnimationFrame(() => {
+      setLookupIntent({ tab: "single", addNew: true, initialWord: "" });
+      setLookupSession((v) => v + 1);
+      setLookupOpen(true);
+      router.replace(`/book?id=${book.id}`);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [hydrated, book, addRequested, router]);
 
   const exitSelect = () => {
     setSelecting(false);
@@ -249,11 +273,11 @@ export function BookWorkspace() {
               </Button>
             </Link>
             <div className="hidden items-center gap-1.5 sm:flex">
-              <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
-                <Upload className="size-3.5" /> 导入
+              <Button size="sm" onClick={() => openAddLookup()}>
+                <Plus className="size-3.5" /> 添加并匹配
               </Button>
-              <Button variant="secondary" size="sm" onClick={() => openLookup()}>
-                <Search className="size-3.5" /> 检索
+              <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
+                <Upload className="size-3.5" /> 导入到当前词库
               </Button>
               <IconButton label="AI 词库管家" onClick={() => setAgentOpen(true)}>
                 <Sparkles className="size-4" />
@@ -266,11 +290,14 @@ export function BookWorkspace() {
                 </IconButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => openAddLookup()}>
+                  <Plus className="size-3.5" /> 添加并匹配
+                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setImportOpen(true)}>
-                  <Upload className="size-3.5" /> 导入
+                  <Upload className="size-3.5" /> 导入到当前词库
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => openLookup()}>
-                  <Search className="size-3.5" /> 词典检索
+                  <Search className="size-3.5" /> 补全当前词条
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setAgentOpen(true)}>
                   <Sparkles className="size-3.5" /> AI 词库管家
@@ -368,6 +395,7 @@ export function BookWorkspace() {
             )}
           >
             <EntryList
+              key={book.id}
               book={book}
               selectedId={selectedId}
               onSelect={(id) => {
@@ -387,6 +415,7 @@ export function BookWorkspace() {
               onRequestBatchMerge={requestBatchMerge}
               onRequestExportSelected={exportSelected}
               onRequestBatchLookup={() => openLookup({ tab: "fill", ids: [...selection] })}
+              onAddLookup={openAddLookup}
               onQuickDelete={quickDelete}
               onStar={(entry) => useAppStore.getState().toggleStar(book.id, entry.id)}
             />
@@ -408,10 +437,14 @@ export function BookWorkspace() {
               <EmptyState
                 icon={<Wand2 className="size-4" />}
                 title={book.entries.length ? "从左边挑一个词，开始写" : "先写你的第一个词"}
-                desc="点开左侧词条就能编辑；「词典检索」拉来音标与释义，「导入」整批写入。右侧实时预览它在纸上的样子。"
+                desc="用「添加并匹配」查词典并直接入库，也可以手动新建；整批词表从「导入」写入。"
                 action={
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button size="sm" onClick={() => openAddLookup()}>
+                      <Search className="size-3.5" /> 添加并匹配
+                    </Button>
                     <Button
+                      variant="secondary"
                       size="sm"
                       onClick={() => {
                         const e = useAppStore.getState().addEntry(book.id, { headword: "" });
@@ -421,10 +454,7 @@ export function BookWorkspace() {
                         }
                       }}
                     >
-                      新建词条
-                    </Button>
-                    <Button variant="secondary" size="sm" onClick={() => openLookup()}>
-                      <Search className="size-3.5" /> 词典检索
+                      <Plus className="size-3.5" /> 手动新建
                     </Button>
                   </div>
                 }
@@ -441,11 +471,17 @@ export function BookWorkspace() {
       )}
 
       <LookupPanel
+        key={lookupSession}
         open={lookupOpen}
         onOpenChange={setLookupOpen}
         book={book}
-        targetEntry={selected}
-        onApplied={(eid) => setSelectedId(eid)}
+        targetEntry={lookupIntent.addNew ? null : selected}
+        initialWord={lookupIntent.initialWord}
+        onApplied={(eid) => {
+          setSelectedId(eid);
+          setMobilePane("editor");
+          setLookupOpen(false);
+        }}
         initialTab={lookupIntent.tab}
         fillEntryIds={lookupIntent.ids}
       />

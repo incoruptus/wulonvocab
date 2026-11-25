@@ -228,12 +228,22 @@ export type SectionValue =
 // ============================================================
 
 export type EntryStatus = "new" | "learning" | "mastered";
+/** 词库学习状态：缺省视为 active；暂停/归档仍保留内容与历史。 */
+export type BookStudyState = "active" | "paused" | "archived";
 
 export type EntrySourceKind = "manual" | "import" | "lookup" | "ai";
 
 export interface EntrySource {
   kind: EntrySourceKind;
   label?: string;
+  at: number;
+}
+
+/** 顽固词暂时搁置：到期后自动回到原学习队列，不改 SRS。 */
+export interface EntrySuspension {
+  /** 恢复学习的 epoch ms */
+  until: number;
+  /** 本次搁置的操作时间，随条目主体同步 */
   at: number;
 }
 
@@ -251,6 +261,8 @@ export interface Entry {
   source?: EntrySource;
   /** 学习调度状态（SRS，见 lib/study） */
   srs?: import("./study/types").StudySrs;
+  /** 顽固词搁置；缺省或 until <= now 时不暂停出题 */
+  suspension?: EntrySuspension;
 }
 
 // ============================================================
@@ -274,6 +286,8 @@ export interface Wordbook {
   entries: Entry[];
   exportSettings: ExportSettings;
   meta?: WordbookMetaInfo;
+  /** 学习状态：active 正常学习；paused 暂停但到期时钟继续；archived 归档、仍可浏览 */
+  studyState?: BookStudyState;
   /** 学习（SRS）配置与每日记录 */
   study?: import("./study/types").BookStudy;
 }
@@ -345,8 +359,8 @@ export interface ExportSettings {
   hideEmpty: boolean;
   /** 导出字段小标题 */
   showSectionLabels: boolean;
-  /** 词条排序：list=当前列表顺序，az=字母序 */
-  sortMode: "list" | "az";
+  /** 词条排序：list=词库顺序，az=字母序，view=跟随列表视图 */
+  sortMode: "list" | "az" | "view";
   headwordCase: "as-is" | "lower" | "upper" | "title";
   cover: CoverSettings;
   index: IndexSettings;
@@ -376,6 +390,12 @@ export interface AppSettings {
   choiceKeys?: string[];
   /** 关闭学习会话后的去向（默认词库页） */
   studyExit?: "book" | "learn" | "back";
+  /** 每日有效提取目标档位：下限 / 目标 / 挑战 */
+  goalTier?: "light" | "target" | "challenge";
+  /** 是否显示连续学习天数；默认开 */
+  streakEnabled?: boolean;
+  /** 学习日界点（0–6 点）；默认凌晨 4 点 */
+  dayBoundaryHour?: number;
   /** 最近一次本地修改时间（同步冲突按「较新变更胜」；0 / 缺省 = 从未改过） */
   updatedAt?: number;
 }

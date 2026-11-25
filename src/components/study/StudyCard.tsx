@@ -17,6 +17,7 @@ export function StudyCard({
   onReveal,
   starred,
   onToggleStar,
+  revealable = true,
 }: {
   book: Wordbook;
   entry: Entry;
@@ -24,6 +25,8 @@ export function StudyCard({
   onReveal: () => void;
   starred: boolean;
   onToggleStar: () => void;
+  /** 新词回忆阶段先自评，不在评分前揭晓答案 */
+  revealable?: boolean;
 }) {
   const isDark = useResolvedTheme() === "dark";
   const s = book.exportSettings;
@@ -58,7 +61,7 @@ export function StudyCard({
       )}
       style={{ ...accentCssVar(ctx), fontSize: "12pt", lineHeight: 1.65, ...themeStyle }}
       onClick={() => {
-        if (!revealed) onReveal();
+        if (!revealed && revealable) onReveal();
       }}
     >
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
@@ -107,11 +110,11 @@ export function StudyCard({
             <div className="text-[0.85em] opacity-50">这个词条还没有填写任何字段内容。</div>
           ) : null}
         </div>
-      ) : (
+      ) : revealable ? (
         <div className="mt-[1.6em] text-center text-[0.78em] opacity-40">
           轻点卡片显示释义 <span className="wv-kbd-hint hidden sm:inline">（空格）</span>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

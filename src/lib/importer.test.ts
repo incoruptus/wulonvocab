@@ -6,6 +6,7 @@ import {
   ecDictRowToValues,
   isEcDictRow,
   mergeDuplicateEntries,
+  mergeEntriesFillingGaps,
   mergeEntryBodies,
   parseImportCsv,
   parseImportJson,
@@ -65,6 +66,33 @@ describe("mergeEntryBodies（批量合并内核）", () => {
     const senses = merged.values.senses as Array<{ translation?: string }>;
     expect(senses.map((s) => s.translation)).toEqual(["甲", "乙"]);
   });
+  it("相同内容重复合并保持原对象与 updatedAt（导入幂等）", () => {
+    const target = makeEntry({ headword: "same", tags: ["a"], values: { summary: "甲" }, updatedAt: 200 });
+    target.srs = { ...makeEntry({ headword: "x" }).srs, reps: 3 } as typeof target.srs;
+    const incoming = makeEntry({ headword: "same", tags: ["a"], values: { summary: "甲" }, updatedAt: 500 });
+    expect(mergeEntryBodies(target, incoming, 999)).toBe(target);
+  });
+
+  it("补缺只填空字段，不覆盖已有释义与 srs", () => {
+    const target = makeEntry({
+      headword: "gap",
+      tags: ["a"],
+      values: { senses: [{ translation: "甲" }], phonetic: {} },
+      updatedAt: 200,
+    });
+    target.srs = { ...makeEntry({ headword: "x" }).srs, reps: 4 } as typeof target.srs;
+    const incoming = makeEntry({
+      headword: "gap",
+      tags: ["b"],
+      values: { senses: [{ translation: "乙" }], phonetic: { uk: "/ɡæp/" } },
+    });
+    const [merged] = mergeEntriesFillingGaps([target], [incoming], 999);
+    expect((merged.values.senses as { translation?: string }[])[0]?.translation).toBe("甲");
+    expect(merged.values.phonetic).toEqual({ uk: "/ɡæp/" });
+    expect(merged.tags).toEqual(["a", "b"]);
+    expect(merged.srs?.reps).toBe(4);
+    expect(merged.updatedAt).toBe(999);
+  });
 });
 
 describe("classifyJson", () => {
@@ -73,7 +101,7 @@ describe("classifyJson", () => {
       JSON.stringify({
         format: "wulonvocab",
         version: 1,
-        wordbook: { name: "测试" },
+        wordbook: { name: "测试", studyState: "paused" },
         schema: { sections: [{ key: "phonetic", label: "音标", type: "pronunciation" }] },
         entries: [{ headword: "abandon", values: { phonetic: { uk: "/x/" } } }],
       }),
@@ -81,6 +109,7 @@ describe("classifyJson", () => {
     expect(parsed.kind).toBe("wulonvocab");
     expect(parsed.schema?.sections[0].key).toBe("phonetic");
     expect(parsed.wordbookMeta?.name).toBe("测试");
+    expect(parsed.studyState).toBe("paused");
   });
 
   it("识别纯数组与映射对象", () => {

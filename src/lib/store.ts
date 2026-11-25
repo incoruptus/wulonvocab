@@ -3,6 +3,7 @@ import { persist, createJSONStorage, type StateStorage } from "zustand/middlewar
 import { del as idbDel, get as idbGet, set as idbSet } from "idb-keyval";
 import type {
   AppSettings,
+  BookStudyState,
   Entry,
   EntryStatus,
   ExportPreset,
@@ -18,16 +19,18 @@ import { normalizeExportSettings } from "./export/themes";
 import type { MakeSectionInput } from "./sections";
 import { makeSection, sortSections, uniqueKey } from "./sections";
 import { createEmptyBook, createSampleBook as buildSampleBook, defaultExportSettings, getPreset } from "./presets";
-import { mergeDuplicateEntries, mergeEntryBodies } from "./importer";
-import { applyGrade, deriveStatusFromSrs, isNewSrs, type GradeValue } from "./study/engine";
+import { mergeDuplicateEntries, mergeEntriesFillingGaps, mergeEntryBodies } from "./importer";
+import { applyGrade, deriveStatusFromSrs, isNewSrs, newSrs, type GradeValue } from "./study/engine";
 import { studyConfigOf } from "./study/queue";
-import { emptyDailyLog, pruneDaily, ymd, type StudyConfig, type StudySrs } from "./study/types";
+import { clampBoundaryHour, emptyDailyLog, pruneDaily, ymd, type StudyConfig, type StudySrs } from "./study/types";
 import { clearTombstonesFor, recordTombstones } from "./sync/meta";
 import { requestSyncNow, requestSyncSoon } from "./sync/auto";
 import { hasSyncedSettingChange, pickLocalSettings } from "./sync/types";
 import type { SyncState, SyncTombstone } from "./sync/types";
 import { historyOf, withHistory } from "./history";
 import { uid } from "./utils";
+import { writeReviewLog, type ReviewLogContext } from "./study/reviewLog";
+import { sanitizeSuspension, suspensionForDays } from "./study/leech";
 
 /* ============================================================
    持久化：IndexedDB + 防抖写入（词库体积大时 localStorage 不够）
@@ -174,6 +177,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   lastBookId: null,
   choiceKeys: ["w", "e", "i", "o"],
   studyExit: "book",
+  goalTier: "target",
+  streakEnabled: true,
+  dayBoundaryHour: 4,
   updatedAt: 0,
 };
 
@@ -198,6 +204,8 @@ export interface AppStore {
   deleteBook: (id: string) => void;
   duplicateBook: (id: string) => Wordbook | null;
   updateBook: (id: string, patch: Partial<Pick<Wordbook, "name" | "description" | "tags" | "meta">>) => void;
+  /** 词库学习状态：随书主体 LWW 同步；updatedAt 由 patchBook 提升 */
+  setBookStudyState: (id: string, state: BookStudyState) => void;
   replaceBook: (book: Wordbook) => void;
   setLastBook: (id: string | null) => void;
 
@@ -225,8 +233,8 @@ export interface AppStore {
   duplicateEntry: (bookId: string, entryId: string) => void;
   toggleStar: (bookId: string, entryId: string) => void;
   setEntryStatus: (bookId: string, entryId: string, status: EntryStatus) => void;
-  appendEntries: (bookId: string, entries: Entry[]) => void;
-  replaceEntries: (bookId: string, entries: Entry[]) => void;
+  appendEntries: (bookId: string, entries: Entry[], mode?: "merge" | "fill") => void;
+  replaceEntries: (bookId: string, entries: Entry[], resetSrs?: boolean) => void;
   /** 批量：设置学习状态（「未学」会清除 srs 进度） */
   setEntriesStatus: (bookId: string, ids: string[], status: EntryStatus) => void;
   /** 批量：增删标签 */
@@ -245,7 +253,8 @@ export interface AppStore {
     rating: GradeValue,
     elapsedMs: number,
     nowMs?: number,
-  ) => { before: StudySrs | undefined; next: StudySrs; dayKey: string } | null;
+    reviewContext?: ReviewLogContext,
+  ) => { before: StudySrs | undefined; next: StudySrs; dayKey: string; reviewEventId: string } | null;
   undoReview: (
     bookId: string,
     entryId: string,
@@ -256,8 +265,16 @@ export interface AppStore {
     dayKey?: string,
     /** 撤销时刻（与预览共享同一 now；缺省 Date.now()）——同时作为合并信号写入 srs.lastReview */
     nowMs?: number,
+    /** 对应评分事件；写本机补偿日志，不删除原记录 */
+    reviewEventId?: string,
+    /** 自由练习只撤销本机日志，不触碰 SRS 与每日统计 */
+    practiceOnly?: boolean,
   ) => void;
   resetEntrySrs: (bookId: string, entryId: string) => void;
+  /** 顽固词搁置 7 / 30 天；null 表示立即解除。只改条目主体，不动 SRS。 */
+  setEntrySuspension: (bookId: string, entryId: string, days: 7 | 30 | null, nowMs?: number) => void;
+  /** 归档恢复时重置整本词库的学习记录（需 UI 二次确认） */
+  resetBookStudyProgress: (bookId: string) => void;
 
   // 导出设置
   updateExportSettings: (bookId: string, patch: DeepPartial<ExportSettings>) => void;
@@ -409,6 +426,11 @@ export const useAppStore = create<AppStore>()(
       },
 
       updateBook: (id, patch) => set((s) => ({ books: patchBook(s.books, id, (b) => ({ ...b, ...patch })) })),
+
+      setBookStudyState: (id, state) => {
+        set((s) => ({ books: patchBook(s.books, id, (b) => ({ ...b, studyState: state })) }));
+        requestSyncSoon(10_000);
+      },
 
       replaceBook: (book) =>
         set((s) => ({
@@ -570,6 +592,7 @@ export const useAppStore = create<AppStore>()(
           createdAt: now,
           updatedAt: now,
           source: init?.source ?? { kind: "manual", at: now },
+          suspension: init?.suspension,
         };
         set((s) => ({
           books: patchBook(s.books, bookId, (b) => ({ ...b, entries: [entry, ...b.entries] })),
@@ -661,18 +684,33 @@ export const useAppStore = create<AppStore>()(
           })),
         })),
 
-      appendEntries: (bookId, newEntries) =>
+      appendEntries: (bookId, newEntries, mode = "merge") =>
         set((s) => ({
-          books: patchBook(s.books, bookId, (b) => {
-            const merged = mergeDuplicateEntries([...b.entries, ...newEntries]);
-            return { ...b, entries: merged };
+          books: s.books.map((b) => {
+            if (b.id !== bookId) return b;
+            const merged = mode === "fill"
+              ? mergeEntriesFillingGaps(b.entries, newEntries)
+              : mergeDuplicateEntries([...b.entries, ...newEntries]);
+            const changed = merged.length !== b.entries.length || merged.some((entry, index) => entry !== b.entries[index]);
+            return changed ? { ...b, entries: merged, updatedAt: Date.now() } : b;
           }),
         })),
 
-      replaceEntries: (bookId, entries) =>
+      replaceEntries: (bookId, entries, resetSrs = false) => {
+        const now = Date.now();
         set((s) => ({
-          books: patchBook(s.books, bookId, (b) => ({ ...b, entries: mergeDuplicateEntries(entries) })),
-        })),
+          books: patchBook(s.books, bookId, (b) => ({
+            ...b,
+            entries: mergeDuplicateEntries(entries).map((entry) => {
+              if (!resetSrs) return entry;
+              const next = { ...entry, status: "new" as const, updatedAt: now };
+              delete next.srs;
+              delete next.suspension;
+              return next;
+            }),
+          })),
+        }));
+      },
 
       setEntriesStatus: (bookId, ids, status) =>
         set((s) => ({
@@ -683,6 +721,7 @@ export const useAppStore = create<AppStore>()(
               if (status === "new") {
                 const next = { ...e, status, updatedAt: Date.now() };
                 delete next.srs;
+                delete next.suspension;
                 return next;
               }
               return { ...e, status, updatedAt: Date.now() };
@@ -740,10 +779,38 @@ export const useAppStore = create<AppStore>()(
         return requestSyncNow(); // 学习参数改动立即上云；返回确认 Promise 供控件加载态
       },
 
-      applyReview: (bookId, entryId, rating, elapsedMs, nowMs) => {
+      applyReview: (bookId, entryId, rating, elapsedMs, nowMs, reviewContext) => {
         const endHist = historyOf(api)?.suppress();
         try {
         const now = nowMs ?? Date.now();
+        const boundaryHour = clampBoundaryHour(api.getState().settings.dayBoundaryHour);
+        if (reviewContext?.practiceOnly) {
+          const target = api.getState().books.find((item) => item.id === bookId)?.entries.find((entry) => entry.id === entryId);
+          if (!target) return null;
+          const before = target.srs;
+          const dayKey = ymd(now, boundaryHour);
+          const reviewEventId = uid();
+          void writeReviewLog({
+            id: reviewEventId,
+            kind: "review",
+            at: now,
+            bookId,
+            entryId,
+            rating,
+            elapsedMs: Math.max(0, elapsedMs),
+            dayKey,
+            firstAttempt: reviewContext.firstAttempt,
+            newCard: reviewContext.newCard,
+            sessionId: reviewContext.sessionId,
+            mode: reviewContext.mode,
+            interaction: reviewContext.interaction,
+            questionKind: reviewContext.questionKind,
+            before,
+            next: before ?? newSrs(now),
+            practiceOnly: true,
+          });
+          return { before, next: before ?? newSrs(now), dayKey, reviewEventId };
+        }
         // CAS：在 set 回调内基于最新 srs 重算（同 tick 重复调用不再互相覆盖）
         let outcome: { before: StudySrs | undefined; next: StudySrs; dayKey: string } | null = null;
         set((s) => {
@@ -754,11 +821,11 @@ export const useAppStore = create<AppStore>()(
           const before = entry.srs;
           const next = applyGrade(before, rating, cfg.retention, now);
           const wasNew = isNewSrs(before);
-          outcome = { before, next, dayKey: ymd(now) };
+          outcome = { before, next, dayKey: ymd(now, boundaryHour) };
           return {
             books: patchBook(s.books, bookId, (b) => {
               const daily = { ...(b.study?.daily ?? {}) };
-              const key = ymd(now);
+              const key = ymd(now, boundaryHour);
               const log = { ...(daily[key] ?? emptyDailyLog()) };
               log.reviewed += 1;
               log.ms += Math.max(0, elapsedMs);
@@ -781,15 +848,55 @@ export const useAppStore = create<AppStore>()(
         if (!outcome) return null;
         flushSoon(); // 学习进度即时落盘（不等防抖）
         const picked = outcome as { before: StudySrs | undefined; next: StudySrs; dayKey: string };
-        return { before: picked.before, next: picked.next, dayKey: picked.dayKey };
+        const reviewEventId = uid();
+        if (reviewContext) {
+          void writeReviewLog({
+            id: reviewEventId,
+            kind: "review",
+            at: now,
+            bookId,
+            entryId,
+            rating,
+            elapsedMs: Math.max(0, elapsedMs),
+            dayKey: picked.dayKey,
+            firstAttempt: reviewContext.firstAttempt,
+            newCard: reviewContext.newCard,
+            sessionId: reviewContext.sessionId,
+            mode: reviewContext.mode,
+            interaction: reviewContext.interaction,
+            questionKind: reviewContext.questionKind,
+            before: picked.before,
+            next: picked.next,
+          });
+        }
+        return { before: picked.before, next: picked.next, dayKey: picked.dayKey, reviewEventId };
         } finally {
           endHist?.();
         }
       },
 
-      undoReview: (bookId, entryId, before, rating, elapsedMs, dayKey, nowMs) => {
+      undoReview: (bookId, entryId, before, rating, elapsedMs, dayKey, nowMs, reviewEventId, practiceOnly) => {
         const endHist = historyOf(api)?.suppress();
         try {
+        const undoAt = nowMs ?? Date.now();
+        const boundaryHour = clampBoundaryHour(api.getState().settings.dayBoundaryHour);
+        if (practiceOnly) {
+          if (reviewEventId) {
+            void writeReviewLog({
+              id: uid(),
+              kind: "undo",
+              at: undoAt,
+              bookId,
+              entryId,
+              rating,
+              elapsedMs: Math.max(0, elapsedMs),
+              dayKey: dayKey ?? ymd(undoAt, boundaryHour),
+              originalEventId: reviewEventId,
+              practiceOnly: true,
+            });
+          }
+          return;
+        }
         /*
          * 撤销的「合并信号」：撤销 = 把词恢复到评分前的 srs，
          * 但同步合并按 lastReview 晚者胜（见 sync/merge.ts pickSrs）——
@@ -797,12 +904,11 @@ export const useAppStore = create<AppStore>()(
          * 因此：恢复到已有 srs 时把 lastReview 提升到撤销时刻（调度状态不变，仅合并语义更新）；
          * 恢复到未学态（无 srs）时 bump updatedAt —— 合并引擎把它识别为「显式重置」（localReset 条件）。
          */
-        const undoAt = nowMs ?? Date.now();
         set((s) => ({
           books: patchBook(s.books, bookId, (b) => {
             const daily = { ...(b.study?.daily ?? {}) };
             // 与 applyReview 同源的日键：跨午夜撤销不会记错日期
-            const key = dayKey ?? ymd(undoAt);
+            const key = dayKey ?? ymd(undoAt, boundaryHour);
             if (daily[key]) {
               const log = { ...daily[key] };
               log.reviewed = Math.max(0, log.reviewed - 1);
@@ -831,9 +937,40 @@ export const useAppStore = create<AppStore>()(
           }),
         }));
         flushSoon();
+        if (reviewEventId) {
+          void writeReviewLog({
+            id: uid(),
+            kind: "undo",
+            at: undoAt,
+            bookId,
+            entryId,
+            rating,
+            elapsedMs: Math.max(0, elapsedMs),
+            dayKey: dayKey ?? ymd(undoAt, boundaryHour),
+            originalEventId: reviewEventId,
+          });
+        }
         } finally {
           endHist?.();
         }
+      },
+
+      setEntrySuspension: (bookId, entryId, days, nowMs) => {
+        const now = nowMs ?? Date.now();
+        set((s) => ({
+          books: patchBook(s.books, bookId, (b) => ({
+            ...b,
+            entries: b.entries.map((e) => {
+              if (e.id !== entryId) return e;
+              const next = { ...e, updatedAt: now };
+              if (days === null) delete next.suspension;
+              else next.suspension = suspensionForDays(days, now);
+              return next;
+            }),
+          })),
+        }));
+        flushSoon();
+        requestSyncSoon(5000);
       },
 
       resetEntrySrs: (bookId, entryId) => {
@@ -846,10 +983,32 @@ export const useAppStore = create<AppStore>()(
               if (e.id !== entryId) return e;
               const next = { ...e };
               delete next.srs;
+              delete next.suspension;
               return { ...next, status: "new" as const };
             }),
           })),
         }));
+        } finally {
+          endHist?.();
+        }
+      },
+
+      resetBookStudyProgress: (bookId) => {
+        const endHist = historyOf(api)?.suppress();
+        try {
+          const now = Date.now();
+          set((s) => ({
+            books: patchBook(s.books, bookId, (b) => ({
+              ...b,
+              entries: b.entries.map((e) => {
+                const next = { ...e, status: "new" as const, updatedAt: now };
+                delete next.srs;
+                delete next.suspension;
+                return next;
+              }),
+            })),
+          }));
+          requestSyncSoon(10_000);
         } finally {
           endHist?.();
         }
@@ -1040,6 +1199,7 @@ export const useAppStore = create<AppStore>()(
                 ...e,
                 tags: Array.isArray(e.tags) ? e.tags : [],
                 values: e.values && typeof e.values === "object" ? e.values : {},
+                suspension: sanitizeSuspension(e.suspension),
               }));
             const exportSettings = mergeExportSettings(
               defaultExportSettings(b.name),

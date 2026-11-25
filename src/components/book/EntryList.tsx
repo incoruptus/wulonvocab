@@ -1,19 +1,31 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { CheckSquare, Copy, Download, Merge, Plus, Search, Sparkles, Star, StarOff, Tag, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import {
+  ArrowDownAZ, ArrowUpAZ, CalendarClock, CheckSquare, ChevronDown, ChevronRight, Copy, Download, Filter, FolderOpen, Layers, LockKeyhole, Merge,
+  PenLine, Plus, RotateCcw, Save, Search, Sparkles, Star, StarOff, Tag, Trash2, X,
+} from "lucide-react";
 import type { Entry, Wordbook } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
-import { Input, Checkbox } from "@/components/ui/field";
+import { Field, Input, Checkbox, SwitchRow } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Button, IconButton } from "@/components/ui/button";
-import { EmptyState, SegmentedControl } from "@/components/ui/misc";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/overlay";
+import { EmptyState } from "@/components/ui/misc";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger, Popover, PopoverContent, PopoverTrigger } from "@/components/ui/overlay";
 import { SwipeableRow } from "@/components/book/SwipeableRow";
 import { cx, timeAgo } from "@/lib/utils";
-
-type StatusFilter = "all" | "new" | "learning" | "mastered";
-type SortMode = "order" | "az" | "recent";
+import { contextTagFields, GROUP_DIM_OPTIONS, groupEntries } from "@/lib/study/group";
+import { SORT_DIM_OPTIONS, sortEntries } from "@/lib/study/sort";
+import { formatDue, memoryStateLabel, r30Of } from "@/lib/study/engine";
+import { studyConfigOf } from "@/lib/study/queue";
+import { leechInfoOf } from "@/lib/study/leech";
+import type { MasteryIndex } from "@/lib/study/mastery";
+import { MasteryEvidence } from "@/components/study/MasteryEvidence";
+import { useReviewMastery } from "@/components/study/useReviewMastery";
+import { DEFAULT_VIEW_PREFS, type LeechFilter, type StatusFilter } from "@/lib/viewPrefs";
+import { useBookViewPrefs } from "./useBookViewPrefs";
+import { batchGroups, type BatchIntent, type BatchSelection } from "@/lib/study/batch";
 
 export interface EntryListProps {
   book: Wordbook;
@@ -38,31 +50,68 @@ export interface EntryListProps {
   onStar: (entry: Entry) => void;
   /** 批量：检索选中的词条并补全空缺字段 */
   onRequestBatchLookup: () => void;
+  /** 添加新词并自动匹配词典内容 */
+  onAddLookup: (word?: string) => void;
 }
 
 export function EntryList(props: EntryListProps) {
   const { book, selectedId, onSelect } = props;
+  const router = useRouter();
   const addEntry = useAppStore((s) => s.addEntry);
   const duplicateEntry = useAppStore((s) => s.duplicateEntry);
+  const setEntrySuspension = useAppStore((s) => s.setEntrySuspension);
+  const { index: masteryIndex } = useReviewMastery();
+  const { state: viewState, ready, updatePrefs, toggleCollapsed, saveView, applyView, deleteView } = useBookViewPrefs(book.id);
+  const prefs = viewState.prefs;
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<StatusFilter>("all");
-  const [sort, setSort] = useState<SortMode>("order");
-  const [starOnly, setStarOnly] = useState(false);
-  const [tagFilter, setTagFilter] = useState<string>("");
-  const [openRowId, setOpenRowId] = useState<string | null>(null);
+  const [openRowKey, setOpenRowKey] = useState<string | null>(null);
+  const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [viewName, setViewName] = useState("");
+  const [batchGroupIndex, setBatchGroupIndex] = useState(0);
+  const [batchKey, setBatchKey] = useState("");
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setNow(Date.now()));
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   const allTags = useMemo(() => {
     const set = new Set<string>();
     for (const e of book.entries) for (const t of e.tags) set.add(t);
-    return [...set].sort();
+    return [...set].sort((a, b) => a.localeCompare(b, "zh-CN"));
   }, [book.entries]);
+  const contextFields = useMemo(() => contextTagFields(book), [book]);
+  const leechThreshold = studyConfigOf(book).leechThreshold;
+  const availableBatches = useMemo(() => batchGroups(book), [book]);
+  const batchGroup = availableBatches[Math.min(batchGroupIndex, Math.max(0, availableBatches.length - 1))];
+  const selectedBatch: BatchSelection = {
+    dimension: batchGroup.dimension,
+    key: batchGroup.dimension === "random" ? "" : batchKey || batchGroup.options[0]?.value || "",
+    contextKey: batchGroup.contextKey,
+    size: 8,
+  };
+  const startBatch = (intent: BatchIntent) => {
+    const params = new URLSearchParams({
+      id: book.id,
+      intent,
+      batch: selectedBatch.dimension,
+      size: String(selectedBatch.size),
+    });
+    if (selectedBatch.key) params.set("key", selectedBatch.key);
+    if (selectedBatch.contextKey) params.set("contextKey", selectedBatch.contextKey);
+    router.push(`/study?${params.toString()}`);
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    let list = book.entries.filter((e) => {
-      if (starOnly && !e.starred) return false;
-      if (status !== "all" && e.status !== status) return false;
-      if (tagFilter && !e.tags.includes(tagFilter)) return false;
+    const list = book.entries.filter((e) => {
+      if (prefs.starOnly && !e.starred) return false;
+      if (prefs.status !== "all" && e.status !== prefs.status) return false;
+      if (prefs.tag && !e.tags.includes(prefs.tag)) return false;
+      const leech = leechInfoOf(e, now, leechThreshold);
+      if (prefs.leechFilter === "warning" && leech.level !== "warning") return false;
+      if (prefs.leechFilter === "leech" && leech.lapses < leech.threshold) return false;
+      if (prefs.leechFilter === "suspended" && leech.level !== "suspended") return false;
       if (!q) return true;
       if (e.headword.toLowerCase().includes(q)) return true;
       const senses = e.values["senses"] as { translation?: string; definition?: string }[] | undefined;
@@ -73,12 +122,29 @@ export function EntryList(props: EntryListProps) {
       }
       return false;
     });
-    if (sort === "az") list = [...list].sort((a, b) => a.headword.toLowerCase().localeCompare(b.headword.toLowerCase()));
-    else if (sort === "recent") list = [...list].sort((a, b) => b.updatedAt - a.updatedAt);
-    return list;
-  }, [book.entries, query, status, sort, starOnly, tagFilter]);
+    return sortEntries(list, prefs.sort, prefs.dir, { seed: prefs.shuffleSeed });
+  }, [book.entries, query, prefs, now, leechThreshold]);
 
+  const grouped = useMemo(
+    () =>
+      groupEntries(filtered, book, prefs.group, {
+        tagMode: prefs.tagMode,
+        contextKey: prefs.contextKey,
+        showEmptyGroups: prefs.showEmptyGroups,
+      }),
+    [filtered, book, prefs.group, prefs.tagMode, prefs.contextKey, prefs.showEmptyGroups],
+  );
   const filteredIds = useMemo(() => filtered.map((e) => e.id), [filtered]);
+  const visibleGroupCount = grouped.filter((group) => group.entries.length > 0).length;
+  const statusCounts = useMemo(
+    () => ({
+      all: book.entries.length,
+      new: book.entries.filter((entry) => entry.status === "new").length,
+      learning: book.entries.filter((entry) => entry.status === "learning").length,
+      mastered: book.entries.filter((entry) => entry.status === "mastered").length,
+    }),
+    [book.entries],
+  );
 
   const createEntry = (headword = "") => {
     const entry = addEntry(book.id, { headword });
@@ -86,6 +152,7 @@ export function EntryList(props: EntryListProps) {
   };
 
   const exactMatch = book.entries.some((e) => e.headword.toLowerCase() === query.trim().toLowerCase());
+  const activeFilterCount = (prefs.status !== "all" ? 1 : 0) + (prefs.leechFilter !== "all" ? 1 : 0) + (prefs.starOnly ? 1 : 0) + (prefs.tag ? 1 : 0);
   const hiddenSelected = props.selecting ? [...props.selection].filter((id) => !filteredIds.includes(id)).length : 0;
 
   return (
@@ -97,92 +164,316 @@ export function EntryList(props: EntryListProps) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && query.trim() && !exactMatch) createEntry(query.trim());
+              if (e.key === "Enter" && query.trim() && !exactMatch) props.onAddLookup(query.trim());
             }}
             placeholder="搜索单词或释义…"
-            className="h-8 pl-8 pr-7 text-[13px]"
+            className="h-8 pl-8 pr-16 text-[13px]"
           />
           {query ? (
             <button
               type="button"
               aria-label="清空搜索"
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-700 hover:text-gray-1000"
+              className="absolute right-11 top-1/2 -translate-y-1/2 text-gray-700 hover:text-gray-1000"
               onClick={() => setQuery("")}
             >
               <X className="size-3.5" />
             </button>
           ) : null}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <SegmentedControl<StatusFilter>
-            size="sm"
-            value={status}
-            onValueChange={setStatus}
-            options={[
-              { value: "all", label: "全部" },
-              { value: "new", label: "未学" },
-              { value: "learning", label: "在学" },
-              { value: "mastered", label: "已掌握" },
-            ]}
-            grow
-          />
-          <IconButton
-            label="只看星标"
-            size="sm"
-            className={cx("shrink-0", starOnly && "bg-amber-700/20 text-amber-900")}
-            onClick={() => setStarOnly((v) => !v)}
-          >
-            <Star className="size-3.5" fill={starOnly ? "currentColor" : "none"} />
-          </IconButton>
-          <IconButton
-            label={props.selecting ? "退出多选" : "多选"}
-            size="sm"
-            className={cx("shrink-0", props.selecting && "bg-blue-100 text-blue-1000")}
-            onClick={() => {
-              if (props.selecting) props.onExitSelect();
-              else props.onEnterSelect(selectedId ?? filteredIds[0] ?? "");
-            }}
-          >
-            <CheckSquare className="size-3.5" />
-          </IconButton>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <Select
-            size="sm"
-            className="flex-1"
-            value={sort}
-            onValueChange={(v) => setSort(v as SortMode)}
-            options={[
-              { value: "order", label: "列表顺序" },
-              { value: "az", label: "字母序 A→Z" },
-              { value: "recent", label: "最近编辑" },
-            ]}
-          />
-          {allTags.length ? (
-            <Select
-              size="sm"
-              className="flex-1"
-              value={tagFilter}
-              onValueChange={setTagFilter}
-              options={[{ value: "", label: "全部标签" }, ...allTags.map((t) => ({ value: t, label: t }))]}
-            />
-          ) : null}
+          <Popover>
+            <PopoverTrigger asChild>
+              <IconButton
+                label="筛选与视图"
+                size="sm"
+                className={cx(
+                  "absolute right-1.5 top-1/2 -translate-y-1/2",
+                  activeFilterCount > 0 && "bg-blue-100 text-blue-1000",
+                )}
+              >
+                <Filter className="size-3.5" />
+                {activeFilterCount > 0 ? (
+                  <span className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-blue-800 px-0.5 text-[9px] font-medium leading-none text-white">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+              </IconButton>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              collisionPadding={12}
+              className="flex max-h-[min(38rem,calc(100dvh-5rem))] w-[min(23rem,calc(100vw-3rem))] max-w-[calc(100vw-3rem)] flex-col overflow-hidden p-0"
+            >
+              <div className="shrink-0 px-4 pb-3 pt-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="t-h-16 text-gray-1000">视图与筛选</div>
+                    <p className="t-label-12 mt-0.5 text-gray-700">保存当前的筛选、排序与分组。</p>
+                  </div>
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-gray-100 px-2 py-1 t-label-12 text-gray-700">
+                    <LockKeyhole className="size-3" /> 仅本机
+                  </span>
+                </div>
+              </div>
+
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 pb-4 scroll-thin">
+                <section className="space-y-3">
+                  <FilterSectionHeading title="已存视图" meta={`${viewState.savedViews.length} 个`} />
+                  {viewState.savedViews.length ? (
+                    <div className="space-y-1.5">
+                      {viewState.savedViews.map((view) => (
+                        <div key={view.id} className="flex items-center rounded-lg border border-gray-300 bg-background-100">
+                          <button
+                            type="button"
+                            className="flex min-w-0 flex-1 items-center gap-2 rounded-l-lg px-3 py-2 text-left transition-colors hover:bg-gray-100"
+                            onClick={() => applyView(view.id)}
+                            title={`应用视图：${view.name}`}
+                          >
+                            <FolderOpen className="size-3.5 shrink-0 text-gray-700" />
+                            <span className="t-label-13 min-w-0 flex-1 truncate text-gray-1000">{view.name}</span>
+                          </button>
+                          <IconButton label={`删除视图：${view.name}`} size="xs" className="mr-1" onClick={() => deleteView(view.id)}>
+                            <X className="size-3" />
+                          </IconButton>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg bg-background-200 px-3 py-2.5 t-label-12 text-gray-700">还没有保存视图。调好下面的条件后，可以一键保存。</div>
+                  )}
+                  {saveViewOpen ? (
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        value={viewName}
+                        onChange={(e) => setViewName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && viewName.trim()) {
+                            saveView(viewName);
+                            setViewName("");
+                            setSaveViewOpen(false);
+                          }
+                        }}
+                        placeholder="视图名称"
+                        aria-label="视图名称"
+                        className="h-9 min-w-0 flex-1 text-[13px]"
+                        autoFocus
+                      />
+                      <Button
+                        size="sm"
+                        disabled={!viewName.trim()}
+                        onClick={() => {
+                          saveView(viewName);
+                          setViewName("");
+                          setSaveViewOpen(false);
+                        }}
+                      >
+                        保存
+                      </Button>
+                      <IconButton label="取消保存视图" size="sm" onClick={() => setSaveViewOpen(false)}>
+                        <X className="size-3.5" />
+                      </IconButton>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <Button size="sm" variant="secondary" className="min-w-0 flex-1" disabled={!ready} onClick={() => setSaveViewOpen(true)}>
+                        <Save className="size-3.5" /> 保存当前视图
+                      </Button>
+                      <IconButton
+                        label="重置视图"
+                        size="sm"
+                        disabled={!ready}
+                        onClick={() => updatePrefs({ ...DEFAULT_VIEW_PREFS, collapsed: [] })}
+                      >
+                        <RotateCcw className="size-3.5" />
+                      </IconButton>
+                    </div>
+                  )}
+                </section>
+
+                <section className="space-y-3 border-t border-gray-300 pt-4">
+                  <FilterSectionHeading
+                    title="筛选"
+                    action={activeFilterCount > 0 ? (
+                      <button
+                        type="button"
+                        className="t-label-12 text-blue-900 hover:underline"
+                        onClick={() => updatePrefs({ status: "all", leechFilter: "all", starOnly: false, tag: "" })}
+                      >
+                        清除筛选
+                      </button>
+                    ) : undefined}
+                  />
+                  <div className="space-y-1.5">
+                    <div className="t-label-13 font-medium text-gray-900">学习状态</div>
+                    <StatusFilterGrid value={prefs.status} onChange={(status) => updatePrefs({ status })} counts={statusCounts} />
+                  </div>
+                  <div className="rounded-lg bg-background-200 px-3">
+                    <SwitchRow label="只看星标" checked={prefs.starOnly} disabled={!ready} onCheckedChange={(starOnly) => updatePrefs({ starOnly })} />
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field label="顽固词状态">
+                      <Select
+                        value={prefs.leechFilter}
+                        onValueChange={(leechFilter) => updatePrefs({ leechFilter: leechFilter as LeechFilter })}
+                        options={[
+                          { value: "all", label: "全部状态" },
+                          { value: "warning", label: "易忘提醒" },
+                          { value: "leech", label: "顽固词" },
+                          { value: "suspended", label: "搁置中" },
+                        ]}
+                      />
+                    </Field>
+                    {allTags.length ? (
+                      <Field label="词条标签">
+                        <Select
+                          value={prefs.tag}
+                          onValueChange={(tag) => updatePrefs({ tag })}
+                          options={[{ value: "", label: "全部标签" }, ...allTags.map((t) => ({ value: t, label: t }))]}
+                        />
+                      </Field>
+                    ) : null}
+                  </div>
+                </section>
+                <section className="space-y-3 border-t border-gray-300 pt-4">
+                  <FilterSectionHeading title="排序" />
+                  <div className="flex items-end gap-2">
+                    <Field label="排序依据" className="min-w-0 flex-1">
+                      <Select
+                        value={prefs.sort}
+                        onValueChange={(value) =>
+                          updatePrefs({
+                            sort: value as (typeof SORT_DIM_OPTIONS)[number]["value"],
+                            ...(value === "shuffle" ? { shuffleSeed: Date.now() >>> 0 } : {}),
+                          })
+                        }
+                        options={SORT_DIM_OPTIONS}
+                      />
+                    </Field>
+                    <IconButton
+                      label={prefs.dir === "asc" ? "当前升序，切换为降序" : "当前降序，切换为升序"}
+                      disabled={!ready || prefs.sort === "shuffle"}
+                      onClick={() => updatePrefs({ dir: prefs.dir === "asc" ? "desc" : "asc" })}
+                      className="mb-0.5"
+                    >
+                      {prefs.dir === "asc" ? <ArrowDownAZ className="size-4" /> : <ArrowUpAZ className="size-4" />}
+                    </IconButton>
+                  </div>
+                </section>
+
+                <section className="space-y-3 border-t border-gray-300 pt-4">
+                  <FilterSectionHeading title="分组" />
+                  <Field label="分组依据">
+                    <Select
+                      value={prefs.group}
+                      onValueChange={(value) => updatePrefs({ group: value as (typeof GROUP_DIM_OPTIONS)[number]["value"] })}
+                      options={GROUP_DIM_OPTIONS}
+                    />
+                  </Field>
+                  {prefs.group !== "none" ? (
+                    <div className="space-y-3 rounded-lg bg-background-200 p-3">
+                      {prefs.group === "tags" || prefs.group === "contextTags" ? (
+                        <Field label="标签归属">
+                          <Select
+                            value={prefs.tagMode}
+                            onValueChange={(tagMode) => updatePrefs({ tagMode: tagMode as "first" | "all" })}
+                            options={[
+                              { value: "first", label: "归入首个标签" },
+                              { value: "all", label: "出现在所有标签" },
+                            ]}
+                          />
+                        </Field>
+                      ) : null}
+                      {prefs.group === "contextTags" && contextFields.length > 1 ? (
+                        <Field label="情景标签字段">
+                          <Select
+                            value={prefs.contextKey || contextFields[0]?.key || ""}
+                            onValueChange={(contextKey) => updatePrefs({ contextKey })}
+                            options={contextFields.map((field) => ({ value: field.key, label: field.label }))}
+                          />
+                        </Field>
+                      ) : null}
+                      <SwitchRow
+                        label="显示空分区"
+                        checked={prefs.showEmptyGroups}
+                        onCheckedChange={(showEmptyGroups) => updatePrefs({ showEmptyGroups })}
+                      />
+                    </div>
+                  ) : (
+                    <p className="t-label-12 text-gray-700">选择标签、首字母或学习状态等依据，列表就会按分区呈现。</p>
+                  )}
+                </section>
+
+                <section className="space-y-3 border-t border-gray-300 pt-4">
+                  <FilterSectionHeading title="学习批次" meta="5–10 词" />
+                  <p className="t-label-12 text-gray-700">从主题、来源、频率或随机词中单独取一批，不改变列表分区。</p>
+                  <Field label="批次依据">
+                    <Select
+                      value={String(Math.min(batchGroupIndex, availableBatches.length - 1))}
+                      onValueChange={(value) => {
+                        setBatchGroupIndex(Number(value));
+                        setBatchKey("");
+                      }}
+                      options={availableBatches.map((group, index) => ({
+                        value: String(index),
+                        label: group.dimension === "contextTags" ? `${group.label}（${group.options.length} 组）` : group.label,
+                      }))}
+                    />
+                  </Field>
+                  {batchGroup.dimension !== "random" ? (
+                    <Field label={batchGroup.dimension === "contextTags" ? "主题 / 情景" : batchGroup.label}>
+                      <Select
+                        value={selectedBatch.key}
+                        onValueChange={setBatchKey}
+                        options={batchGroup.options.map((option) => ({ value: option.value, label: `${option.label} · ${option.count} 词` }))}
+                      />
+                    </Field>
+                  ) : null}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => startBatch("new")}>
+                      <Layers className="size-3.5" /> 学这批新词
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => startBatch("review")}>
+                      <CalendarClock className="size-3.5" /> 复习这批
+                    </Button>
+                    <Button size="sm" variant="secondary" className="col-span-2" onClick={() => startBatch("cram")}>
+                      <Sparkles className="size-3.5" /> 自由练习这批
+                    </Button>
+                  </div>
+                  <p className="t-label-12 text-gray-700">自由练习每词只出现一次，不写入复习计划，也不计入每日目标。</p>
+                </section>
+              </div>
+
+              <div className="flex shrink-0 items-center justify-between gap-3 border-t border-gray-300 bg-background-100 px-4 py-3">
+                <div className="t-label-12 text-gray-700">
+                  显示 <span className="font-medium text-gray-1000 tabular-nums">{filtered.length}</span> / {book.entries.length} 词
+                </div>
+                <Button
+                  size="sm"
+                  variant={props.selecting ? "default" : "secondary"}
+                  onClick={() => {
+                    if (props.selecting) props.onExitSelect();
+                    else props.onEnterSelect(selectedId ?? filteredIds[0] ?? "");
+                  }}
+                >
+                  <CheckSquare className="size-3.5" /> {props.selecting ? "退出多选" : "多选"}
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
       <div
         className="min-h-0 flex-1 overflow-y-auto scroll-thin"
         onScroll={() => {
-          if (openRowId) setOpenRowId(null);
+          if (openRowKey) setOpenRowKey(null);
         }}
       >
         {query.trim() && !exactMatch ? (
           <button
             type="button"
-            onClick={() => createEntry(query.trim())}
+            onClick={() => props.onAddLookup(query.trim())}
             className="flex w-full items-center gap-2 border-b border-gray-300 px-3 py-2.5 text-left text-[13px] text-blue-900 transition-colors hover:bg-blue-100/60"
           >
-            <Plus className="size-3.5" /> 创建「{query.trim()}」
+            <Search className="size-3.5" /> 添加并匹配「{query.trim()}」
           </button>
         ) : null}
         {filtered.length === 0 ? (
@@ -191,41 +482,75 @@ export function EntryList(props: EntryListProps) {
             title={book.entries.length === 0 ? "还没有词条" : "没有匹配的词条"}
             desc={
               book.entries.length === 0
-                ? "先新建一个，或用「检索」从词典取词；整批词表直接走「导入」。"
+                ? "用「添加并匹配」查词典并入库，或手动新建后填写内容；整批词表走「导入」。"
                 : "换个关键词，或清掉状态 / 标签筛选再看看。"
             }
             action={
-              <Button size="sm" onClick={() => createEntry()}>
-                <Plus className="size-3.5" /> 新建词条
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button size="sm" onClick={() => props.onAddLookup()}>
+                  <Search className="size-3.5" /> 添加并匹配
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => createEntry()}>
+                  <Plus className="size-3.5" /> 手动新建
+                </Button>
+              </div>
             }
           />
         ) : (
-          filtered.map((entry) => (
-            <SwipeableRow
-              key={entry.id}
-              open={openRowId === entry.id}
-              onOpenChange={(open) => setOpenRowId(open ? entry.id : null)}
-              disabled={props.selecting}
-              leading={{ label: "选择", icon: CheckSquare, onAction: () => props.onEnterSelect(entry.id) }}
-              trailing={[
-                { label: "星标", icon: Star, tone: "amber", onAction: () => props.onStar(entry) },
-                { label: "删除", icon: Trash2, tone: "red", onAction: () => props.onQuickDelete(entry) },
-              ]}
-            >
-              <EntryRow
-                entry={entry}
-                active={entry.id === selectedId && !props.selecting}
-                selecting={props.selecting}
-                checked={props.selection.has(entry.id)}
-                onOpen={() => onSelect(entry.id)}
-                onToggle={(shift) => props.onToggleSelect(entry.id, { shift }, filteredIds)}
-                onStar={() => props.onStar(entry)}
-                onDuplicate={() => duplicateEntry(book.id, entry.id)}
-                onDelete={() => props.onQuickDelete(entry)}
-              />
-            </SwipeableRow>
-          ))
+          grouped.map((group) => {
+            const collapsed = prefs.collapsed.includes(group.key) && group.entries.length > 0;
+            return (
+              <section key={group.key}>
+                {prefs.group !== "none" ? (
+                  <button
+                    type="button"
+                    className="sticky top-0 z-10 flex w-full items-center gap-1.5 border-b border-gray-300 bg-background-100/95 px-3 py-1.5 text-left backdrop-blur"
+                    onClick={() => toggleCollapsed(group.key)}
+                    aria-expanded={!collapsed}
+                  >
+                    {collapsed ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                    <span className="t-label-13 font-medium text-gray-900">{group.label}</span>
+                    <span className="t-mono-12 text-gray-700">{group.entries.length}</span>
+                  </button>
+                ) : null}
+                {!collapsed &&
+                  group.entries.map((entry) => {
+                    const rowKey = `${group.key}:${entry.id}`;
+                    return (
+                      <SwipeableRow
+                        key={rowKey}
+                        open={openRowKey === rowKey}
+                        onOpenChange={(open) => setOpenRowKey(open ? rowKey : null)}
+                        disabled={props.selecting}
+                        leading={{ label: "选择", icon: CheckSquare, onAction: () => props.onEnterSelect(entry.id) }}
+                        trailing={[
+                          { label: "星标", icon: Star, tone: "amber", onAction: () => props.onStar(entry) },
+                          { label: "删除", icon: Trash2, tone: "red", onAction: () => props.onQuickDelete(entry) },
+                        ]}
+                      >
+                        <EntryRow
+                          entry={entry}
+                          retention={studyConfigOf(book).retention}
+                          leechThreshold={studyConfigOf(book).leechThreshold}
+                          masteryIndex={masteryIndex}
+                          now={now}
+                          active={entry.id === selectedId && !props.selecting}
+                          selecting={props.selecting}
+                          checked={props.selection.has(entry.id)}
+                          onOpen={() => onSelect(entry.id)}
+                          onToggle={(shift) => props.onToggleSelect(entry.id, { shift }, filteredIds)}
+                          onStar={() => props.onStar(entry)}
+                          onDuplicate={() => duplicateEntry(book.id, entry.id)}
+                          onDelete={() => props.onQuickDelete(entry)}
+                          onSuspend={(days) => setEntrySuspension(book.id, entry.id, days)}
+                          onEdit={() => onSelect(entry.id)}
+                        />
+                      </SwipeableRow>
+                    );
+                  })}
+              </section>
+            );
+          })
         )}
       </div>
 
@@ -246,15 +571,77 @@ export function EntryList(props: EntryListProps) {
           filteredCount={filteredIds.length}
         />
       ) : (
-        <div className="flex items-center justify-between border-t border-gray-300 p-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-300 p-2.5">
           <span className="t-label-12 text-gray-800">
             共 {book.entries.length} 词{filtered.length !== book.entries.length ? ` · 筛选 ${filtered.length}` : ""}
+            {prefs.group !== "none" && visibleGroupCount > 0 ? ` · ${visibleGroupCount} 组` : ""}
           </span>
-          <Button size="sm" onClick={() => createEntry()}>
-            <Plus className="size-3.5" /> 新建词条
-          </Button>
+          <div className="flex items-center gap-1.5">
+            <Button size="sm" variant="secondary" onClick={() => props.onAddLookup()}>
+              <Search className="size-3.5" /> 添加并匹配
+            </Button>
+            <Button size="sm" onClick={() => createEntry()}>
+              <Plus className="size-3.5" /> 手动新建
+            </Button>
+          </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---------------- 筛选弹层辅助 ---------------- */
+
+function FilterSectionHeading({ title, meta, action }: { title: string; meta?: string; action?: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
+        <span className="t-label-13 font-medium text-gray-1000">{title}</span>
+        {meta ? <span className="t-label-12 text-gray-700">{meta}</span> : null}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function StatusFilterGrid({
+  value,
+  onChange,
+  counts,
+}: {
+  value: StatusFilter;
+  onChange: (value: StatusFilter) => void;
+  counts: Record<StatusFilter, number>;
+}) {
+  const options: { value: StatusFilter; label: string }[] = [
+    { value: "all", label: "全部" },
+    { value: "new", label: "未学" },
+    { value: "learning", label: "在学" },
+    { value: "mastered", label: "稳固（当前）" },
+  ];
+  return (
+    <div role="radiogroup" aria-label="学习状态" className="grid grid-cols-2 gap-2">
+      {options.map((option) => {
+        const selected = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => onChange(option.value)}
+            className={cx(
+              "flex h-11 items-center justify-between gap-2 rounded-lg border px-3 text-left transition-colors",
+              selected
+                ? "border-blue-600 bg-blue-100/70 text-blue-1000 shadow-geist-xs"
+                : "border-gray-300 bg-background-100 text-gray-900 hover:bg-gray-100",
+            )}
+          >
+            <span className="t-label-13 min-w-0 truncate">{option.label}</span>
+            <span className="t-mono-12 shrink-0 opacity-70">{counts[option.value]}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -313,7 +700,7 @@ function BatchBar({
             <DropdownMenuLabel>批量设置学习状态</DropdownMenuLabel>
             <DropdownMenuItem onSelect={() => onStatus("new")}>未学（清除学习进度）</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onStatus("learning")}>在学</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onStatus("mastered")}>已掌握</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onStatus("mastered")}>稳固（当前）</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <Button variant="secondary" size="sm" onClick={onTags}>
@@ -346,6 +733,10 @@ function BatchBar({
 
 function EntryRow({
   entry,
+  retention,
+  leechThreshold,
+  masteryIndex,
+  now,
   active,
   selecting,
   checked,
@@ -354,8 +745,14 @@ function EntryRow({
   onStar,
   onDuplicate,
   onDelete,
+  onSuspend,
+  onEdit,
 }: {
   entry: Entry;
+  retention: number;
+  leechThreshold: number;
+  masteryIndex: MasteryIndex;
+  now: number;
   active: boolean;
   selecting: boolean;
   checked: boolean;
@@ -364,6 +761,8 @@ function EntryRow({
   onStar: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onSuspend: (days: 7 | 30 | null) => void;
+  onEdit: () => void;
 }) {
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
@@ -372,6 +771,9 @@ function EntryRow({
   const preview = senses?.[0]?.translation ?? "";
   const statusColor =
     entry.status === "mastered" ? "bg-green-700" : entry.status === "learning" ? "bg-amber-700" : "bg-gray-500";
+  const r30 = now > 0 ? r30Of(entry.srs, now, retention) : null;
+  const memoryLabel = memoryStateLabel(entry.srs);
+  const leech = leechInfoOf(entry, now, leechThreshold);
 
   return (
     <div
@@ -437,6 +839,30 @@ function EntryRow({
             </span>
           ))}
         </div>
+        {leech.level !== "none" ? (
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <span
+              className={cx(
+                "rounded px-1.5 py-0.5 t-label-12",
+                leech.level === "leech" ? "bg-red-700/10 text-red-900" : "bg-amber-700/10 text-amber-900",
+              )}
+            >
+              {leech.level === "suspended"
+                ? `搁置至 ${new Date(leech.until!).toLocaleDateString("zh-CN")}`
+                : leech.level === "leech"
+                  ? `顽固词 · ${leech.lapses} 次`
+                  : `易忘 · ${leech.lapses}/${leech.threshold}`}
+            </span>
+          </div>
+        ) : null}
+        <MasteryEvidence entryId={entry.id} index={masteryIndex} />
+        {r30 !== null ? (
+          <div className="t-label-12 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-gray-700">
+            <span className={memoryLabel === "稳固（当前）" ? "text-green-900" : undefined}>{memoryLabel}</span>
+            <span>30 天后约 {Math.round(r30 * 100)}%</span>
+            <span>下次复习 {formatDue(entry.srs?.due)}</span>
+          </div>
+        ) : null}
       </div>
       {!selecting ? (
         <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100">
@@ -458,6 +884,27 @@ function EntryRow({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>{entry.headword}</DropdownMenuLabel>
+              {leech.level !== "none" ? (
+                <>
+                  <DropdownMenuItem onSelect={onEdit}>
+                    <PenLine className="size-3.5" /> 改卡
+                  </DropdownMenuItem>
+                  {leech.level === "suspended" ? (
+                    <DropdownMenuItem onSelect={() => onSuspend(null)}>
+                      <RotateCcw className="size-3.5" /> 解除搁置
+                    </DropdownMenuItem>
+                  ) : leech.level === "leech" ? (
+                    <>
+                      <DropdownMenuItem onSelect={() => onSuspend(7)}>
+                        <CalendarClock className="size-3.5" /> 搁置 7 天
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => onSuspend(30)}>
+                        <CalendarClock className="size-3.5" /> 搁置 30 天
+                      </DropdownMenuItem>
+                    </>
+                  ) : null}
+                </>
+              ) : null}
               <DropdownMenuItem
                 onSelect={() => {
                   onDuplicate();

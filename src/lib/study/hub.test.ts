@@ -70,6 +70,11 @@ describe("computeCapacity", () => {
     expect(computeCapacity(books, 15, T0)).toBe(60);
     expect(computeCapacity([], 15, T0)).toBe(150);
   });
+
+  it("暂停词库的历史不计入容量估计", () => {
+    const paused = [{ studyState: "paused" as const, study: { daily: { [ymd(T0)]: { reviewed: 999 } } } }];
+    expect(computeCapacity(paused, 15, T0)).toBe(150);
+  });
 });
 
 describe("buildQuizOptions", () => {
@@ -148,5 +153,26 @@ describe("computeHubMetrics", () => {
     expect(m.heatmap[ymd(T0)]).toBe(5);
     expect(m.streak).toBe(1);
     expect(m.accuracy30).toBeCloseTo(0.8, 5);
+  });
+
+  it("暂停/归档不进入目标负载，但保留实际学习热力图", () => {
+    const active = book();
+    const paused = {
+      ...active,
+      id: "b2",
+      studyState: "paused" as const,
+      study: {
+        config: active.study.config,
+        daily: { [ymd(T0)]: { ...active.study.daily[ymd(T0)], reviewed: 7 } },
+      },
+    };
+    const archived = { ...active, id: "b3", studyState: "archived" as const };
+    const m = computeHubMetrics([active, paused, archived] as never[], T0);
+    expect(m.books).toBe(3);
+    expect(m.due).toBe(1);
+    expect(m.newRemainingTotal).toBe(8);
+    expect(m.entries).toBe(4);
+    expect(m.heatmap[ymd(T0)]).toBe(17);
+    expect(m.streak).toBe(1);
   });
 });

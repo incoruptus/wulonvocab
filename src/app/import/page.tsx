@@ -17,7 +17,7 @@ export default function ImportPage() {
   const [seed, setSeed] = useState<{ name: string; text: string } | null>(null);
   const goBook = (id: string) => router.push(`/book?id=${id}`);
 
-  // /import?panel=ai：从「AI 生词库」等入口直达并高亮 AI 面板（静态导出下读 query 用原生方式）
+  // /import?panel=ai：静态导出下用原生 query，定位并高亮 AI 面板。
   useEffect(() => {
     if (!window.location.search.includes("panel=ai")) return;
     const el = document.getElementById("ai-generate");
@@ -35,15 +35,13 @@ export default function ImportPage() {
       <main className="mx-auto w-full max-w-4xl flex-1 space-y-6 px-4 pb-24 pt-6 sm:px-6 sm:py-10">
         <div>
           <h1 className="t-h-24">导入词表</h1>
-          <p className="t-copy-14 mt-2 text-gray-900">
-            把你攒下的词交给我：有的字段一个不少，缺的结构替你补齐。
+          <p className="t-copy-14 mt-2 max-w-2xl text-gray-900">
+            批量粘贴、文档图片、JSON / CSV，或交给 AI 生成。所有入口都先预览，再决定放进哪个词库。
           </p>
         </div>
 
-        {/* 粘贴单词列表（最常用路径） */}
         <TextImportPanel onImported={goBook} />
 
-        {/* 文档 / 图片导入（本地优先，扫描件走视觉） */}
         <DocImportPanel
           onSeeded={(s) => {
             setSeed(s);
@@ -51,7 +49,6 @@ export default function ImportPage() {
           }}
         />
 
-        {/* 文件导入 */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Card className="flex flex-col">
             <span className="grid size-9 place-items-center rounded-lg bg-blue-100 text-blue-900">
@@ -79,11 +76,12 @@ export default function ImportPage() {
           </Card>
         </div>
 
-        {/* 内置 AI 生成 */}
-        <AiGeneratePanel onImported={goBook} />
+        <div id="ai-generate" className="rounded-xl">
+          <AiGeneratePanel onImported={goBook} />
+        </div>
 
         <p className="t-label-12 text-center text-gray-700">
-          解析全部在本机完成；只有你主动启用在线词典或 AI 时，才会联网。
+          解析默认在本机完成；只有你主动启用在线词典或 AI 时，才会联网。
         </p>
       </main>
 

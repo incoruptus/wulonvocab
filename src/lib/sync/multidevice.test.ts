@@ -279,6 +279,31 @@ describe("三端仿真（World 模型：发现 → 拉 → 合并 → 推）", (
     expect(world.gists.get("g_p")!.deviceId, "废弃的旧站不再被使用").toBe("phone");
   });
 
+  it("双设备搁置与解除：主体 LWW 收敛，解除后两台都恢复出题", () => {
+    const world = mkWorld();
+    const phone = mkDevice("phone", 1);
+    const laptop = mkDevice("laptop", 1);
+    sync(phone, world);
+    sync(laptop, world);
+
+    const phoneEntry = phone.state.books[0].entries.find((e) => e.id === "e-1")!;
+    phoneEntry.suspension = { at: T + 1_000, until: T + 8 * 86_400_000 };
+    phoneEntry.updatedAt = T + 1_000;
+    sync(phone, world);
+    sync(laptop, world);
+
+    expect(laptop.state.books[0].entries.find((e) => e.id === "e-1")?.suspension).toEqual(phoneEntry.suspension);
+
+    const laptopEntry = laptop.state.books[0].entries.find((e) => e.id === "e-1")!;
+    delete laptopEntry.suspension;
+    laptopEntry.updatedAt = T + 2_000;
+    sync(laptop, world);
+    sync(phone, world);
+
+    expect(phone.state.books[0].entries.find((e) => e.id === "e-1")?.suspension).toBeUndefined();
+    expect(laptop.state.books[0].entries.find((e) => e.id === "e-1")?.suspension).toBeUndefined();
+  });
+
   it("双方都是旧数据（均无时间戳）时按设备号确定性裁决——双方收敛到同一侧", () => {
     const world = mkWorld();
     const phone = mkDevice("phone", 1.2, { noBooks: true });

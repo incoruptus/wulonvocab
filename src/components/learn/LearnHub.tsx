@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { ArrowRight, BookOpen, Brain, CalendarClock, Flame, Sparkles, Timer } from "lucide-react";
 import type { Wordbook } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
@@ -11,7 +12,7 @@ import { Badge, Card, EmptyState } from "@/components/ui/misc";
 import { Heatmap } from "@/components/learn/Heatmap";
 import { buildAdvice, computeCapacity, estimateMinutes, type Advice } from "@/lib/study/advice";
 import { computeHubMetrics, type HubMetrics } from "@/lib/study/metrics";
-import { studyOverview, type StudyOverview } from "@/lib/study/queue";
+import { studyOverview, studyStateOf, type StudyOverview } from "@/lib/study/queue";
 import { requestSyncNow } from "@/lib/sync/auto";
 import { cx, timeAgo } from "@/lib/utils";
 
@@ -32,6 +33,8 @@ export function LearnHub() {
   const hydrated = useAppStore((s) => s.hydrated);
   const books = useAppStore((s) => s.books);
   const lastBookId = useAppStore((s) => s.settings.lastBookId);
+  const settings = useAppStore((s) => s.settings);
+  const setBookStudyState = useAppStore((s) => s.setBookStudyState);
 
   const [metrics, setMetrics] = useState<HubMetrics | null>(null);
   const [advice, setAdvice] = useState<Advice | null>(null);
@@ -50,7 +53,11 @@ export function LearnHub() {
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
       const now = Date.now();
-      const m = computeHubMetrics(books, now);
+      const m = computeHubMetrics(books, now, {
+        goalTier: settings.goalTier,
+        streakEnabled: settings.streakEnabled,
+        dayBoundaryHour: settings.dayBoundaryHour,
+      });
       const capacity = computeCapacity(books, m.newPerDayTotal, now);
       setMetrics(m);
       setAdvice(
@@ -71,16 +78,17 @@ export function LearnHub() {
       );
     });
     return () => cancelAnimationFrame(raf);
-  }, [books]);
+  }, [books, settings.goalTier, settings.streakEnabled, settings.dayBoundaryHour]);
 
   const continueTarget = useMemo(() => {
-    if (!summaries.length) return null;
-    const last = summaries.find((s) => s.book.id === lastBookId);
+    const active = summaries.filter((summary) => studyStateOf(summary.book) === "active");
+    if (!active.length) return null;
+    const last = active.find((s) => s.book.id === lastBookId);
     if (last && (last.overview.due > 0 || last.overview.newRemaining > 0)) return last;
-    const busiest = [...summaries].sort((a, b) => b.overview.due - a.overview.due)[0];
+    const busiest = [...active].sort((a, b) => b.overview.due - a.overview.due)[0];
     if (busiest && busiest.overview.due > 0) return busiest;
-    const newbie = summaries.find((s) => s.overview.newRemaining > 0);
-    return newbie ?? last ?? summaries[0];
+    const newbie = active.find((s) => s.overview.newRemaining > 0);
+    return newbie ?? last ?? active[0];
   }, [summaries, lastBookId]);
 
   if (!hydrated) {
@@ -94,6 +102,7 @@ export function LearnHub() {
 
   const m = metrics;
   const minutes = m ? estimateMinutes(m.due, Math.min(advice?.suggestedNew ?? 0, m.newRemainingTotal)) : 0;
+  const visibleSummaries = summaries.filter((summary) => studyStateOf(summary.book) !== "archived");
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -101,7 +110,7 @@ export function LearnHub() {
       <main className="mx-auto w-full max-w-3xl flex-1 space-y-5 px-4 pb-24 pt-6 sm:px-6 sm:py-8">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="t-h-24">学习中心</h1>
-          {m && m.streak > 0 ? (
+          {m && settings.streakEnabled !== false && m.streak > 0 ? (
             <Badge variant="amber" size="md">
               <Flame className="size-3.5" /> 连续 {m.streak} 天
             </Badge>
@@ -112,6 +121,26 @@ export function LearnHub() {
             </span>
           ) : null}
         </div>
+
+        {m ? (
+          <Card className="flex items-center gap-4">
+            <GoalRing value={m.reviewedToday} target={m.goalTarget} />
+            <div className="min-w-0 flex-1">
+              <div className="t-h-16">今日有效提取</div>
+              <p className="t-label-13 mt-1 text-gray-800">
+                {m.reviewedToday} / {m.goalTarget} 次
+                {m.reviewedToday >= m.goalTarget ? " · 今日目标完成" : " · 每次有反馈的练习都算"}
+              </p>
+              <p className="t-label-12 mt-1 text-gray-700">
+                本周 {m.weekDays}/7 天有学习
+                {settings.streakEnabled !== false && m.streakGraceUsed ? " · 本周已自动宽恕一个漏学日" : ""}
+              </p>
+            </div>
+            <Link href={`/settings/study`} className="t-label-12 shrink-0 text-blue-900 hover:underline">
+              调整目标
+            </Link>
+          </Card>
+        ) : null}
 
         {!books.length ? (
           <Card className="py-0">
@@ -129,7 +158,7 @@ export function LearnHub() {
         ) : null}
 
         {/* 建议卡 */}
-        {m && advice ? (
+        {m && advice && continueTarget ? (
           <Card className={cx("space-y-3 border-0", TONE_STYLE[advice.tone])}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
@@ -168,7 +197,7 @@ export function LearnHub() {
             <MiniStat label="待复习" value={m.due} tone={m.due > 0 ? "amber" : "gray"} />
             <MiniStat label="逾期" value={m.overdue} tone={m.overdue > 0 ? "red" : "gray"} />
             <MiniStat label="剩余新词" value={m.newRemainingTotal} tone="blue" />
-            <MiniStat label="已掌握" value={m.mastered} tone="green" />
+            <MiniStat label="稳固（当前）" value={m.mastered} tone="green" />
           </div>
         ) : null}
 
@@ -204,7 +233,7 @@ export function LearnHub() {
           <Card className="space-y-3">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <div className="t-h-14">复习热力图</div>
-              {m.streak > 0 ? (
+              {settings.streakEnabled !== false && m.streak > 0 ? (
                 <span className="t-label-12 text-gray-800">
                   连续学习：<span className="tabular-nums">{m.streak}</span> 天
                 </span>
@@ -239,47 +268,107 @@ export function LearnHub() {
             </Link>
           </div>
           <div className="space-y-2.5">
-            {summaries.map(({ book, overview, progress }) => (
-              <Card key={book.id} className="flex items-center gap-3 p-3.5">
-                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-gray-100 text-[19px]">
-                  {book.meta?.coverEmoji || "📖"}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-baseline gap-x-2">
-                    <Link href={`/book?id=${book.id}`} className="t-h-14 truncate hover:underline">
-                      {book.name}
-                    </Link>
-                    {overview.due > 0 ? (
-                      <Badge variant="amber" size="sm">
-                        待复习 {overview.due}
-                      </Badge>
-                    ) : null}
-                    {overview.due === 0 && overview.newRemaining === 0 ? (
-                      <Badge variant="green" size="sm">
-                        今天已完成
-                      </Badge>
-                    ) : null}
-                    <span className="t-label-12 text-gray-700">{timeAgo(book.updatedAt)}更新</span>
-                  </div>
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <div className="h-1.5 w-full max-w-56 overflow-hidden rounded-full bg-gray-200">
-                      <div className="h-full rounded-full bg-green-700/80" style={{ width: `${Math.round(progress * 100)}%` }} />
+            {visibleSummaries.map(({ book, overview, progress }) => {
+              const state = studyStateOf(book);
+              const paused = state === "paused";
+              return (
+                <Card key={book.id} className="flex items-center gap-3 p-3.5">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-gray-100 text-[19px]">
+                    {book.meta?.coverEmoji || "📖"}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <Link href={`/book?id=${book.id}`} className="t-h-14 truncate hover:underline">
+                        {book.name}
+                      </Link>
+                      {paused ? (
+                        <Badge variant="gray" size="sm">
+                          暂停{overview.due > 0 ? ` · 到期 ${overview.due}` : ""}
+                        </Badge>
+                      ) : overview.due > 0 ? (
+                        <Badge variant="amber" size="sm">
+                          待复习 {overview.due}
+                        </Badge>
+                      ) : overview.newRemaining === 0 ? (
+                        <Badge variant="green" size="sm">
+                          今天已完成
+                        </Badge>
+                      ) : null}
+                      <span className="t-label-12 text-gray-700">{timeAgo(book.updatedAt)}更新</span>
                     </div>
-                    <span className="t-label-12 shrink-0 tabular-nums text-gray-800">
-                      {overview.mastered + overview.learning}/{book.entries.length}
-                    </span>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <div className="h-1.5 w-full max-w-56 overflow-hidden rounded-full bg-gray-200">
+                        <div className="h-full rounded-full bg-green-700/80" style={{ width: `${Math.round(progress * 100)}%` }} />
+                      </div>
+                      <span className="t-label-12 shrink-0 tabular-nums text-gray-800">
+                        {overview.mastered + overview.learning}/{book.entries.length}
+                      </span>
+                    </div>
                   </div>
-                </div>
-                <Link href={`/study?id=${book.id}`} className="shrink-0">
-                  <Button size="sm" variant={overview.due > 0 || overview.newRemaining > 0 ? "default" : "secondary"}>
-                    <Brain className="size-3.5" /> 学习
-                  </Button>
-                </Link>
+                  {paused ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        setBookStudyState(book.id, "active");
+                        toast.success(`已恢复「${book.name}」的学习`);
+                      }}
+                    >
+                      恢复学习
+                    </Button>
+                  ) : (
+                    <Link href={`/study?id=${book.id}`} className="shrink-0">
+                      <Button size="sm" variant={overview.due > 0 || overview.newRemaining > 0 ? "default" : "secondary"}>
+                        <Brain className="size-3.5" /> 学习
+                      </Button>
+                    </Link>
+                  )}
+                </Card>
+              );
+            })}
+            {books.length > 0 && visibleSummaries.length === 0 ? (
+              <Card>
+                <EmptyState
+                  icon={<BookOpen className="size-4" />}
+                  title="词库都归档了"
+                  desc="归档的词库仍保留内容与历史，可以到词库列表恢复学习。"
+                  action={
+                    <Link href="/books">
+                      <Button size="sm" variant="secondary">管理词库</Button>
+                    </Link>
+                  }
+                />
               </Card>
-            ))}
+            ) : null}
           </div>
         </div>
       </main>
+    </div>
+  );
+}
+
+function GoalRing({ value, target }: { value: number; target: number }) {
+  const ratio = target > 0 ? Math.min(1, Math.max(0, value / target)) : 0;
+  const radius = 26;
+  const circumference = 2 * Math.PI * radius;
+  return (
+    <div className="relative size-16 shrink-0" role="img" aria-label={`今日目标 ${value}/${target}`}>
+      <svg viewBox="0 0 64 64" className="size-16 -rotate-90 text-blue-700">
+        <circle cx="32" cy="32" r={radius} fill="none" stroke="var(--ds-gray-300)" strokeWidth="6" />
+        <circle
+          cx="32"
+          cy="32"
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="6"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - ratio)}
+          className="transition-[stroke-dashoffset] duration-500 motion-reduce:transition-none"
+        />
+      </svg>
+      <span className="absolute inset-0 grid place-items-center t-mono-13 font-medium text-gray-1000">{Math.round(ratio * 100)}%</span>
     </div>
   );
 }

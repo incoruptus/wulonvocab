@@ -12,7 +12,12 @@ import { SectionIcon } from "@/components/icon";
 import { ValueEditor } from "@/components/value/ValueEditor";
 import { TagsEditor } from "@/components/value/ValueEditor";
 import { requestSyncNow, requestSyncSoon } from "@/lib/sync/auto";
+import { formatDue, r30Of } from "@/lib/study/engine";
+import { studyConfigOf } from "@/lib/study/queue";
 import { EntryPreviewCard } from "@/components/book/EntryPreview";
+import { LeechNotice } from "@/components/study/LeechNotice";
+import { MasteryEvidence } from "@/components/study/MasteryEvidence";
+import { useReviewMastery } from "@/components/study/useReviewMastery";
 import { cx, formatDateTime } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -39,6 +44,12 @@ export function EntryEditor({
   const [promoteType, setPromoteType] = useState<SectionType>("text");
   /** 移动端：编辑 / 预览 双 Tab */
   const [mobileTab, setMobileTab] = useState<"edit" | "preview">("edit");
+  const [now, setNow] = useState(0);
+  const { index: masteryIndex } = useReviewMastery();
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setNow(Date.now()));
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   // 开始编辑之前：拉一轮最新数据（静默；未配置自动同步时无感）
   useEffect(() => {
@@ -54,6 +65,7 @@ export function EntryEditor({
 
   const sections = sortSections(book.schema.sections);
   const extras = extraKeys(entry.values, sections);
+  const r30 = now > 0 ? r30Of(entry.srs, now, studyConfigOf(book).retention) : null;
 
   const deleteKey = (key: string) => {
     const next = { ...entry.values };
@@ -138,7 +150,7 @@ export function EntryEditor({
             options={[
               { value: "new", label: "未学" },
               { value: "learning", label: "在学" },
-              { value: "mastered", label: "已掌握" },
+              { value: "mastered", label: "稳固（当前）" },
             ]}
           />
           <div className="flex min-w-52 flex-1 items-center gap-2">
@@ -157,11 +169,27 @@ export function EntryEditor({
           ) : null}
         </div>
         <div className="t-label-12 text-gray-700 sm:hidden">更新于 {formatDateTime(entry.updatedAt)}</div>
+        {r30 !== null ? (
+          <div className="t-label-12 flex flex-wrap gap-x-3 gap-y-1 text-gray-700">
+            <span>30 天后约 {Math.round(r30 * 100)}%</span>
+            <span>下次复习 {formatDue(entry.srs?.due)}</span>
+            <span>这是当前估计，仍会继续安排复习。</span>
+          </div>
+        ) : null}
       </div>
 
       {/* 动态字段（移动端：编辑 / 预览 双 Tab） */}
       <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
-        <div className={cx("space-y-6 px-4 py-5 pb-40 lg:px-5 lg:pb-6", mobileTab === "edit" ? "" : "hidden lg:block")}>
+        <div id="entry-fields" className={cx("space-y-6 px-4 py-5 pb-40 lg:px-5 lg:pb-6", mobileTab === "edit" ? "" : "hidden lg:block")}>
+          <MasteryEvidence entryId={entry.id} index={masteryIndex} detailed />
+          <LeechNotice
+            book={book}
+            entry={entry}
+            onEdit={() => {
+              setMobileTab("edit");
+              requestAnimationFrame(() => document.getElementById("entry-fields")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+            }}
+          />
           {sections.length === 0 ? (
             <EmptyState
               icon={<Sparkles className="size-4" />}

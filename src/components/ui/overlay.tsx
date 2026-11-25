@@ -152,17 +152,20 @@ export function PopoverContent({
   children,
   align = "start",
   sideOffset = 6,
+  collisionPadding = 0,
 }: {
   className?: string;
   children: React.ReactNode;
   align?: "start" | "center" | "end";
   sideOffset?: number;
+  collisionPadding?: number;
 }) {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
         align={align}
         sideOffset={sideOffset}
+        collisionPadding={collisionPadding}
         className={cx("z-50 rounded-xl bg-background-100 p-3 shadow-geist-menu outline-none", className)}
       >
         {children}
