@@ -1,7 +1,7 @@
 # WulonVocab 交接文档
 
 > 交接日期：2026-11-25 ｜ 面向对象：接手本项目的下一位 Agent
-> 一句话：**本地优先（无后端）的单词本网页应用**，0.2.0 已提交并部署到 Pages；0.3.0 已完成 Word Quiz、题库、混搭与同步整理，正在执行发布验收。
+> 一句话：**本地优先（无后端）的单词本网页应用**，0.3.0 已提交、部署到 Pages 并完成线上验收。
 >
 > **阅读顺序**：`AGENTS.md`（硬约定，必须先读）→ 本文件（现状与待办）→ `docs/PRODUCT-LOGIC.md`（项目结构与逻辑总览）→ `docs/DECISIONS-PENDING.md`（决策状态与外部前置）→ `docs/ROADMAP.md`（路线图与拍板记录）→ `docs/PLAN-2026-11.md`（批次施工与交付记录）→ 需要动学习/题库时先读 `docs/research/word-quiz-definitions-2026-11.md`。`research/word-quiz-2026-10.md` 仅作历史存档。
 
@@ -12,16 +12,16 @@
 | 项 | 值 |
 |---|---|
 | 仓库 | `D:\Creation\Caddy Wulon\WulonVocab`，remote `incoruptus/wulonvocab`，分支 `main` |
-| 工作区 | **0.3.0 已通过自动验收，待提交、推送与 Pages 部署**；0.2.0 批次一至三已部署 |
-| 最新提交 | `de1997c`，包含全部 0.2.0 学习线改动；0.3.0 改动尚未提交 |
-| 版本 | `package.json` = **0.3.0**（0.2.0 已部署，0.1.0 已发布，见下） |
-| 已发布 | `v0.1.0` tag + GitHub Release：https://github.com/incoruptus/wulonvocab/releases/tag/v0.1.0 ；`v0.2.0` 与 `v0.3.0` 尚未创建 Release |
+| 工作区 | **0.3.0 已提交、推送并部署**；0.2.0 批次一至三已部署 |
+| 0.3.0 发布提交 | `f857e07`，包含 0.3.0 四子型题库、混搭学习、同步整理与发布审计修复 |
+| 版本 | `package.json` = **0.3.0**，tag `v0.3.0` 已推送 |
+| 已发布 | `v0.1.0` tag + GitHub Release：https://github.com/incoruptus/wulonvocab/releases/tag/v0.1.0 ；`v0.2.0` 未创建 Release；`v0.3.0` 已打 tag，未创建 Release |
 | 线上地址 | https://incoruptus.github.io/wulonvocab/ （basePath `/wulonvocab`） |
-| 部署 | 0.2.0 已由 `main` 触发 Pages 部署；Actions 运行 `45526355462` 构建与部署均成功；0.3.0 待部署 |
+| 部署 | 0.3.0 由 `main` 触发 Pages 部署；运行 `45648171921` 构建成功，首次部署遇 GitHub 502，重跑失败步骤后 attempt 2 成功 |
 | 公共题库 | 龙已创建公开 Gist `2446bf2794a4c2ff5de271ec7feb9e67`；稳定 Raw 地址为 `https://gist.githubusercontent.com/incoruptus/2446bf2794a4c2ff5de271ec7feb9e67/raw/wulonvocab-public-bank.json`，当前 40 道 approved 题 |
-| 测试基线 | **337 单测 / 49 文件**；开发模式与 Pages 静态产物均通过 `e2e:sync` 15/15、`e2e:study-settings` 31/31、真实公共 Gist `e2e:public-bank` 7/7；生产依赖审计 0 漏洞；编码检查 0；类型与 lint 通过；生产构建 19 页与 Pages 导出通过 |
+| 测试基线 | **337 单测 / 49 文件**；开发模式、Pages 静态产物与线上均通过 `e2e:sync` 15/15、`e2e:study-settings` 31/31、真实公共 Gist `e2e:public-bank` 7/7；生产依赖审计 0 漏洞；编码与 BOM 检查 0；类型与 lint 通过；生产构建 19 页与 Pages 导出通过 |
 
-> 2026-11-25：0.2.0 的批次一「秩序与口径」、批次二「初学与状态」与批次三「规则档智能 + 题型」已提交并部署，未创建 tag 或 GitHub Release。0.3.0 新增四子型选择题、独立 Cloze 与混搭、个人/公共题库、四子型独立计时、保存视图与复习事件同步、凭据隔离和关于页原理说明；当前进行发布前全量回归。真机触控与真实设备视觉验收仍待补做。
+> 2026-11-25：0.2.0 的批次一「秩序与口径」、批次二「初学与状态」与批次三「规则档智能 + 题型」已提交并部署，未创建 tag 或 GitHub Release。0.3.0 新增四子型选择题、独立 Cloze 与混搭、个人/公共题库、四子型独立计时、保存视图与复习事件同步、凭据隔离和关于页原理说明；已提交 `f857e07`、推送 `v0.3.0` 并完成 Pages 部署与线上验收。真机触控与真实设备视觉验收仍待补做。
 
 ---
 
@@ -266,7 +266,7 @@ TTS、键盘、学习中心、题型 A 扩展、稳/猜确认、相似词避让�
 
 - **Android 首发**：开发机 B 按 `docs/ANDROID.md`（Capacitor 8 + CI 签名 APK + 自托管 OTA）执行；完成后挂 0.1.0 版本线。
 - **视觉链路真机 E2E**：被环境阻塞（需可用的视觉模型 Key；当前测试 profile 的 AI Key 已失效 401）。
-- **0.3.0 发版状态**：代码已完成自动验收，待提交、推送与 Pages 部署；计划创建 `v0.3.0` tag，是否另建 GitHub Release 待龙确认。
+- **0.3.0 发版状态**：已提交 `f857e07`、推送 `main` 与 `v0.3.0`、完成 Pages 部署和线上验收；运行 `45648171921` attempt 2 成功。未创建 GitHub Release。
 - **0.2.0 发版状态**：代码已推送并部署 Pages，未打 `v0.2.0` tag 或创建 Release。
 
 ### 5.5 已知限制（有意为之，不要"修"）
@@ -326,4 +326,4 @@ TTS、键盘、学习中心、题型 A 扩展、稳/猜确认、相似词避让�
 
 ---
 
-*本文件于 2026-11-25 更新至 0.3.0 发布前状态。若后续有新的拍板或路线变化，请同步更新本文件第 1/5/8 节与 ROADMAP 的拍板记录。*
+*本文件于 2026-11-25 更新至 0.3.0 已发布状态。若后续有新的拍板或路线变化，请同步更新本文件第 1/5/8 节与 ROADMAP 的拍板记录。*
